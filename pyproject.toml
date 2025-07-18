@@ -1,0 +1,50 @@
+[tool.poetry]
+name = "graphglue"
+version = "0.0.1"
+description = "A Python tool to build, manipulate, and interoperate with flexible graph structures"
+authors = ["Bottazzi Daniele <daniele.bottazzi@mail.polimi.it>"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3"
+]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+repository = "https://github.com/saezlab/graphglue/"
+packages = [
+    { include = "graphglue", from = "src" }
+]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.12"
+polars = "^0.20.0"
+
+# Optional dependencies, declared via "extras"
+networkx = { version = "^3.0", optional = true }
+python-igraph = { version = "^0.11", optional = true }
+
+[tool.poetry.extras]
+networkx = ["networkx"]
+igraph = ["python-igraph"]
+
+[tool.poetry.scripts]
+gg = "graphglue:main"
+gg-demo = "graphglue.demo.demo:main"
+
+[tool.poetry.group.dev.dependencies]
+sphinx = "^8.2.3"
+sphinx-autodoc-typehints = "^3.2.0"
+black = "^24.0"
+mypy = "^1.0"
+pytest = "^7.0"
+sphinx-rtd-theme = "^3.0.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
