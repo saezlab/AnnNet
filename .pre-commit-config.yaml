@@ -1,0 +1,61 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+fail_fast: false
+default_language_version:
+    python: python3
+default_stages:
+-   pre-commit
+-   pre-push
+minimum_pre_commit_version: 3.0.0
+repos:
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.7  # Check for latest version
+    hooks:
+    -   id: ruff
+        args: [--fix, --show-fixes]
+    -   id: ruff-format
+-   repo: https://github.com/deeenes/unexport
+    rev: 0.4.0-patch0-3
+    hooks:
+    -   id: unexport
+        args: [--refactor, --single_quotes]
+        exclude: __init__.py$
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+    -   id: detect-private-key
+    -   id: check-ast
+    -   id: end-of-file-fixer
+    -   id: check-added-large-files
+    -   id: mixed-line-ending
+        args: [--fix=lf]
+        exclude: ^docs/make.bat$
+    -   id: check-merge-conflict
+    -   id: check-case-conflict
+    -   id: check-symlinks
+    -   id: check-yaml
+        args: [--unsafe]
+    -   id: check-ast
+    -   id: requirements-txt-fixer
+-   repo: https://github.com/rstcheck/rstcheck
+    rev: v6.2.5
+    hooks:
+    -   id: rstcheck
+        exclude: docs
+-   repo: https://github.com/asottile/blacken-docs
+    rev: 1.19.1
+    hooks:
+    -   id: blacken-docs
+-   repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
+    rev: v2.15.0
+    hooks:
+    -   id: pretty-format-yaml
+        args: [--autofix, --indent, '4']
+    -   id: pretty-format-toml
+        args: [--autofix, --indent, '4']
+-   repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.10.0
+    hooks:
+    -   id: rst-backticks
+    -   id: rst-directive-colons
+    -   id: rst-inline-touching-normal

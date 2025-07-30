@@ -1,0 +1,105 @@
+name: Test
+
+on:
+    schedule:
+    -   cron: 0 3 * * *
+    push:
+        branches: [main]
+        tags: [v*]
+    pull_request:
+        branches: [main]
+
+jobs:
+
+    tests:
+
+        runs-on: ${{ matrix.os }}
+        defaults:
+            run:
+                shell: bash -e {0}
+
+        strategy:
+            fail-fast: false
+            max-parallel: 4
+            matrix:
+                os: [ubuntu-latest, macos-latest]
+                python: ['3.9', '3.10', '3.11', '3.12', '3.13']
+                exclude:
+                -   os: macos-latest
+                include:
+                -   os: macos-latest
+                    python: '3.13'
+
+        env:
+            OS: ${{ matrix.os }}
+            PYTHON: ${{ matrix.python }}
+
+        steps:
+        -   name: Checkout
+            uses: actions/checkout@v4
+            with:
+                fetch-depth: 0
+
+        -   name: Install uv
+            uses: astral-sh/setup-uv@v5
+            with:
+                enable-cache: true
+                python-version: ${{ matrix.python }}
+
+        -   name: Install Python {{ matrix.python }}
+            run: |
+                uv python install --python-preference only-managed ${{ matrix.python }}
+
+        -   name: Install dependencies
+            run: |
+                uv sync --all-extras
+                uv pip install codecov
+                uv tool install \
+                    --python-preferences only-managed \
+                    --python ${{ matrix.python }} \
+                    --with tox-uv \
+                    --with tox-gh \
+                    tox
+
+        -   name: Install pip dependencies
+            run: |
+                python -m pip install --upgrade pip
+
+        -   name: Run tests
+            env:
+                MPLBACKEND: agg
+                PLATFORM: ${{ matrix.os }}
+                DISPLAY: :42
+                TOX_GH_MAJOR_MINOR: ${{ matrix.python }}
+            run: |
+                tox run -vv --skip-pkg-install
+
+        -   name: Upload coverage report to Codecov
+            if: success()
+            env:
+                CODECOV_NAME: ${{ matrix.python }}-${{ matrix.os }}
+            run: |
+                uv run codecovcli --verbose upload-process -t ${{ secrets.CODECOV_TOKEN  }} -n '${{ env.CODECOV_NAME }}' -F unittests
+
+        deploy:
+
+            if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+            needs: tests
+            runs-on: ubuntu-latest
+
+            steps:
+
+            -   name: Checkout
+                uses: actions/checkout@v4
+                with:
+                    fetch-depth: 0
+
+            -   name: Install uv
+                uses: astral-sh/setup-uv@v5
+                with:
+                    enable-cache: true
+
+            -   name: Build and deploy
+                run: |
+                    uv build
+                    # uv publish  # see https://docs.pypi.org/trusted-publishers/adding-a-publisher/
