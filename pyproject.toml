@@ -166,9 +166,13 @@ extend-include = ["*.ipynb"]
 line-length = 80
 target-version = "py311"
 unfixable = ["UP"]
-format.docstring-code-format = true
-format.quote-style = "single"
-lint.ignore = [
+
+[tool.ruff.format]
+docstring-code-format = true
+quote-style = "single"
+
+[tool.ruff.lint]
+ignore = [
     "B008",  # Errors from function calls in argument defaults. These are fine when the result is immutable.
     "B024",
     "D100",  # Missing docstring in public module
@@ -192,7 +196,7 @@ lint.ignore = [
     "W503",
     "W504"
 ]
-lint.select = [
+select = [
     "B",  # flake8-bugbear
     "BLE",  # flake8-blind-except
     "C4",  # flake8-comprehensions
