@@ -1,0 +1,107 @@
+site_name: 'graphglue'
+site_url: https://saezlab.github.io/graphglue
+theme:
+    name: material
+    font:
+        text: Lato
+        code: Roboto Mono
+    features:
+    -   content.code.copy
+    -   content.action.edit
+    -   navigation.tabs
+    -   navigation.instant
+    -   navigation.footer
+    palette:
+    -   scheme: default
+        primary: teal
+        accent: light blue
+        toggle:
+            icon: material/toggle-switch
+            name: Switch to dark mode
+    -   scheme: slate
+        primary: teal
+        accent: light blue
+        toggle:
+            icon: material/toggle-switch-off
+            name: Switch to light mode
+
+#=======    Website Navigation settings   =====
+nav:
+-   Home: index.md
+
+-   About:
+    -   Project: 'graphglue-project/project.md'
+    -   Design philosophy: 'graphglue-project/design-philosophy.md'
+    -   Use Cases: 'graphglue-project/use-cases.md'
+    -   About: about.md
+
+-   Get Started:
+    -   Installation: installation.md
+    -   Quickstart: learn/tutorials/quickstart.md
+
+-   Learn:
+    -   Tutorials:
+        -   Basics: learn/tutorials/tutorial0001_basics.md
+        -   HowTo / FAQ:
+            -   learn/guides/index.md
+
+-   Explanations:
+    -   learn/explanation/index.md
+
+-   Reference:
+    -   API Documentation:
+        -   'graphglue':
+            -   _metadata: reference/source/graphglue/_metadata-docs.md
+-   Community:
+    -   Join Us: community/index.md
+    -   Where to Start: community/contribute.md
+    -   Contribute to the Documentation: community/contribute-docs.md
+    -   Contribute to the Code Base: community/contribute-codebase.md
+
+
+
+#=======    Extension settings (sorted alphabetically)  =====
+markdown_extensions:
+-   admonition
+-   attr_list
+-   md_in_html
+  #----- Python Markdown Extensions
+-   pymdownx.details
+-   pymdownx.emoji:
+        emoji_index: !!python/name:material.extensions.emoji.twemoji
+        emoji_generator: !!python/name:material.extensions.emoji.to_svg
+-   pymdownx.highlight: # Note: list of Pygments: https://pygments.org/docs/lexers/
+        anchor_linenums: true
+        line_spans: __span
+        pygments_lang_class: true
+-   pymdownx.inlinehilite
+-   pymdownx.snippets
+-   pymdownx.superfences:
+        custom_fences:
+        -   name: mermaid
+            class: mermaid
+            format: !!python/name:pymdownx.superfences.fence_code_format
+-   pymdownx.tabbed:
+        alternate_style: true
+
+#=======    Plugins    =====
+plugins:
+-   search
+-   mkdocstrings:
+        default_handler: python
+        handlers:
+            python:
+                options:
+                    annotations_path: brief
+                    docstring_style: google
+                    heading_level: 3
+                    modernize_annotations: true
+                    show_category_heading: true
+                    show_object_full_path: false
+                    show_root_toc_entry: true
+                    show_signature: true
+                    show_signature_annotations: false
+                    signature_crossrefs: true
+
+
+copyright: © Copyright 2021-2025, Saez-lab development team.
