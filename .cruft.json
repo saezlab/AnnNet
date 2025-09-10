@@ -1,0 +1,75 @@
+{
+  "template": "https://github.com/saezlab/python-project",
+  "commit": "9994d74de08e6c13ae1c82fd47675347f1e3a79f",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "project_name": "graphglue",
+      "project_slug": "graphglue",
+      "package_name": "graphglue",
+      "short_description": "Lightweight, flexible, minimal-dependencies Python package for creating, manipulating, and interoperating with diverse graph data structures.",
+      "readme": "Lightweight, flexible, minimal-dependencies Python package for creating, manipulating, and interoperating with diverse graph data structures.",
+      "author_full_name": "Daniele Bottazzi",
+      "author_email": "daniele.bottazzi@mail.polimi.it",
+      "github_organization": "saezlab",
+      "project_repo": "https://github.com/saezlab/graphglue",
+      "license": "MIT License",
+      "_license": {
+        "MIT License": {
+          "license_short": "MIT",
+          "license_classifiers": "MIT License",
+          "license_spdx": "MIT"
+        },
+        "BSD 2-Clause License": {
+          "license_short": "BSD-2-Clause",
+          "license_classifiers": "BSD License",
+          "license_spdx": "BSD-2-Clause"
+        },
+        "BSD 3-Clause License": {
+          "license_short": "BSD-3-Clause",
+          "license_classifiers": "BSD License",
+          "license_spdx": "BSD-3-Clause"
+        },
+        "Apache License Version 2.0": {
+          "license_short": "Apache-2.0",
+          "license_classifiers": "Apache Software License",
+          "license_spdx": "Apache-2.0"
+        },
+        "GNU General Public License Version 3": {
+          "license_short": "GPL-3.0-or-later",
+          "license_classifiers": "GNU General Public License v3 (GPLv3)",
+          "license_spdx": "GPL-3.0-or-later"
+        },
+        "GNU Lesser General Public License Version 3": {
+          "license_short": "LGPL-3.0-or-later",
+          "license_classifiers": "GNU Lesser General Public License v3 (LGPLv3)",
+          "license_spdx": "LGPL-3.0-or-later"
+        },
+        "ISC License": {
+          "license_short": "ISC",
+          "license_classifiers": "ISC License (ISCL)",
+          "license_spdx": "ISC"
+        },
+        "Unlicense": {
+          "license_short": "Unlicense",
+          "license_classifiers": "The Unlicense (Unlicense)",
+          "license_spdx": "Unlicense"
+        }
+      },
+      "python_version": "3.11",
+      "copyright_holder": "Heidelberg University Hospital",
+      "__year": "2025",
+      "_extensions": [
+        "cookiecutter.extensions.TimeExtension"
+      ],
+      "_copy_without_render": [
+        ".github/workflows/*.yml",
+        ".github/workflows/**.yaml",
+        ".github/actions/*"
+      ],
+      "_template": "https://github.com/saezlab/python-project",
+      "_commit": "9994d74de08e6c13ae1c82fd47675347f1e3a79f"
+    }
+  },
+  "directory": null
+}

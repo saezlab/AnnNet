@@ -1,8 +1,87 @@
-[tool.poetry]
-name = "graphglue"
-version = "0.0.1"
-description = "A Python tool to build, manipulate, and interoperate with flexible graph structures"
-authors = ["Bottazzi Daniele <daniele.bottazzi@mail.polimi.it>"]
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[dependency-groups]
+dev = [
+    "distlib",
+    "pre-commit>=2.17.0",
+    "bump2version",
+    "twine",
+    "black>=24.0",
+    "mypy>=1.0"
+]
+docs = [
+    "sphinx>=8.2.3",
+    "sphinx-last-updated-by-git>=0.3",
+    "sphinx-autodoc-typehints>=3.2.0",
+    "sphinxcontrib-fulltoc>=1.2.0",
+    "sphinxcontrib-bibtex",
+    "sphinx-copybutton",
+    "myst-parser",
+    "myst-nb",
+    "jupyterlab",
+    "pydata-sphinx-theme",
+    "sphinx-remove-toctrees",
+    "jupyter-contrib-nbextensions",
+    "nbsphinx",
+    "sphinx-rtd-theme>=3.0.2"
+]
+tests = [
+    "pytest>=7.0",
+    "tox>=3.20.1",
+    "tox-gh>=1.5.0",
+    "coverage>=6.0",
+    "codecov-cli>=10.2.0",
+    "diff_cover",
+    "ruff"
+]
+
+[lint.isort]
+balanced-wrapping = true
+case-sensitive = false
+combine-as-imports = true
+exclude = [
+    "docs/_build"
+]
+force-sort-within-sections = true
+force-wrap-aliases = true
+include-trailing-comma = true
+indent = "    "
+known-first-party = ["graphglue"]
+known-third-party = ["numpy", "pandas"]
+length-sort = true
+lines-after-imports = 1
+multi-line-output = 3
+no-lines-before = ["LOCALFOLDER"]
+order-by-type = true
+sections = [
+    "FUTURE",
+    "STDLIB",
+    "THIRDPARTY",
+    "NUM",
+    "FIRSTPARTY",
+    "LOCALFOLDER"
+]
+use-parentheses = true
+
+[lint.per-file-ignores]
+"*/__init__.py" = ["D104", "F401"]
+"docs/*" = ["I"]
+"docs/src/conf.py" = ["D100"]
+"tests/*" = ["D"]
+"tests/conftest.py" = ["D101", "D102", "D103", "E402"]
+
+[lint.pydocstyle]
+convention = "numpy"
+
+[lint.quotes]
+inline-quotes = "single"
+
+[project]
+authors = [
+    {name = "Bottazzi Daniele", email = "daniele.bottazzi@mail.polimi.it"}
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -11,40 +90,236 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Mathematics",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3"
 ]
-license = "GPL-3.0-or-later"
-readme = "README.md"
-repository = "https://github.com/saezlab/graphglue/"
-packages = [
-    { include = "graphglue", from = "src" }
+dependencies = [
+    "numpy>=2.3.2",
+    "polars>=0.20.0"
 ]
+description = "A Python tool to build, manipulate, and interoperate with flexible graph structures"
+license = "GPL-3.0-or-later"
+maintainers = [
+    {name = "Bottazzi Daniele", email = "daniele.bottazzi@mail.polimi.it"}
+]
+name = "graphglue"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+version = "0.0.1"
 
-[tool.poetry.dependencies]
-python = ">=3.11,<3.12"
-polars = "^0.20.0"
+[project.optional-dependencies]
+igraph = ["python-igraph>=0.11"]
+networkx = ["networkx>=3.0"]
 
-# Optional dependencies, declared via "extras"
-networkx = { version = "^3.0", optional = true }
-python-igraph = { version = "^0.11", optional = true }
-
-[tool.poetry.extras]
-networkx = ["networkx"]
-igraph = ["python-igraph"]
-
-[tool.poetry.scripts]
+[project.scripts]
 gg = "graphglue:main"
 gg-demo = "graphglue.demo.demo:main"
 
-[tool.poetry.group.dev.dependencies]
-sphinx = "^8.2.3"
-sphinx-autodoc-typehints = "^3.2.0"
-black = "^24.0"
-mypy = "^1.0"
-pytest = "^7.0"
-sphinx-rtd-theme = "^3.0.2"
+[project.urls]
+Documentation = "https://graphglue.readthedocs.io/"
+Homepage = "https://github.com/saezlab/graphglue"
+Issues = "https://github.com/saezlab/graphglue/issues"
+Repository = "https://github.com/saezlab/graphglue"
 
+[tool.coverage.run]
+omit = [
+    "**/test_*.py"
+]
+source = ["graphglue"]
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.cruft]
+skip = [
+    "tests",
+    "graphglue/__init__.py",
+    "graphglue/_metadata.py",
+    "docs/api.md",
+    "docs/changelog.md",
+    "docs/references.bib",
+    "docs/references.md",
+    "docs/notebooks/example.ipynb"
+]
+
+[tool.pytest.ini_options]
+addopts = [
+    # "-Werror",  # if 3rd party libs raise DeprecationWarnings, just use filterwarnings below
+    "--import-mode=importlib"  # allow using test files with same name
+]
+filterwarnings = [
+]
+python_files = "test_*.py"
+testpaths = [
+    "tests"
+]
+xfail_strict = true
+
+[tool.rstcheck]
+ignore_directives = [
+    "automodule",
+    "toctree"
+]
+ignore_messages = '(Unknown target name:.*|No (directive|role) entry for "(auto)?(class|method|property|function|func|mod|attr)" in module "docutils\.parsers\.rst\.languages\.en"\.)'
+ignore_roles = ["ref"]
+report_level = "INFO"
+
+[tool.ruff]
+extend-include = ["*.ipynb"]
+line-length = 80
+target-version = "py311"
+unfixable = ["UP"]
+
+[tool.ruff.format]
+docstring-code-format = true
+quote-style = "single"
+
+[tool.ruff.lint]
+ignore = [
+    "B008",  # Errors from function calls in argument defaults. These are fine when the result is immutable.
+    "B024",
+    "D100",  # Missing docstring in public module
+    "D104",  # Missing docstring in public package
+    "D105",  # __magic__ methods are often self-explanatory, allow missing docstrings
+    "D107",  # Missing docstring in __init__
+    # Disable one in each pair of mutually incompatible rules
+    "D200",
+    "D202",
+    "D203",  # We don't want a blank line before a class docstring
+    "D213",  # <> We want docstrings to start immediately after the opening triple quote
+    "D400",  # first line should end with a period [Bug: doesn't work with single-line docstrings]
+    "D401",  # First line should be in imperative mood; try rephrasing
+    "E131",
+    "E251",
+    "E303",
+    "E501",  # line too long -> we accept long comment lines; formatter gets rid of long code lines
+    "E521",
+    "E731",  # Do not assign a lambda expression, use a def -> lambda expression assignments are convenient
+    "E741",  # allow I, O, l as variable names -> I is the identity matrix
+    "W503",
+    "W504"
+]
+select = [
+    "B",  # flake8-bugbear
+    "BLE",  # flake8-blind-except
+    "C4",  # flake8-comprehensions
+    "D",  # pydocstyle
+    "E",  # Error detected by Pycodestyle
+    "F",  # Errors detected by Pyflakes
+    "I",  # isort
+    "RUF100",  # Report unused noqa directives
+    "TID",  # flake8-tidy-imports
+    "UP",  # pyupgrade
+    "W",  # Warning detected by Pycodestyle
+    "Q",  # Consistent quotes
+    "S307",  # eval() detection
+    "ANN"  # flake8-annotations
+]
+
+[tool.tox]
+envlist = [
+    "covclean",
+    "lint",
+    "py{39,310,311,312,313}",
+    "coverage",
+    "readme",
+    "docs"
+]
+isolated_build = true
+min_version = "3.20.0"
+skip_missing_interpreters = true
+
+[tool.tox.envs]
+base_python = [
+    "py39: python3.9",
+    "py310: python3.10",
+    "py311: python3.11",
+    "py312: python3.12",
+    "py313: python3.13"
+]
+commands = [
+    "pytest --cov --cov-append --cov-config={toxinidir}/.coveragerc --ignore docs/ {posargs:-vv {env:_PYTEST_TOX_POSARGS:}}"
+]
+deps = [
+    ".[tests]"
+]
+passenv = "TOXENV,CI,CODECOV_*,GITHUB_ACTIONS"
+platform = [
+    "linux: linux",
+    "macos: (macos|osx|darwin)"
+]
+usedevelop = true
+
+[tool.tox.envs.clean-docs]
+allowlist_externals = ["make"]
+changedir = "{toxinidir}/docs"
+commands = [
+    "make clean"
+]
+description = "Clean the documentation artifacts."
+skip_install = true
+
+[tool.tox.envs.covclean]
+commands = [
+    "coverage erase"
+]
+deps = [".[tests]"]
+description = "Clean coverage files."
+skip_install = true
+
+[tool.tox.envs.coverage]
+commands = [
+    "coverage report --omit=\"tox/*\"",
+    "coverage xml --omit=\"tox/*\" -o {toxinidir}/coverage.xml",
+    "diff-cover --compare-branch origin/main {toxinidir}/coverage.xml"
+]
+depends = "py{39,310,311,312,313}"
+deps = [".[tests]"]
+description = "Report the coverage difference."
+parallel_show_output = true
+skip_install = true
+
+[tool.tox.envs.docs]
+allowlist_externals = ["uv"]
+commands = [
+    "uv sync --extra docs",
+    "uv run sphinx-build --color -b html {toxinidir}/docs/source {toxinidir}/docs/build/html",
+    "python -c 'import pathlib; print(f\"Documentation is available under:\", pathlib.Path(f\"{toxinidir}\") / \"docs\" / \"build\" / \"html\" / \"index.html\")'"
+]
+description = "Build the documentation."
+skip_install = true
+
+[tool.tox.envs.lint]
+commands = [
+    "pre-commit run --all-files --show-diff-on-failure {posargs:}"
+]
+deps = [".[dev]"]
+description = "Perform linting."
+skip_install = true
+
+[tool.tox.envs.py313]
+setenv = "_PYTEST_TOX_POSARGS=--log-cli-level=ERROR"
+
+[tool.tox.envs.readme]
+allowlist_externals = ["uv"]
+commands = [
+    "uv build --wheel --out-dir {envtmpdir}/build",
+    "twine check {envtmpdir}/build/*"
+]
+deps = [".[dev]"]
+description = "Check if README renders on PyPI."
+skip_install = true
+
+[tool.tox-gh-actions]
+env = [
+    "py313: covclean, lint, coverage, readme, docs"
+]
+python = [
+    "3.9: py39",
+    "3.10: py310",
+    "3.11: py311",
+    "3.12: py312",
+    "3.13: py313"
+]
+
+[tool.uv.sources]
+jupyter-contrib-nbextensions = {git = "https://github.com/deeenes/jupyter_contrib_nbextensions.git", branch = "master"}
+nbsphinx = {git = "https://github.com/deeenes/nbsphinx", branch = "timings"}
+
