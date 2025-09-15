@@ -1080,7 +1080,7 @@ class IncidenceGraph:
     def _upsert_row(self, df: pd.DataFrame, idx, attrs: dict) -> None:
         """
         In-place upsert into a DataFrame by index (supports MultiIndex).
-        - Creates missing columns on the fly
+        - Creates missing columns on the fly (object dtype for mixed payloads)
         - Validates index shape
         - No-op on empty attrs
         """
@@ -1095,19 +1095,18 @@ class IncidenceGraph:
                     f"with names={df.index.names}"
                 )
 
-        # Ensure columns exist before assignment
-        missing_cols = [k for k in attrs.keys() if k not in df.columns]
-        if missing_cols:
-            # create missing columns with NaN
-            for col in missing_cols:
-                df[col] = pd.NA
+        # Ensure columns exist with object dtype (so we can store dict/Attributes)
+        for col in attrs.keys():
+            if col not in df.columns:
+                df[col] = pd.Series(dtype="object")
 
         # Upsert
         if idx in df.index:
+            # IMPORTANT: use .at for scalar assignment to avoid Series alignment issues
             for k, v in attrs.items():
-                df.loc[idx, k] = v
+                df.at[idx, k] = v
         else:
-            # build a full row dict with existing columns set to NA, then overlay attrs
+            # Build a full row dict with existing columns set to NA, then overlay attrs
             row = {c: pd.NA for c in df.columns}
             row.update(attrs)
             df.loc[idx] = row
