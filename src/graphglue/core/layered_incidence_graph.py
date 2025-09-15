@@ -1362,4 +1362,8 @@ class IncidenceGraph:
         # 3) set layer metadata (copy only this layer as 'default')
         lg.set_layer_attrs(layer_id, **self.get_layer_info(layer_id)["attributes"])
         return lg
+    def add_edge_to_layer(self, lid, eid):
+        if lid not in self._layers:
+            raise KeyError(f"Layer {lid} does not exist")
+        self._layers[lid]["edges"].add(eid)
 
