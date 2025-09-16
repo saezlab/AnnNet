@@ -1,4 +1,3 @@
-# adapters/networkx.py
 from typing import Any
 from enum import Enum
 import json
@@ -184,7 +183,7 @@ def to_nx(adapter_graph: IncidenceAdapter, directed=True,
             out[v] = _coeff_from_obj(val)
         return out
 
-    # ---- collect vertex & edge attrs (as you had)
+    # ---- collect vertex & edge attrs
     vertex_attrs = {v: _attrs_to_dict(adapter_graph.get_attr_vertex(v)) for v in adapter_graph.V}
 
     edge_attrs = {}
@@ -228,7 +227,7 @@ def to_nx(adapter_graph: IncidenceAdapter, directed=True,
                 manifest_edges[eid] = (head_map, tail_map, "hyper")
 
         manifest = {
-            "edges": manifest_edges,                                   # structural (fixed)
+            "edges": manifest_edges,                                   # structural
             "weights": deep.edge_weights.copy(),                       # global weights
             "layers": {
                 lid: list(deep.get_layer_edges(lid))                   # presence per layer
