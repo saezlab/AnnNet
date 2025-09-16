@@ -52,6 +52,34 @@ class TestNetworkXAdapter(unittest.TestCase):
                 set(self.H.deep.get_layer_edges(lid)),
                 set(H2.deep.get_layer_edges(lid))
             )
+    def test_hyperedge_manifest_preserved(self):
+        # Build a tiny graph with a hyperedge only
+        H = IncidenceAdapter()
+        H.add_vertices(["U", "V", "W", "X"])
+        # hyperedge: {U:2, V:1} -> {W:4, X:1}
+        H.add_edge({"U": 2, "V": 1}, {"W": 4, "X": 1}, label="hv")
+
+        nxG, manifest = to_nx(H, directed=True, hyperedge_mode="skip", public_only=False)
+
+        # NX view may have 0 edges (we skipped hyperedges), but manifest must preserve them
+        self.assertTrue(any(v for v in manifest.get("edges", {}).values() if v[-1] == "hyper"))
+
+        # Reimport and ensure we still have at least one edge column (backend represents hyperedges internally)
+        H2 = from_nx(nxG, manifest)
+        self.assertGreaterEqual(H2.num_edges, 1)
+
+    def test_public_only_filter_strips_internal_attrs(self):
+        H = IncidenceAdapter()
+        H.add_vertices(["A", "B"])
+        H.add_edge({"A"}, {"B"}, weight=1.23, label="x")
+
+        nxG, _ = to_nx(H, directed=True, hyperedge_mode="skip", public_only=True)
+
+        # Internal keys (like __edge_type, __source_attr, __target_attr) should be stripped
+        for _, _, d in nxG.edges(data=True):
+            self.assertIn("weight", d)
+            self.assertIn("label", d)
+            self.assertFalse(any(str(k).startswith("__") for k in d.keys()))
 
 
 if __name__ == "__main__":
