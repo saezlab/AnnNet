@@ -69,29 +69,49 @@ class IncidenceGraph:
         self._next_edge_id += 1
         return edge_id
     
+
+    def _ensure_node_table(self) -> None:
+        df = getattr(self, "node_attributes", None)
+        if not isinstance(df, pl.DataFrame) or "node_id" not in df.columns:
+            self.node_attributes = pl.DataFrame({"node_id": pl.Series([], dtype=pl.Utf8)})
+
+    def _ensure_node_row(self, node_id: str) -> None:
+        df = self.node_attributes
+        if df.filter(pl.col("node_id") == node_id).height == 0:
+            self.node_attributes = pl.concat(
+                [df, pl.DataFrame({"node_id": [node_id]})],
+                how="vertical_relaxed",
+            )
+
+
     def add_node(self, node_id, layer=None, **attributes):
         layer = layer or self._current_layer
-        
+
         # Add to global superset if new
         if node_id not in self.entity_to_idx:
             idx = self._num_entities
             self.entity_to_idx[node_id] = idx
             self.idx_to_entity[idx] = node_id
-            self.entity_types[node_id] = 'node'
+            self.entity_types[node_id] = "node"
             self._num_entities += 1
-            
             # Resize incidence matrix
             self._matrix.resize((self._num_entities, self._num_edges))
-        
+
         # Add to specified layer
         if layer not in self._layers:
             self._layers[layer] = {"nodes": set(), "edges": set(), "attributes": {}}
-        
         self._layers[layer]["nodes"].add(node_id)
-        
-        # Add attributes
+
+        # Ensure node_attributes has a row for this node (even with no attrs)
+        self._ensure_node_table()
+        self._ensure_node_row(node_id)
+
+        # Upsert passed attributes (if any)
         if attributes:
-            self.set_node_attrs(node_id, **attributes)
+            self.node_attributes = self._upsert_row(self.node_attributes, node_id, attributes)
+
+        return node_id
+
 
     
     def add_edge(
