@@ -5,9 +5,11 @@ import json
 
 try:
     import igraph as ig  # python-igraph
-except Exception as e:  # pragma: no cover
-    raise RuntimeError("python-igraph is required: pip install igraph") from e
-
+except ModuleNotFoundError as e:  # pragma: no cover
+    raise ModuleNotFoundError(
+        "Optional dependency 'python-igraph' is not installed. "
+        "Install with: pip install graphglue[igraph]"
+    ) from e
 from ..core._base import BaseGraph  # types
 from ..core.adapter import IncidenceAdapter  # backend
 

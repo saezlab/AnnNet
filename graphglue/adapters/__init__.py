@@ -1,11 +1,30 @@
-from .networkx import *
-from .igraph import *
-from .graphtool import *
-from .corneto import *
+from importlib import import_module, util
 
-__all__ = ["networkx", "igraph"] # ..., "igraph", "graphtool", "corneto"]
+__all__ = ["available_backends", "load_adapter"]
 
-# N.B. Oomit adapters.* from __all__ if you expect users to use G.to_networkx() rather than directly touching graphglue.adapters.network
+# name -> (pip_import_name, submodule, class_name)
+_BACKENDS = {
+    "networkx": ("networkx", ".networkx", "NetworkXAdapter"),
+    "igraph": ("igraph", ".igraph", "IGraphAdapter"),  # pip pkg is python-igraph; import is igraph
+}
+
+def _is_installed(name: str, modname: str) -> bool:
+    return util.find_spec(modname) is not None
+
+def available_backends() -> dict:
+    return {name: _is_installed(name, mod) for name, (mod, _, _) in _BACKENDS.items()}
+
+def load_adapter(name: str, *args, **kwargs):
+    if name not in _BACKENDS:
+        raise ValueError(f"Unknown adapter '{name}'")
+    modname, submod, cls = _BACKENDS[name]
+    if not _is_installed(name, modname):
+        raise ModuleNotFoundError(
+            f"Optional backend '{name}' is not installed. "
+            f"Install with `pip install graphglue[{name}]`."
+        )
+    mod = import_module(__name__ + submod)
+    return getattr(mod, cls)(*args, **kwargs)
 
 """
 Standardize via adapter pattern with shared interface + fallback to edge list + attributes.

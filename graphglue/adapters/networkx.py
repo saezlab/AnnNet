@@ -1,7 +1,14 @@
+try:
+    import networkx as nx
+except ModuleNotFoundError as e:  # only triggered if this module is imported without the extra
+    raise ModuleNotFoundError(
+        "Optional dependency 'networkx' is not installed. "
+        "Install with: pip install graphglue[networkx]"
+    ) from e
+
 from typing import Any
 from enum import Enum
 import json
-import networkx as nx
 
 from ..core._base import BaseGraph, EdgeType, Attr, Attributes
 from ..core.adapter import IncidenceAdapter   # backend
