@@ -3,7 +3,7 @@ from .igraph import *
 from .graphtool import *
 from .corneto import *
 
-__all__ = ["networkx"] # ..., "igraph", "graphtool", "corneto"]
+__all__ = ["networkx", "igraph"] # ..., "igraph", "graphtool", "corneto"]
 
 # N.B. Oomit adapters.* from __all__ if you expect users to use G.to_networkx() rather than directly touching graphglue.adapters.network
 

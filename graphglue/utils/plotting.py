@@ -6,6 +6,24 @@ import numpy as np
 
 from ..core._graph import Attr, BaseGraph, EdgeType
 
+# tiny colormap & normalize utilities
+def _normalize(values, lo=None, hi=None, eps=1e-12):
+    arr = np.asarray(values, dtype=float)
+    if arr.size == 0:
+        return arr
+    if lo is None: lo = np.nanmin(arr)
+    if hi is None: hi = np.nanmax(arr)
+    if not np.isfinite(lo): lo = 0.0
+    if not np.isfinite(hi): hi = 1.0
+    denom = max(hi - lo, eps)
+    return (arr - lo) / denom
+
+def _greyscale(v):
+    # v in [0,1] -> hex grey
+    v = float(np.clip(v, 0.0, 1.0))
+    c = int(round(v * 255))
+    return f"#{c:02x}{c:02x}{c:02x}"
+
 
 def suppress_repr_warnings(g):
     """Monkey-patch the _repr_* methods of an object instance (e.g. a graphviz.Digraph)
@@ -439,3 +457,223 @@ def to_graphviz(
         )
     else:
         raise ValueError("Unknown backend specified. Must be 'graphviz' or 'pydot'.")
+    
+# pull effective (layer-aware) weights from an IncidenceAdapter
+def edge_weights_for_layer(graph: BaseGraph, layer: Optional[str] = None):
+    """
+    Returns a dict {edge_index -> weight} using deep weights if available.
+    If 'layer' is provided and backend supports layer overrides, use the effective per-layer weight.
+    Fallback: 1.0 for edges missing weights.
+    """
+    w = {}
+    deep = getattr(graph, "deep", None)
+    for eidx, _ in graph.edges():
+        if deep is None:
+            w[eidx] = 1.0
+            continue
+        try:
+            # prefer stable eid, then compute effective weight if layer provided
+            eid = deep.idx_to_edge[eidx]
+            if layer:
+                # backend method should exist in your incidence graph
+                w[eidx] = float(deep.get_effective_edge_weight(eid, layer=layer))
+            else:
+                w[eidx] = float(deep.edge_weights.get(eid, 1.0))
+        except Exception:
+            w[eidx] = 1.0
+    return w
+
+# label helpers (opt-in)
+def build_edge_labels(graph: BaseGraph, use_weight=True, extra_keys=None, layer=None):
+    """
+    Returns {edge_index: 'label'} optionally including weight and selected attributes.
+    """
+    extra_keys = extra_keys or []
+    labels = {}
+    w = edge_weights_for_layer(graph, layer=layer) if use_weight else {}
+    for eidx, _ in graph.edges():
+        parts = []
+        if use_weight and eidx in w:
+            parts.append(f"w={w[eidx]:.3g}")
+        if extra_keys:
+            attrs = graph.get_attr_edge(eidx)
+            for k in extra_keys:
+                if k in attrs and attrs[k] is not None and not (isinstance(attrs[k], float) and np.isnan(attrs[k])):
+                    parts.append(f"{k}={attrs[k]}")
+        if parts:
+            labels[eidx] = "\\n".join(parts)  # graphviz-friendly
+    return labels
+
+def build_vertex_labels(graph: BaseGraph, key=None):
+    """
+    If key is provided, use vertex attribute 'key' as label; else use vertex id.
+    """
+    labels = {}
+    for v in graph.V:
+        if key is None:
+            labels[str(v)] = str(v)
+        else:
+            attrs = graph.get_attr_vertex(v)
+            labels[str(v)] = str(attrs.get(key, v))
+    return labels
+
+# weight-driven edge styling (overrides create_graphviz_edge_attributes if you like)
+def edge_style_from_weights(graph: BaseGraph,
+                            layer: Optional[str] = None,
+                            min_width: float = 0.5,
+                            max_width: float = 5.0,
+                            color_mode: str = "greys"):  # or "signed"
+    """
+    Returns {edge_index: {penwidth, color}} using (layer-aware) weights.
+    'greys' maps |w| to grey intensity; 'signed' uses red/blue for +/-.
+    """
+    weights = edge_weights_for_layer(graph, layer=layer)
+    if not weights:
+        return {}
+    eidxs = sorted(weights.keys())
+    vals = np.array([abs(weights[i]) for i in eidxs], dtype=float)
+    x = _normalize(vals)
+    styles = {}
+    for i, v, xv in zip(eidxs, vals, x):
+        pen = min_width + xv * (max_width - min_width)
+        if color_mode == "signed":
+            raw = float(weights[i])
+            color = "firebrick4" if raw > 0 else ("dodgerblue4" if raw < 0 else "black")
+        else:
+            color = _greyscale(1.0 - xv)  # heavier => darker
+        styles[i] = {"penwidth": f"{pen:.3f}", "color": color}
+    return styles
+
+# one-call plotting API
+def plot(graph: BaseGraph,
+         backend: Literal["graphviz","pydot"] = "graphviz",
+         layout: str = "dot",
+         layer: Optional[str] = None,
+         show_edge_labels: bool = False,
+         edge_label_keys: Optional[List[str]] = None,
+         show_vertex_labels: bool = True,
+         vertex_label_key: Optional[str] = None,
+         use_weight_style: bool = True,
+         orphan_edges: bool = True,
+         suppress_warnings: bool = True,
+         **kwargs):
+    """
+    Return a graph object (graphviz.Digraph or pydot.Dot) ready to render().
+    - layer: use layer-aware weights for styling if backend supports it.
+    - show_edge_labels: overlay weight and/or selected attributes.
+    - show_vertex_labels: render vertex ids or a vertex attribute as label.
+    """
+    # Build base styling
+    custom_edge_attr = {}
+    if use_weight_style:
+        custom_edge_attr = edge_style_from_weights(graph, layer=layer)
+
+    # Vertex labels (for graphviz: we set node labels via custom_vertex_attr)
+    custom_vertex_attr = None
+    if show_vertex_labels:
+        vlabels = build_vertex_labels(graph, key=vertex_label_key)
+        custom_vertex_attr = {k: {"label": v} for k, v in vlabels.items()}
+
+    # Choose backend
+    if backend == "graphviz":
+        g = to_python_graphviz(
+            graph,
+            graph_attr=kwargs.get("graph_attr"),
+            node_attr=kwargs.get("node_attr"),
+            edge_attr=kwargs.get("edge_attr"),
+            custom_edge_attr=custom_edge_attr,
+            custom_vertex_attr=custom_vertex_attr,
+            edge_indexes=kwargs.get("edge_indexes"),
+            layout=layout,
+            orphan_edges=orphan_edges,
+            supress_warnings=suppress_warnings,  # preserve your param name
+        )
+        # Edge labels (graphviz attaches labels on edges directly)
+        if show_edge_labels:
+            elabels = build_edge_labels(graph, use_weight=True, extra_keys=edge_label_keys, layer=layer)
+            # reapply labels to edges by creating parallel unlabeled edges is awkward;
+            # here we add 'label' to custom_edge_attr and re-render quickly:
+            for eidx, (s, t) in graph.edges():
+                if eidx in elabels:
+                    if eidx not in custom_edge_attr:
+                        custom_edge_attr[eidx] = {}
+                    custom_edge_attr[eidx]["label"] = elabels[eidx]
+            # rebuild with labels (cheap for small graphs)
+            g = to_python_graphviz(
+                graph,
+                graph_attr=kwargs.get("graph_attr"),
+                node_attr=kwargs.get("node_attr"),
+                edge_attr=kwargs.get("edge_attr"),
+                custom_edge_attr=custom_edge_attr,
+                custom_vertex_attr=custom_vertex_attr,
+                edge_indexes=kwargs.get("edge_indexes"),
+                layout=layout,
+                orphan_edges=orphan_edges,
+                supress_warnings=suppress_warnings,
+            )
+        return g
+
+    elif backend == "pydot":
+        g = to_pydot(
+            graph,
+            graph_attr=kwargs.get("graph_attr"),
+            node_attr=kwargs.get("node_attr"),
+            edge_attr=kwargs.get("edge_attr"),
+            custom_edge_attr=custom_edge_attr,
+            custom_vertex_attr=custom_vertex_attr,
+            edge_indexes=kwargs.get("edge_indexes"),
+            layout=layout,
+            orphan_edges=orphan_edges,
+        )
+        # pydot edge labels
+        if show_edge_labels:
+            elabels = build_edge_labels(graph, use_weight=True, extra_keys=edge_label_keys, layer=layer)
+            # mutate edges to add labels
+            for eidx, (s, t) in graph.edges():
+                if eidx in elabels:
+                    # pydot uses string node names
+                    sv = next(iter(s)) if len(s) else f"e_{eidx}_source"
+                    tv = next(iter(t)) if len(t) else f"e_{eidx}_target"
+                    # There may be multiple edges; simplest is to add another edge with label
+                    import pydot
+                    g.add_edge(pydot.Edge(str(sv), str(tv), label=elabels[eidx]))
+        return g
+
+    else:
+        raise ValueError("backend must be 'graphviz' or 'pydot'")
+
+# convenience renderer
+def render(obj, path: str, format: str = "svg"):
+    """
+    Render a graphviz.Digraph or pydot.Dot to disk.
+    Returns the output path.
+    """
+    kind = obj.__class__.__module__
+    if "graphviz" in kind:
+        # graphviz.Digraph
+        return obj.render(path, format=format, cleanup=True)
+    elif "pydot" in kind:
+        # pydot requires write_* by format
+        if format.lower() == "png":
+            obj.write_png(path if path.lower().endswith(".png") else f"{path}.png")
+            return path if path.lower().endswith(".png") else f"{path}.png"
+        elif format.lower() in ("svg",):
+            obj.write_svg(path if path.lower().endswith(".svg") else f"{path}.svg")
+            return path if path.lower().endswith(".svg") else f"{path}.svg"
+        else:
+            obj.write_raw(path)
+            return path
+    else:
+        raise TypeError("Unknown graph object; expected graphviz.Digraph or pydot.Dot")
+
+
+
+
+
+
+
+
+
+
+
+
