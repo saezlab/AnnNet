@@ -11,8 +11,6 @@ def _safe_edge_attrs_dict(G: IncidenceGraph, eid: str) -> dict:
             rows = G.edge_attributes.filter(pl.col("edge_id") == eid)
             row = rows.to_dicts()[0] if rows.height else {}
             row.pop("edge_id", None)
-        else:  # Pandas fallback
-            row = G.edge_attributes.loc[eid].to_dict()
     except Exception:
         row = {}
     return {k: v for k, v in row.items() if v is not None and v == v}
