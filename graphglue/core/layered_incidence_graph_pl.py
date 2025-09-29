@@ -176,7 +176,7 @@ class IncidenceGraph:
 
                 # if source/target changed, update definition
                 old_src, old_tgt, old_type = self.edge_definitions[edge_id]
-                self.edge_definitions[edge_id] = (source, target, old_type)  # keep old_type by design
+                self.edge_definitions[edge_id] = (source, target, old_type)  # keep old_type by default
 
                 # ensure matrix has enough rows (in case nodes were added since creation)
                 if self._matrix.shape[0] < self._num_entities:
@@ -314,10 +314,10 @@ class IncidenceGraph:
             if not directed:
                 raise ValueError("Undirected=False conflicts with head/tail.")
 
-        # ---- set layer ----
+        # set layer
         layer = self._current_layer if layer is None else layer
 
-        # ---- ensure participants exist globally (nodes or edge-entities already supported) ----
+        # ensure participants exist globally (nodes or edge-entities already supported)
         def _ensure_entity(x):
             if x in self.entity_to_idx:
                 return
@@ -335,7 +335,7 @@ class IncidenceGraph:
             for u in head + tail:
                 _ensure_entity(u)
 
-        # ---- allocate edge id + column ----
+        # allocate edge id + column
         if edge_id is None:
             edge_id = self._get_next_edge_id()
         is_new = edge_id not in self.edge_to_idx
@@ -351,7 +351,7 @@ class IncidenceGraph:
             # zero out old column if reusing id
             self._matrix[:, col_idx] = 0
 
-        # ---- write column entries ----
+        # write column entries
         if members is not None:
             # undirected: put +weight at each member
             for u in members:
@@ -372,7 +372,7 @@ class IncidenceGraph:
                 "tail": set(tail),
             }
 
-        # ---- bookkeeping shared with binary edges ----
+        # bookkeeping shared with binary edges
         self.edge_weights[edge_id] = float(weight)
         self.edge_directed[edge_id] = bool(directed)
         self.edge_kind[edge_id] = "hyper"
@@ -391,7 +391,7 @@ class IncidenceGraph:
                 self._layers[layer]["nodes"].update(self.hyperedge_definitions[edge_id]["head"])
                 self._layers[layer]["nodes"].update(self.hyperedge_definitions[edge_id]["tail"])
 
-        # attributes (pure, non-structural)
+        # attributes
         if attributes:
             self.set_edge_attrs(edge_id, **attributes)
 
@@ -440,7 +440,7 @@ class IncidenceGraph:
         self.idx_to_edge = new_idx_to_edge
         self._num_edges -= 1
 
-        # Remove from edge attributes (Polars)
+        # Remove from edge attributes
         if isinstance(self.edge_attributes, pl.DataFrame) and self.edge_attributes.height > 0 and "edge_id" in self.edge_attributes.columns:
             self.edge_attributes = self.edge_attributes.filter(pl.col("edge_id") != edge_id)
 
@@ -448,7 +448,7 @@ class IncidenceGraph:
         for layer_data in self._layers.values():
             layer_data["edges"].discard(edge_id)
 
-        # Remove from edge-layer attributes (Polars)
+        # Remove from edge-layer attributes
         if isinstance(self.edge_layer_attributes, pl.DataFrame) and self.edge_layer_attributes.height > 0 and "edge_id" in self.edge_layer_attributes.columns:
             self.edge_layer_attributes = self.edge_layer_attributes.filter(pl.col("edge_id") != edge_id)
 
@@ -466,7 +466,7 @@ class IncidenceGraph:
 
         entity_idx = self.entity_to_idx[node_id]
 
-        # Collect incident edges (use a set to avoid duplicates)
+        # Collect incident edges (set to avoid duplicates)
         edges_to_remove = set()
 
         # Binary edges: edge_definitions {eid: (source, target, ...)}
@@ -529,7 +529,7 @@ class IncidenceGraph:
         self.idx_to_entity = new_idx_to_entity
         self._num_entities -= 1
 
-        # Remove from node attributes (Polars DataFrame)
+        # Remove from node attributes
         if isinstance(self.node_attributes, pl.DataFrame):
             if self.node_attributes.height > 0 and "node_id" in self.node_attributes.columns:
                 self.node_attributes = self.node_attributes.filter(pl.col("node_id") != node_id)
@@ -727,20 +727,24 @@ class IncidenceGraph:
         return new_graph
 
     def memory_usage(self):
-        matrix_bytes = self._matrix.nnz * (4 + 4 + 4)  # DOK (dictionary of keys) -> approx
+        # Approximate matrix memory: each non-zero entry stores row, col, and value (4 bytes each)
+        matrix_bytes = self._matrix.nnz * (4 + 4 + 4)
+        # Estimate dict memory: ~100 bytes per entry
         dict_bytes = (len(self.entity_to_idx) + len(self.edge_to_idx) + len(self.edge_weights)) * 100
+        
         df_bytes = 0
-        # Node attrs
+
+        # Node attributes
         if isinstance(self.node_attributes, pl.DataFrame):
-            df_bytes += self.node_attributes.to_pandas().memory_usage(deep=True).sum()
-        elif hasattr(self.node_attributes, "memory_usage"):  # Pandas fallback
-            df_bytes += self.node_attributes.memory_usage(deep=True).sum()
-        # Edge attrs
+            # Polars provides a built-in estimate of total size in bytes
+            df_bytes += self.node_attributes.estimated_size()
+
+        # Edge attributes
         if isinstance(self.edge_attributes, pl.DataFrame):
-            df_bytes += self.edge_attributes.to_pandas().memory_usage(deep=True).sum()
-        elif hasattr(self.edge_attributes, "memory_usage"):
-            df_bytes += self.edge_attributes.memory_usage(deep=True).sum()
+            df_bytes += self.edge_attributes.estimated_size()
+
         return matrix_bytes + dict_bytes + df_bytes
+
     
     def get_node_attribute(self, node_id, attribute):
         """Polars-only: returns scalar or None."""
@@ -1150,41 +1154,20 @@ class IncidenceGraph:
         if layer_id not in self._layers:
             raise KeyError(f"Layer {layer_id} not found")
 
-        # Purge per-layer attributes (works for Polars or Pandas)
+        # Purge per-layer attributes
         ela = getattr(self, "edge_layer_attributes", None)
-        if ela is not None:
-            # Try Polars first
-            try:
-                import polars as pl  # optional; only if Polars is used
-            except Exception:
-                pl = None
-            if pl is not None and isinstance(ela, pl.DataFrame):
-                if ela.height > 0 and "layer_id" in ela.columns:
-                    self.edge_layer_attributes = ela.filter(pl.col("layer_id") != layer_id)
-            else:
-                # Pandas fallback
-                try:
-                    import pandas as pd  # optional; only if Pandas is used
-                except Exception:
-                    pd = None
-                if pd is not None and isinstance(ela, pd.DataFrame):
-                    if not ela.empty:
-                        if "layer_id" in ela.columns:
-                            self.edge_layer_attributes = ela[ela["layer_id"] != layer_id]
-                        elif getattr(ela.index, "names", None) and "layer_id" in ela.index.names:
-                            mask = ela.index.get_level_values("layer_id") != layer_id
-                            self.edge_layer_attributes = ela[mask]
+        if isinstance(ela, pl.DataFrame) and ela.height > 0 and "layer_id" in ela.columns:
+            # Keep everything not matching the layer_id
+            self.edge_layer_attributes = ela.filter(pl.col("layer_id") != layer_id)
 
-        # Drop legacy dict slice
-        if hasattr(self, "layer_edge_weights") and isinstance(self.layer_edge_weights, dict):
+        # Drop legacy dict slice if present
+        if isinstance(getattr(self, "layer_edge_weights", None), dict):
             self.layer_edge_weights.pop(layer_id, None)
 
         # Remove the layer and reset current if needed
         del self._layers[layer_id]
         if self._current_layer == layer_id:
             self._current_layer = self._default_layer
-
-
 
     def get_layer_info(self, layer_id):
         """Get layer information."""
@@ -1231,7 +1214,7 @@ class IncidenceGraph:
         return bool(self.edge_directed.get(edge_id, self.directed))
 
     # ---- Attribute helpers ----
-    _NODE_RESERVED = {"node_id"}               # nothing structural for nodes (for now)
+    _NODE_RESERVED = {"node_id"}               # nothing structural for nodes
     _EDGE_RESERVED = {"edge_id","source","target","weight","edge_type","directed","layer","layer_weight","kind","members","head","tail"}    
     _LAYER_RESERVED = {"layer_id"}
 
@@ -1241,7 +1224,7 @@ class IncidenceGraph:
         if isinstance(v, bool): return pl.Boolean
         if isinstance(v, int) and not isinstance(v, bool): return pl.Int64
         if isinstance(v, float): return pl.Float64
-        if isinstance(v, enum.Enum): return pl.Object     # <-- important for EdgeType
+        if isinstance(v, enum.Enum): return pl.Object     # important for EdgeType
         if isinstance(v, (bytes, bytearray)): return pl.Binary
         if isinstance(v, (list, tuple)):
             inner = self._pl_dtype_for_value(v[0]) if len(v) else pl.Utf8
@@ -1260,7 +1243,7 @@ class IncidenceGraph:
                 cur = schema[col]
                 if cur == pl.Null and target != pl.Null:
                     df = df.with_columns(pl.col(col).cast(target))
-                # if you expect mixed types over time, upcast to Utf8:
+                # if mixed types are expected over time, upcast to Utf8:
                 elif cur != target and target != pl.Null:
                     # upcast both sides to Utf8 to avoid schema conflicts
                     df = df.with_columns(pl.col(col).cast(pl.Utf8))
@@ -1311,7 +1294,7 @@ class IncidenceGraph:
         exists = df.filter(cond).height > 0
 
         if exists:
-            # UPDATE: cast literal to column dtype to avoid type conflicts
+            # cast literal to column dtype to avoid type conflicts
             upds = []
             for k, v in attrs.items():
                 col_dtype = df.schema[k]
@@ -1336,7 +1319,7 @@ class IncidenceGraph:
             if c not in to_append.columns:
                 to_append = to_append.with_columns(pl.lit(None).cast(df.schema[c]).alias(c))
 
-        # 2) cast Null columns in df to incoming dtypes (and resolve mismatches by upcasting to Utf8)
+        # 2) cast Null columns in df to incoming dtypes and resolve mismatches by upcasting to Utf8
         for c in df.columns:
             if c not in to_append.columns:
                 continue
@@ -1549,7 +1532,7 @@ class IncidenceGraph:
                     if (("members" in meta) and (entity_id in meta["members"])):
                         out |= (meta["members"] - {entity_id})
             else:
-                # binary / node_edge (existing behavior)
+                # binary / node_edge
                 s, t, _ = self.edge_definitions[eid]
                 edir = self.edge_directed.get(eid, self.directed)
                 if s == entity_id:
