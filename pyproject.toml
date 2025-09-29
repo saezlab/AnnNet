@@ -104,7 +104,7 @@ maintainers = [
 ]
 name = "graphglue"
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.11,<3.15"
 version = "0.0.1"
 
 [project.optional-dependencies]
