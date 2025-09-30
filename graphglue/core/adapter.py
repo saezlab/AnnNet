@@ -1,6 +1,6 @@
 from typing import Iterator, Optional
 from ._base import BaseGraph, Edge, EdgeType, Attributes
-from .layered_incidence_graph_pl import IncidenceGraph
+from .incgraph import IncidenceGraph
 import polars as pl
 from ..utils.typing import Attr, Attributes
 from .structure import EdgeType

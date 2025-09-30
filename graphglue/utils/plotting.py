@@ -59,7 +59,7 @@ def clip_quantiles(arr, q):
 
 def vertex_style(
     P,
-    G: Optional[BaseGraph] = None,  # TODO: G should not be required
+    G: Optional[BaseGraph ] = None,  # TODO: G should not be required
     vertex_var: str = "vertex_values",
     negative_color: str = "dodgerblue4",
     positive_color: str = "firebrick4",
@@ -246,7 +246,7 @@ def _create_vertices(g, e, vertex_props=None):
 
 
 def to_python_graphviz(
-    graph: BaseGraph,
+    graph: BaseGraph ,
     graph_attr: Optional[Dict[str, str]] = None,
     node_attr: Optional[Dict[str, str]] = None,
     edge_attr: Optional[Dict[str, str]] = None,
@@ -344,7 +344,7 @@ def _pydot_create_vertices(g, e, vertex_props=None):
 
 
 def to_pydot(
-    graph: BaseGraph,
+    graph: BaseGraph ,
     graph_attr: Optional[Dict[str, str]] = None,
     node_attr: Optional[Dict[str, str]] = None,
     edge_attr: Optional[Dict[str, str]] = None,
@@ -413,7 +413,7 @@ def to_pydot(
 
 
 def to_graphviz(
-    graph: BaseGraph,
+    graph: BaseGraph ,
     graph_attr: Optional[Dict[str, str]] = None,
     node_attr: Optional[Dict[str, str]] = None,
     edge_attr: Optional[Dict[str, str]] = None,
@@ -459,7 +459,7 @@ def to_graphviz(
         raise ValueError("Unknown backend specified. Must be 'graphviz' or 'pydot'.")
     
 # pull effective (layer-aware) weights from an IncidenceAdapter
-def edge_weights_for_layer(graph: BaseGraph, layer: Optional[str] = None):
+def edge_weights_for_layer(graph: BaseGraph , layer: Optional[str] = None):
     """
     Returns a dict {edge_index -> weight} using deep weights if available.
     If 'layer' is provided and backend supports layer overrides, use the effective per-layer weight.
@@ -484,7 +484,7 @@ def edge_weights_for_layer(graph: BaseGraph, layer: Optional[str] = None):
     return w
 
 # label helpers (opt-in)
-def build_edge_labels(graph: BaseGraph, use_weight=True, extra_keys=None, layer=None):
+def build_edge_labels(graph: BaseGraph , use_weight=True, extra_keys=None, layer=None):
     """
     Returns {edge_index: 'label'} optionally including weight and selected attributes.
     """
@@ -504,7 +504,7 @@ def build_edge_labels(graph: BaseGraph, use_weight=True, extra_keys=None, layer=
             labels[eidx] = "\\n".join(parts)  # graphviz-friendly
     return labels
 
-def build_vertex_labels(graph: BaseGraph, key=None):
+def build_vertex_labels(graph: BaseGraph , key=None):
     """
     If key is provided, use vertex attribute 'key' as label; else use vertex id.
     """
@@ -518,7 +518,7 @@ def build_vertex_labels(graph: BaseGraph, key=None):
     return labels
 
 # weight-driven edge styling (overrides create_graphviz_edge_attributes if you like)
-def edge_style_from_weights(graph: BaseGraph,
+def edge_style_from_weights(graph: BaseGraph ,
                             layer: Optional[str] = None,
                             min_width: float = 0.5,
                             max_width: float = 5.0,
@@ -545,7 +545,7 @@ def edge_style_from_weights(graph: BaseGraph,
     return styles
 
 # one-call plotting API
-def plot(graph: BaseGraph,
+def plot(graph: BaseGraph ,
          backend: Literal["graphviz","pydot"] = "graphviz",
          layout: str = "dot",
          layer: Optional[str] = None,
