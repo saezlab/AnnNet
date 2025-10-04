@@ -5,7 +5,7 @@ from typing import Optional, Union
 
 import polars as pl
 
-from ..core.incgraph import IncidenceGraph
+from ..core.graph import IncidenceGraph
 
 
 def load_excel_to_graph(

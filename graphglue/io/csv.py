@@ -39,7 +39,7 @@ import re
 import polars as pl
 import numpy as np
 
-from ..core.incgraph import IncidenceGraph
+from ..core.graph import IncidenceGraph
 
 # ---------------------------
 # Helpers / parsing utilities

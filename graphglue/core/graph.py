@@ -7,9 +7,7 @@ from functools import wraps
 from datetime import datetime, timezone
 import inspect
 import time
-
 from enum import Enum
-from ._base import EdgeType
 
 class EdgeType(Enum):
     DIRECTED = "DIRECTED"
@@ -21,7 +19,7 @@ class Graph:
 
     The graph is backed by a DOK (Dictionary Of Keys) sparse matrix and exposes
     layered views and attribute tables stored as Polars DF (DataFrame). Supports:
-    nodes, binary edges (directed/undirected), edge-entities (node-edge hybrids),
+    vertices, binary edges (directed/undirected), edge-entities (vertex-edge hybrids),
     k-ary hyperedges (directed/undirected), per-layer membership and weights,
     and Polars-backed attribute upserts.
 
@@ -39,10 +37,10 @@ class Graph:
 
     See Also
     --------
-    add_node, add_edge, add_hyperedge, edges_view, nodes_view, layers_view
+    add_vertex, add_edge, add_hyperedge, edges_view, vertices_view, layers_view
     """
     # Constants (Attribute helpers)
-    _NODE_RESERVED = {"node_id"}               # nothing structural for nodes
+    _vertex_RESERVED = {"vertex_id"}               # nothing structural for vertices
     _EDGE_RESERVED = {"edge_id","source","target","weight","edge_type","directed","layer","layer_weight","kind","members","head","tail"}    
     _LAYER_RESERVED = {"layer_id"}
 
@@ -59,20 +57,20 @@ class Graph:
 
         Notes
         -----
-        - Stores entities (nodes and edge-entities), edges (including parallels), and
+        - Stores entities (vertices and edge-entities), edges (including parallels), and
         an incidence matrix in DOK (Dictionary Of Keys) sparse format.
         - Attribute tables are Polars DF (DataFrame) with canonical key columns:
-        ``node_attributes(node_id)``, ``edge_attributes(edge_id)``,
+        ``vertex_attributes(vertex_id)``, ``edge_attributes(edge_id)``,
         ``layer_attributes(layer_id)``, and
         ``edge_layer_attributes(layer_id, edge_id, weight)``.
         - A ``'default'`` layer is created and set active.
         """        
         self.directed = directed
         
-        # Entity mappings (nodes + node-edge hybrids)
+        # Entity mappings (vertices + vertex-edge hybrids)
         self.entity_to_idx = {}  # entity_id -> row index
         self.idx_to_entity = {}  # row index -> entity_id
-        self.entity_types = {}   # entity_id -> 'node' or 'edge'
+        self.entity_types = {}   # entity_id -> 'vertex' or 'edge'
         
         # Edge mappings (supports parallel edges)
         self.edge_to_idx = {}    # edge_id -> column index
@@ -87,7 +85,7 @@ class Graph:
         self._num_edges = 0
         
         # Attribute storage using polars DataFrames
-        self.node_attributes = pl.DataFrame(schema={"node_id": pl.Utf8})
+        self.vertex_attributes = pl.DataFrame(schema={"vertex_id": pl.Utf8})
         self.edge_attributes = pl.DataFrame(schema={"edge_id": pl.Utf8})
         self.layer_attributes = pl.DataFrame(schema={"layer_id": pl.Utf8})
         self.edge_layer_attributes = pl.DataFrame(
@@ -101,14 +99,14 @@ class Graph:
         self._next_edge_id = 0
 
         # Layer management - lightweight dict structure
-        self._layers = {}  # layer_id -> {"nodes": set(), "edges": set(), "attributes": {}}
+        self._layers = {}  # layer_id -> {"vertices": set(), "edges": set(), "attributes": {}}
         self._current_layer = None
         self._default_layer = 'default'
         self.layer_edge_weights = defaultdict(dict)  # layer_id -> {edge_id: weight}
 
         # Initialize default layer
         self._layers[self._default_layer] = {
-            "nodes": set(),
+            "vertices": set(),
             "edges": set(), 
             "attributes": {}
         }
@@ -148,7 +146,7 @@ class Graph:
             raise ValueError(f"Layer {layer_id} already exists")
         
         self._layers[layer_id] = {
-            "nodes": set(),
+            "vertices": set(),
             "edges": set(),
             "attributes": attributes
         }
@@ -198,7 +196,7 @@ class Graph:
         Returns
         -------
         dict[str, dict]
-            ``{layer_id: {"nodes": set, "edges": set, "attributes": dict}}``.
+            ``{layer_id: {"vertices": set, "edges": set, "attributes": dict}}``.
         """
         if include_default:
             return self._layers
@@ -255,7 +253,7 @@ class Graph:
         Returns
         -------
         dict
-            Copy of ``{"nodes": set, "edges": set, "attributes": dict}``.
+            Copy of ``{"vertices": set, "edges": set, "attributes": dict}``.
 
         Raises
         ------
@@ -281,64 +279,64 @@ class Graph:
         self._next_edge_id += 1
         return edge_id
     
-    def _ensure_node_table(self) -> None:
+    def _ensure_vertex_table(self) -> None:
         """
-        INTERNAL: Ensure the node attribute table exists with a canonical schema.
+        INTERNAL: Ensure the vertex attribute table exists with a canonical schema.
 
         Notes
         -----
-        - Creates an empty Polars DF [DataFrame] with a single ``Utf8`` ``node_id`` column
+        - Creates an empty Polars DF [DataFrame] with a single ``Utf8`` ``vertex_id`` column
         if missing or malformed.
         """        
-        df = getattr(self, "node_attributes", None)
-        if not isinstance(df, pl.DataFrame) or "node_id" not in df.columns:
-            self.node_attributes = pl.DataFrame({"node_id": pl.Series([], dtype=pl.Utf8)})
+        df = getattr(self, "vertex_attributes", None)
+        if not isinstance(df, pl.DataFrame) or "vertex_id" not in df.columns:
+            self.vertex_attributes = pl.DataFrame({"vertex_id": pl.Series([], dtype=pl.Utf8)})
 
-    def _ensure_node_row(self, node_id: str) -> None:
+    def _ensure_vertex_row(self, vertex_id: str) -> None:
         """
-        INTERNAL: Ensure a row for ``node_id`` exists in the node attribute DF.
+        INTERNAL: Ensure a row for ``vertex_id`` exists in the vertex attribute DF.
 
         Parameters
         ----------
-        node_id : str
+        vertex_id : str
 
         Notes
         -----
-        - Appends a new row with ``node_id`` and ``None`` for other columns if absent.
+        - Appends a new row with ``vertex_id`` and ``None`` for other columns if absent.
         - Preserves existing schema and columns.
         """    
-        df = self.node_attributes
+        df = self.vertex_attributes
         # if row already exists, nothing to do
-        if df.height and df.filter(pl.col("node_id") == node_id).height > 0:
+        if df.height and df.filter(pl.col("vertex_id") == vertex_id).height > 0:
             return
         if df.is_empty():
-            # Create first row with the canonical node schema
-            self.node_attributes = pl.DataFrame({"node_id": [node_id]}, schema={"node_id": pl.Utf8})
+            # Create first row with the canonical vertex schema
+            self.vertex_attributes = pl.DataFrame({"vertex_id": [vertex_id]}, schema={"vertex_id": pl.Utf8})
             return
         # Align columns: create a single dict with all columns present
         row = {c: None for c in df.columns}
-        row["node_id"] = node_id
-        self.node_attributes = pl.concat([df, pl.DataFrame([row])], how="vertical")
+        row["vertex_id"] = vertex_id
+        self.vertex_attributes = pl.concat([df, pl.DataFrame([row])], how="vertical")
 
     # Build graph
 
-    def add_node(self, node_id, layer=None, **attributes):
+    def add_vertex(self, vertex_id, layer=None, **attributes):
         """
-        Add (or upsert) a node and optionally attach it to a layer.
+        Add (or upsert) a vertex and optionally attach it to a layer.
 
         Parameters
         ----------
-        node_id : str
-            Node ID (must be unique across entities).
+        vertex_id : str
+            vertex ID (must be unique across entities).
         layer : str, optional
             Target layer. Defaults to the active layer.
         **attributes
-            Pure node attributes to store.
+            Pure vertex attributes to store.
 
         Returns
         -------
         str
-            The node ID (echoed).
+            The vertex ID (echoed).
 
         Notes
         -----
@@ -348,33 +346,76 @@ class Graph:
         layer = layer or self._current_layer
 
         # Add to global superset if new
-        if node_id not in self.entity_to_idx:
+        if vertex_id not in self.entity_to_idx:
             idx = self._num_entities
-            self.entity_to_idx[node_id] = idx
-            self.idx_to_entity[idx] = node_id
-            self.entity_types[node_id] = "node"
+            self.entity_to_idx[vertex_id] = idx
+            self.idx_to_entity[idx] = vertex_id
+            self.entity_types[vertex_id] = "vertex"
             self._num_entities += 1
             # Resize incidence matrix
             self._matrix.resize((self._num_entities, self._num_edges))
 
         # Add to specified layer
         if layer not in self._layers:
-            self._layers[layer] = {"nodes": set(), "edges": set(), "attributes": {}}
-        self._layers[layer]["nodes"].add(node_id)
+            self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
+        self._layers[layer]["vertices"].add(vertex_id)
 
-        # Ensure node_attributes has a row for this node (even with no attrs)
-        self._ensure_node_table()
-        self._ensure_node_row(node_id)
+        # Ensure vertex_attributes has a row for this vertex (even with no attrs)
+        self._ensure_vertex_table()
+        self._ensure_vertex_row(vertex_id)
 
         # Upsert passed attributes (if any)
         if attributes:
-            self.node_attributes = self._upsert_row(self.node_attributes, node_id, attributes)
+            self.vertex_attributes = self._upsert_row(self.vertex_attributes, vertex_id, attributes)
 
-        return node_id
+        return vertex_id
+
+    def add_vertices(self, vertices, layer=None, **attributes):
+        """
+        Add (or upsert) multiple vertices and optionally attach them to a layer.
+
+        Parameters
+        ----------
+        vertices : Iterable[str] | Mapping[str, dict] | Iterable[tuple[str, dict]]
+            - Iterable of vertex IDs -> the same `attributes` apply to each.
+            - Mapping vertex_id -> per-vertex attributes dict (merged with `attributes`).
+            - Iterable of (vertex_id, per_vertex_attributes) tuples.
+        layer : str, optional
+            Target layer for all vertices. Defaults to the active layer.
+        **attributes
+            Attributes applied to every vertex (overridden by per-vertex attributes when provided).
+
+        Returns
+        -------
+        list[str]
+            The list of vertex IDs (echoed in insertion order).
+        """
+        # Normalize input into an iterator of (vertex_id, per_vertex_attrs)
+        if vertices is None:
+            return []
+
+        if isinstance(vertices, dict):
+            iterator = vertices.items()
+        else:
+            iterator = []
+            for item in vertices:
+                # Allow (vertex_id, {attr: ...}) tuples
+                if isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], dict):
+                    vertex_id, per_attrs = item
+                    iterator.append((vertex_id, per_attrs))
+                else:
+                    # Treat plain values as vertex IDs with no per-vertex attrs
+                    iterator.append((item, {}))
+
+        added = []
+        for vertex_id, per_attrs in iterator:
+            merged_attrs = {**attributes, **per_attrs} if attributes or per_attrs else {}
+            added.append(self.add_vertex(vertex_id, layer=layer, **merged_attrs))
+        return added
 
     def add_edge_entity(self, edge_entity_id, layer=None, **attributes):
         """
-        Add an **edge entity** (node-edge hybrid) that can connect to nodes/edges.
+        Add an **edge entity** (vertex-edge hybrid) that can connect to vertices/edges.
 
         Parameters
         ----------
@@ -383,7 +424,7 @@ class Graph:
         layer : str, optional
             Target layer. Defaults to the active layer.
         **attributes
-            Attributes stored in the node attribute DF (treated like nodes).
+            Attributes stored in the vertex attribute DF (treated like vertices).
 
         Returns
         -------
@@ -398,19 +439,19 @@ class Graph:
         
         # Add to specified layer
         if layer not in self._layers:
-            self._layers[layer] = {"nodes": set(), "edges": set(), "attributes": {}}
+            self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
         
-        self._layers[layer]["nodes"].add(edge_entity_id)
+        self._layers[layer]["vertices"].add(edge_entity_id)
         
-        # Add attributes (treat edge entities like nodes for attributes)
+        # Add attributes (treat edge entities like vertices for attributes)
         if attributes:
-            self.set_node_attrs(edge_entity_id, **attributes)
+            self.set_vertex_attrs(edge_entity_id, **attributes)
 
         return edge_entity_id
   
     def _add_edge_entity(self, edge_id):
         """
-        INTERNAL: Register an **edge-entity** so edges can attach to it (node-edge mode).
+        INTERNAL: Register an **edge-entity** so edges can attach to it (vertex-edge mode).
 
         Parameters
         ----------
@@ -450,7 +491,7 @@ class Graph:
             Parameters
             ----------
             source : str
-                Source entity ID (node or edge-entity for node-edge mode).
+                Source entity ID (vertex or edge-entity for vertex-edge mode).
             target : str
                 Target entity ID.
             layer : str, optional
@@ -459,8 +500,8 @@ class Graph:
                 Global edge weight stored in the incidence column (default 1.0).
             edge_id : str, optional
                 Explicit edge ID. If omitted, a fresh ID is generated.
-            edge_type : {'regular', 'node_edge'}, optional
-                Edge kind. ``'node_edge'`` allows connecting to an edge-entity.
+            edge_type : {'regular', 'vertex_edge'}, optional
+                Edge kind. ``'vertex_edge'`` allows connecting to an edge-entity.
             propagate : {'none', 'shared', 'all'}, optional
                 Layer propagation:
                 - ``'none'`` : only the specified layer
@@ -496,26 +537,26 @@ class Graph:
                 raise ValueError(f"propagate must be one of 'none'|'shared'|'all', got {propagate!r}")
             if not isinstance(weight, (int, float)):
                 raise TypeError(f"weight must be numeric, got {type(weight).__name__}")
-            if edge_type not in {"regular", "node_edge"}:
-                raise ValueError(f"edge_type must be 'regular' or 'node_edge', got {edge_type!r}")
+            if edge_type not in {"regular", "vertex_edge"}:
+                raise ValueError(f"edge_type must be 'regular' or 'vertex_edge', got {edge_type!r}")
 
             # resolve layer + whether to touch layering at all
             layer = self._current_layer if layer is None else layer
             touch_layer = layer is not None
 
-            # ensure nodes exist (global)
-            def _ensure_node_or_edge_entity(x):
+            # ensure vertices exist (global)
+            def _ensure_vertex_or_edge_entity(x):
                 if x in self.entity_to_idx:
                     return
-                if edge_type == "node_edge" and isinstance(x, str) and x.startswith("edge_"):
+                if edge_type == "vertex_edge" and isinstance(x, str) and x.startswith("edge_"):
                     self.add_edge_entity(x, layer=layer)
                 else:
-                    self.add_node(x, layer=layer)
+                    self.add_vertex(x, layer=layer)
 
-            _ensure_node_or_edge_entity(source)
-            _ensure_node_or_edge_entity(target)
+            _ensure_vertex_or_edge_entity(source)
+            _ensure_vertex_or_edge_entity(target)
 
-            # indices (after potential node creation)
+            # indices (after potential vertex creation)
             source_idx = self.entity_to_idx[source]
             target_idx = self.entity_to_idx[target]
 
@@ -542,7 +583,7 @@ class Graph:
                 old_src, old_tgt, old_type = self.edge_definitions[edge_id]
                 self.edge_definitions[edge_id] = (source, target, old_type)  # keep old_type by default
 
-                # ensure matrix has enough rows (in case nodes were added since creation)
+                # ensure matrix has enough rows (in case vertices were added since creation)
                 if self._matrix.shape[0] < self._num_entities:
                     self._matrix.resize((self._num_entities, self._matrix.shape[1]))
 
@@ -573,9 +614,9 @@ class Graph:
             # layer handling
             if touch_layer:
                 if layer not in self._layers:
-                    self._layers[layer] = {"nodes": set(), "edges": set(), "attributes": {}}
+                    self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
                 self._layers[layer]["edges"].add(edge_id)
-                self._layers[layer]["nodes"].update((source, target))
+                self._layers[layer]["vertices"].update((source, target))
 
                 if layer_weight is not None:
                     w = float(layer_weight)
@@ -690,16 +731,16 @@ class Graph:
         # set layer
         layer = self._current_layer if layer is None else layer
 
-        # ensure participants exist globally (nodes or edge-entities already supported)
+        # ensure participants exist globally (vertices or edge-entities already supported)
         def _ensure_entity(x):
             if x in self.entity_to_idx:
                 return
-            # hyperedges connect to nodes/edge-entities similarly to binary edges
+            # hyperedges connect to vertices/edge-entities similarly to binary edges
             if isinstance(x, str) and x.startswith("edge_") and x in self.entity_types and self.entity_types[x] == "edge":
                 # already an edge-entity
                 return
-            # default: treat as node
-            self.add_node(x, layer=layer)
+            # default: treat as vertex
+            self.add_vertex(x, layer=layer)
 
         if members is not None:
             for u in members:
@@ -756,13 +797,13 @@ class Graph:
         # layer membership + per-layer weights
         if layer is not None:
             if layer not in self._layers:
-                self._layers[layer] = {"nodes": set(), "edges": set(), "attributes": {}}
+                self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
             self._layers[layer]["edges"].add(edge_id)
             if members is not None:
-                self._layers[layer]["nodes"].update(members)
+                self._layers[layer]["vertices"].update(members)
             else:
-                self._layers[layer]["nodes"].update(self.hyperedge_definitions[edge_id]["head"])
-                self._layers[layer]["nodes"].update(self.hyperedge_definitions[edge_id]["tail"])
+                self._layers[layer]["vertices"].update(self.hyperedge_definitions[edge_id]["head"])
+                self._layers[layer]["vertices"].update(self.hyperedge_definitions[edge_id]["tail"])
 
         # attributes
         if attributes:
@@ -801,7 +842,7 @@ class Graph:
         target : str
         """
         for layer_id, layer_data in self._layers.items():
-            if source in layer_data["nodes"] and target in layer_data["nodes"]:
+            if source in layer_data["vertices"] and target in layer_data["vertices"]:
                 layer_data["edges"].add(edge_id)
 
     def _propagate_to_all_layers(self, edge_id, source, target):
@@ -816,13 +857,49 @@ class Graph:
         target : str
         """
         for layer_id, layer_data in self._layers.items():
-            if source in layer_data["nodes"] or target in layer_data["nodes"]:
+            if source in layer_data["vertices"] or target in layer_data["vertices"]:
                 layer_data["edges"].add(edge_id)
-                # Only add missing endpoint if both nodes should be in layer
-                if source in layer_data["nodes"]:
-                    layer_data["nodes"].add(target)
-                if target in layer_data["nodes"]:
-                    layer_data["nodes"].add(source)
+                # Only add missing endpoint if both vertices should be in layer
+                if source in layer_data["vertices"]:
+                    layer_data["vertices"].add(target)
+                if target in layer_data["vertices"]:
+                    layer_data["vertices"].add(source)
+
+    def _normalize_vertices_arg(self, vertices):
+        """
+        Normalize a single vertex or an iterable of vertices into a set.
+
+        This internal utility function standardizes input for methods like
+        `in_edges()` and `out_edges()` by converting the argument into a set
+        of vertex identifiers.
+
+        Parameters
+        ----------
+        vertices : str | Iterable[str] | None
+            - A single vertex ID (string).
+            - An iterable of vertex IDs (e.g., list, tuple, set).
+            - `None` is allowed and will return an empty set.
+
+        Returns
+        -------
+        set[str]
+            A set of vertex identifiers. If `vertices` is `None`, returns an
+            empty set. If a single vertex is provided, returns a one-element set.
+
+        Notes
+        -----
+        - Strings are treated as **single vertex IDs**, not iterables.
+        - If the argument is neither iterable nor a string, it is wrapped in a set.
+        - Used internally by API methods that accept flexible vertex arguments.
+        """
+        if vertices is None:
+            return set()
+        if isinstance(vertices, (str, bytes)):
+            return {vertices}
+        try:
+            return set(vertices)
+        except TypeError:
+            return {vertices}
 
     # Remove / mutate down
 
@@ -904,28 +981,28 @@ class Graph:
         self.edge_kind.pop(edge_id, None)
         self.hyperedge_definitions.pop(edge_id, None)
 
-    def remove_node(self, node_id):
+    def remove_vertex(self, vertex_id):
         """
-        Remove a node and all incident edges (binary + hyperedges).
+        Remove a vertex and all incident edges (binary + hyperedges).
 
         Parameters
         ----------
-        node_id : str
+        vertex_id : str
 
         Raises
         ------
         KeyError
-            If the node is not found.
+            If the vertex is not found.
 
         Notes
         -----
         - Rebuilds entity indexing and shrinks the incidence matrix accordingly.
         """
 
-        if node_id not in self.entity_to_idx:
-            raise KeyError(f"Node {node_id} not found")
+        if vertex_id not in self.entity_to_idx:
+            raise KeyError(f"vertex {vertex_id} not found")
 
-        entity_idx = self.entity_to_idx[node_id]
+        entity_idx = self.entity_to_idx[vertex_id]
 
         # Collect incident edges (set to avoid duplicates)
         edges_to_remove = set()
@@ -936,26 +1013,26 @@ class Graph:
                 source, target = edef[0], edef[1]
             except Exception:
                 source, target = edef.get("source"), edef.get("target")
-            if source == node_id or target == node_id:
+            if source == vertex_id or target == vertex_id:
                 edges_to_remove.add(eid)
 
         # Hyperedges: hyperedge_definitions {eid: {"head":[...], "tail":[...]}} or {"members":[...]}
-        def _node_in_hyperdef(hdef: dict, node: str) -> bool:
+        def _vertex_in_hyperdef(hdef: dict, vertex: str) -> bool:
             # Common keys first
-            for key in ("head", "tail", "members", "nodes", "vertices"):
+            for key in ("head", "tail", "members", "vertices", "vertices"):
                 seq = hdef.get(key)
-                if isinstance(seq, (list, tuple, set)) and node in seq:
+                if isinstance(seq, (list, tuple, set)) and vertex in seq:
                     return True
             # Safety net: scan any list/tuple/set values
             for v in hdef.values():
-                if isinstance(v, (list, tuple, set)) and node in v:
+                if isinstance(v, (list, tuple, set)) and vertex in v:
                     return True
             return False
 
         hdefs = getattr(self, "hyperedge_definitions", {})
         if isinstance(hdefs, dict):
             for heid, hdef in list(hdefs.items()):
-                if isinstance(hdef, dict) and _node_in_hyperdef(hdef, node_id):
+                if isinstance(hdef, dict) and _vertex_in_hyperdef(hdef, vertex_id):
                     edges_to_remove.add(heid)
 
         # Remove all collected edges
@@ -972,8 +1049,8 @@ class Graph:
         self._matrix = csr_matrix.todok()
 
         # Update entity mappings
-        del self.entity_to_idx[node_id]
-        del self.entity_types[node_id]
+        del self.entity_to_idx[vertex_id]
+        del self.entity_types[vertex_id]
 
         # Reindex remaining entities
         new_entity_to_idx = {}
@@ -990,14 +1067,14 @@ class Graph:
         self.idx_to_entity = new_idx_to_entity
         self._num_entities -= 1
 
-        # Remove from node attributes
-        if isinstance(self.node_attributes, pl.DataFrame):
-            if self.node_attributes.height > 0 and "node_id" in self.node_attributes.columns:
-                self.node_attributes = self.node_attributes.filter(pl.col("node_id") != node_id)
+        # Remove from vertex attributes
+        if isinstance(self.vertex_attributes, pl.DataFrame):
+            if self.vertex_attributes.height > 0 and "vertex_id" in self.vertex_attributes.columns:
+                self.vertex_attributes = self.vertex_attributes.filter(pl.col("vertex_id") != vertex_id)
 
         # Remove from per-layer membership
         for layer_data in self._layers.values():
-            layer_data["nodes"].discard(node_id)
+            layer_data["vertices"].discard(vertex_id)
 
     def remove_layer(self, layer_id):
         """
@@ -1016,7 +1093,7 @@ class Graph:
 
         Notes
         -----
-        - Does not delete nodes/edges globally; only membership and layer metadata.
+        - Does not delete vertices/edges globally; only membership and layer metadata.
         """
         if layer_id == self._default_layer:
             raise ValueError("Cannot remove default layer")
@@ -1066,28 +1143,28 @@ class Graph:
         """
         return self.graph_attributes.get(key, default)
 
-    def set_node_attrs(self, node_id, **attrs):
+    def set_vertex_attrs(self, vertex_id, **attrs):
         """
-        Upsert pure node attributes (non-structural) into the node DF.
+        Upsert pure vertex attributes (non-structural) into the vertex DF.
 
         Parameters
         ----------
-        node_id : str
+        vertex_id : str
         **attrs
             Key/value attributes. Structural keys are ignored.
         """
             # keep attributes table pure
-        clean = {k: v for k, v in attrs.items() if k not in self._NODE_RESERVED}
+        clean = {k: v for k, v in attrs.items() if k not in self._vertex_RESERVED}
         if clean:
-            self.node_attributes = self._upsert_row(self.node_attributes, node_id, clean)
+            self.vertex_attributes = self._upsert_row(self.vertex_attributes, vertex_id, clean)
 
-    def get_node_attr(self, node_id, key, default=None):
+    def get_attr_vertex(self, vertex_id, key, default=None):
         """
-        Get a single node attribute (scalar) or default if missing.
+        Get a single vertex attribute (scalar) or default if missing.
 
         Parameters
         ----------
-        node_id : str
+        vertex_id : str
         key : str
         default : Any, optional
 
@@ -1095,22 +1172,22 @@ class Graph:
         -------
         Any
         """
-        df = self.node_attributes
+        df = self.vertex_attributes
         if key not in df.columns:
             return default
-        rows = df.filter(pl.col("node_id") == node_id)
+        rows = df.filter(pl.col("vertex_id") == vertex_id)
         if rows.height == 0:
             return default
         val = rows.select(pl.col(key)).to_series()[0]
         return default if val is None else val
 
-    def get_node_attribute(self, node_id, attribute): #legacy alias
+    def get_vertex_attribute(self, vertex_id, attribute): #legacy alias
         """
-        (Legacy alias) Get a single node attribute from the Polars DF [DataFrame].
+        (Legacy alias) Get a single vertex attribute from the Polars DF [DataFrame].
 
         Parameters
         ----------
-        node_id : str
+        vertex_id : str
         attribute : str or enum.Enum
             Column name or Enum with ``.value``.
 
@@ -1121,18 +1198,18 @@ class Graph:
 
         See Also
         --------
-        get_node_attr
+        get_attr_vertex
         """
         # allow Attr enums
         attribute = getattr(attribute, "value", attribute)
 
-        df = self.node_attributes
+        df = self.vertex_attributes
         if not isinstance(df, pl.DataFrame):
             return None
-        if df.height == 0 or "node_id" not in df.columns or attribute not in df.columns:
+        if df.height == 0 or "vertex_id" not in df.columns or attribute not in df.columns:
             return None
 
-        rows = df.filter(pl.col("node_id") == node_id)
+        rows = df.filter(pl.col("vertex_id") == vertex_id)
         if rows.height == 0:
             return None
 
@@ -1154,7 +1231,7 @@ class Graph:
         if clean:
             self.edge_attributes = self._upsert_row(self.edge_attributes, edge_id, clean)
 
-    def get_edge_attr(self, edge_id, key, default=None):
+    def get_attr_edge(self, edge_id, key, default=None):
         """
         Get a single edge attribute (scalar) or default if missing.
 
@@ -1194,7 +1271,7 @@ class Graph:
 
         See Also
         --------
-        get_edge_attr
+        get_attr_edge
         """
         # allow Attr enums
         attribute = getattr(attribute, "value", attribute)
@@ -1363,23 +1440,23 @@ class Graph:
         -------
         dict
             {
-            'extra_node_rows': list[str],
+            'extra_vertex_rows': list[str],
             'extra_edge_rows': list[str],
-            'missing_node_rows': list[str],
+            'missing_vertex_rows': list[str],
             'missing_edge_rows': list[str],
             'invalid_edge_layer_rows': list[tuple[str, str]],
             }
         """
-        node_ids = {eid for eid, t in self.entity_types.items() if t == "node"}
+        vertex_ids = {eid for eid, t in self.entity_types.items() if t == "vertex"}
         edge_ids = set(self.edge_to_idx.keys())
 
-        na = self.node_attributes
+        na = self.vertex_attributes
         ea = self.edge_attributes
         ela = self.edge_layer_attributes
 
-        node_attr_ids = (
-            set(na.select("node_id").to_series().to_list())
-            if isinstance(na, pl.DataFrame) and na.height > 0 and "node_id" in na.columns
+        vertex_attr_ids = (
+            set(na.select("vertex_id").to_series().to_list())
+            if isinstance(na, pl.DataFrame) and na.height > 0 and "vertex_id" in na.columns
             else set()
         )
         edge_attr_ids = (
@@ -1388,9 +1465,9 @@ class Graph:
             else set()
         )
 
-        extra_node_rows = [i for i in node_attr_ids if i not in node_ids]
+        extra_vertex_rows = [i for i in vertex_attr_ids if i not in vertex_ids]
         extra_edge_rows = [i for i in edge_attr_ids if i not in edge_ids]
-        missing_node_rows = [i for i in node_ids if i not in node_attr_ids]
+        missing_vertex_rows = [i for i in vertex_ids if i not in vertex_attr_ids]
         missing_edge_rows = [i for i in edge_ids if i not in edge_attr_ids]
 
         bad_edge_layer = []
@@ -1400,9 +1477,9 @@ class Graph:
                     bad_edge_layer.append((lid, eid))
 
         return {
-            "extra_node_rows": extra_node_rows,
+            "extra_vertex_rows": extra_vertex_rows,
             "extra_edge_rows": extra_edge_rows,
-            "missing_node_rows": missing_node_rows,
+            "missing_vertex_rows": missing_vertex_rows,
             "missing_edge_rows": missing_edge_rows,
             "invalid_edge_layer_rows": bad_edge_layer,
         }
@@ -1482,7 +1559,7 @@ class Graph:
 
         Keys
         ----
-        - ``node_attributes``           → key: ``["node_id"]``
+        - ``vertex_attributes``           → key: ``["vertex_id"]``
         - ``edge_attributes``           → key: ``["edge_id"]``
         - ``layer_attributes``          → key: ``["layer_id"]``
         - ``edge_layer_attributes``     → key: ``["layer_id", "edge_id"]``
@@ -1523,9 +1600,9 @@ class Graph:
                 raise ValueError("idx must be a (layer_id, edge_id) tuple")
             key_vals = {"layer_id": idx[0], "edge_id": idx[1]}
             key_cols = ["layer_id", "edge_id"]
-        elif "node_id" in cols:
-            key_vals = {"node_id": idx}
-            key_cols = ["node_id"]
+        elif "vertex_id" in cols:
+            key_vals = {"vertex_id": idx}
+            key_cols = ["vertex_id"]
         elif "edge_id" in cols:
             key_vals = {"edge_id": idx}
             key_cols = ["edge_id"]
@@ -1589,9 +1666,236 @@ class Graph:
 
         return df.vstack(to_append)
 
+    ## Bulk attributes
+    def get_attr_edges(self, indexes=None) -> dict:
+        """
+        Retrieve edge attributes as a dictionary.
+
+        Parameters
+        ----------
+        indexes : Iterable[int] | None, optional
+            A list or iterable of edge indices to retrieve attributes for.
+            - If `None` (default), attributes for **all** edges are returned.
+            - If provided, only those edges will be included in the output.
+
+        Returns
+        -------
+        dict[str, dict]
+            A dictionary mapping `edge_id` → `attribute_dict`, where:
+            - `edge_id` is the unique string identifier of the edge.
+            - `attribute_dict` is a dictionary of attribute names and values.
+
+        Notes
+        -----
+        - This function reads directly from `self.edge_attributes`, which should be
+        a Polars DataFrame or pandas DataFrame where each row corresponds to an edge.
+        - Useful for bulk inspection, serialization, or analytics without looping manually.
+        """
+        df = self.edge_attributes
+        if indexes is not None:
+            df = df.filter(pl.col("edge_id").is_in([self.idx_to_edge[i] for i in indexes]))
+        return {row["edge_id"]: row.as_dict() for row in df.iter_rows(named=True)}
+
+    def get_attr_vertices(self, vertices=None) -> dict:
+        """
+        Retrieve vertex (node) attributes as a dictionary.
+
+        Parameters
+        ----------
+        vertices : Iterable[str] | None, optional
+            A list or iterable of node IDs to retrieve attributes for.
+            - If `None` (default), attributes for **all** nodes are returned.
+            - If provided, only those nodes will be included in the output.
+
+        Returns
+        -------
+        dict[str, dict]
+            A dictionary mapping `node_id` → `attribute_dict`, where:
+            - `node_id` is the unique string identifier of the vertex.
+            - `attribute_dict` is a dictionary of attribute names and values.
+
+        Notes
+        -----
+        - This reads from `self.node_attributes`, which stores per-node metadata.
+        - Use this for bulk data extraction instead of repeated single-node calls.
+        """
+        df = self.node_attributes
+        if vertices is not None:
+            df = df.filter(pl.col("node_id").is_in(vertices))
+        return {row["node_id"]: row.as_dict() for row in df.iter_rows(named=True)}
+
+    def get_attr_from_edges(self, key: str, default=None) -> dict:
+        """
+        Extract a specific attribute column for all edges.
+
+        Parameters
+        ----------
+        key : str
+            Attribute column name to extract from `self.edge_attributes`.
+        default : Any, optional
+            Default value to use if the column does not exist or if an edge
+            does not have a value. Defaults to `None`.
+
+        Returns
+        -------
+        dict[str, Any]
+            A dictionary mapping `edge_id` → attribute value.
+
+        Notes
+        -----
+        - If the requested column is missing, all edges return `default`.
+        - This is useful for quick property lookups (e.g., weight, label, type).
+        """
+        df = self.edge_attributes
+        if key not in df.columns:
+            return {row["edge_id"]: default for row in df.iter_rows(named=True)}
+        return {row["edge_id"]: row[key] if row[key] is not None else default for row in df.iter_rows(named=True)}
+
+    def get_edges_by_attr(self, key: str, value) -> list:
+        """
+        Retrieve all edges where a given attribute equals a specific value.
+
+        Parameters
+        ----------
+        key : str
+            Attribute column name to filter on.
+        value : Any
+            Value to match.
+
+        Returns
+        -------
+        list[str]
+            A list of edge IDs where the attribute `key` equals `value`.
+
+        Notes
+        -----
+        - If the attribute column does not exist, an empty list is returned.
+        - Comparison is exact; consider normalizing types before calling.
+        """
+        df = self.edge_attributes
+        if key not in df.columns:
+            return []
+        return [row["edge_id"] for row in df.iter_rows(named=True) if row[key] == value]
+
+    def get_graph_attributes(self) -> dict:
+        """
+        Return a shallow copy of the graph-level attributes dictionary.
+
+        Returns
+        -------
+        dict
+            A dictionary of global metadata describing the graph as a whole.
+            Typical keys might include:
+            - `"name"` : Graph name or label.
+            - `"directed"` : Boolean indicating directedness.
+            - `"layers"` : List of layers present in the graph.
+            - `"created_at"` : Timestamp of graph creation.
+
+        Notes
+        -----
+        - Returns a **shallow copy** to prevent external mutation of internal state.
+        - Graph-level attributes are meant to store metadata not tied to individual
+        nodes or edges (e.g., versioning info, provenance, global labels).
+        """
+        return dict(self.graph_attributes)
+
     # Basic queries & metrics
 
-    def is_edge_directed(self, edge_id):
+    def get_vertex(self, index: int) -> str:
+        """
+        Return the node ID corresponding to a given internal index.
+
+        Parameters
+        ----------
+        index : int
+            The internal vertex index.
+
+        Returns
+        -------
+        str
+            The node ID.
+        """
+        return self.idx_to_entity[index]
+    
+    def get_edge(self, index: int):
+        """
+        Return edge endpoints in a canonical form.
+
+        Parameters
+        ----------
+        index : int
+            Internal edge index.
+
+        Returns
+        -------
+        tuple[frozenset, frozenset]
+            (S, T) where S and T are frozensets of node IDs.
+            - For directed binary edges: ({u}, {v})
+            - For undirected binary edges: (M, M)
+            - For directed hyperedges: (head_set, tail_set)
+            - For undirected hyperedges: (members, members)
+        """
+        eid = self.idx_to_edge[index]
+        kind = self.edge_kind.get(eid)
+
+        if kind == "hyper":
+            meta = self.hyperedge_definitions[eid]
+            if meta.get("directed", False):
+                return (frozenset(meta["head"]), frozenset(meta["tail"]))
+            else:
+                M = frozenset(meta["members"])
+                return (M, M)
+        else:
+            u, v, _etype = self.edge_definitions[eid]
+            directed = self.edge_directed.get(eid, self.directed)
+            if directed:
+                return (frozenset([u]), frozenset([v]))
+            else:
+                M = frozenset([u, v])
+                return (M, M)
+
+    def incident_edges(self, node_id) -> list[int]:
+        """
+        Return all edge indices incident to a given node.
+
+        Parameters
+        ----------
+        node_id : str
+            Node identifier.
+
+        Returns
+        -------
+        list[int]
+            List of edge indices incident to the node.
+        """
+        incident = []
+        # Fast path: direct matrix row lookup if available
+        if node_id in self.entity_to_idx:
+            row_idx = self.entity_to_idx[node_id]
+            try:
+                incident.extend(self._matrix.tocsr().getrow(row_idx).indices.tolist())
+                return incident
+            except Exception:
+                # fallback if matrix is not in CSR (compressed sparse row) format
+                pass
+
+        # Fallback: scan edge definitions
+        for j in range(self.number_of_edges()):
+            eid = self.idx_to_edge[j]
+            kind = self.edge_kind.get(eid)
+            if kind == "hyper":
+                meta = self.hyperedge_definitions[eid]
+                if (meta.get("directed", False) and (node_id in meta["head"] or node_id in meta["tail"])) \
+                or (not meta.get("directed", False) and node_id in meta["members"]):
+                    incident.append(j)
+            else:
+                u, v, _etype = self.edge_definitions[eid]
+                if node_id == u or node_id == v:
+                    incident.append(j)
+
+        return incident
+
+    def _is_directed_edge(self, edge_id):
         """
         Check if an edge is directed (per-edge flag overrides graph default).
 
@@ -1651,7 +1955,7 @@ class Graph:
     
     def degree(self, entity_id):
         """
-        Degree of a node or edge-entity (number of incident non-zero entries).
+        Degree of a vertex or edge-entity (number of incident non-zero entries).
 
         Parameters
         ----------
@@ -1668,15 +1972,15 @@ class Graph:
         row = self._matrix.getrow(entity_idx)
         return len(row.nonzero()[1])
   
-    def nodes(self):
+    def vertices(self):
         """
-        Get all node IDs (excluding edge-entities).
+        Get all vertex IDs (excluding edge-entities).
 
         Returns
         -------
         list[str]
         """
-        return [eid for eid, etype in self.entity_types.items() if etype == 'node']
+        return [eid for eid, etype in self.entity_types.items() if etype == 'vertex']
     
     def edges(self):
         """
@@ -1690,7 +1994,7 @@ class Graph:
     
     def edge_list(self):
         """
-        Materialize (source, target, edge_id, weight) for binary/node-edge edges.
+        Materialize (source, target, edge_id, weight) for binary/vertex-edge edges.
 
         Returns
         -------
@@ -1724,15 +2028,15 @@ class Graph:
         return [eid for eid in self.edge_to_idx.keys() 
                 if not self.edge_directed.get(eid, self.directed)]
 
-    def number_of_nodes(self):
+    def number_of_vertices(self):
         """
-        Count nodes (excluding edge-entities).
+        Count vertices (excluding edge-entities).
 
         Returns
         -------
         int
         """
-        return len([e for e in self.entity_types.values() if e == 'node'])
+        return len([e for e in self.entity_types.values() if e == 'vertex'])
     
     def number_of_edges(self):
         """
@@ -1752,10 +2056,10 @@ class Graph:
         -------
         int
         """
-        all_nodes = set()
+        all_vertices = set()
         for layer_data in self._layers.values():
-            all_nodes.update(layer_data["nodes"])
-        return len(all_nodes)
+            all_vertices.update(layer_data["vertices"])
+        return len(all_vertices)
 
     def global_edge_count(self):
         """
@@ -1769,6 +2073,156 @@ class Graph:
         for layer_data in self._layers.values():
             all_edges.update(layer_data["edges"])
         return len(all_edges)
+
+    def in_edges(self, vertices):
+        """
+        Iterate over all edges that are **incoming** to one or more vertices.
+
+        Parameters
+        ----------
+        vertices : str | Iterable[str]
+            A single vertex ID or an iterable of vertex IDs. All edges whose
+            **target set** intersects with this set will be yielded.
+
+        Yields
+        ------
+        tuple[int, tuple[frozenset, frozenset]]
+            Tuples of the form `(edge_index, (S, T))`, where:
+            - `edge_index` : int — internal integer index of the edge.
+            - `S` : frozenset[str] — set of source/head nodes.
+            - `T` : frozenset[str] — set of target/tail nodes.
+
+        Behavior
+        --------
+        - **Directed binary edges**: returned if any vertex is in the target (`T`).
+        - **Directed hyperedges**: returned if any vertex is in the tail set.
+        - **Undirected edges/hyperedges**: returned if any vertex is in
+        the edge's member set (`S ∪ T`).
+
+        Notes
+        -----
+        - Works with binary and hyperedges.
+        - Undirected edges appear in both `in_edges()` and `out_edges()`.
+        - The returned `(S, T)` is the canonical form from `get_edge()`.
+        """
+        V = self._normalize_vertices_arg(vertices)
+        if not V:
+            return
+        for j in range(self.number_of_edges()):
+            S, T = self.get_edge(j)
+            eid = self.idx_to_edge[j]
+            directed = self._is_directed_edge(eid)
+            if directed:
+                if T & V:
+                    yield j, (S, T)
+            else:
+                if (S | T) & V:
+                    yield j, (S, T)
+
+    def out_edges(self, vertices):
+        """
+        Iterate over all edges that are **outgoing** from one or more vertices.
+
+        Parameters
+        ----------
+        vertices : str | Iterable[str]
+            A single vertex ID or an iterable of vertex IDs. All edges whose
+            **source set** intersects with this set will be yielded.
+
+        Yields
+        ------
+        tuple[int, tuple[frozenset, frozenset]]
+            Tuples of the form `(edge_index, (S, T))`, where:
+            - `edge_index` : int — internal integer index of the edge.
+            - `S` : frozenset[str] — set of source/head nodes.
+            - `T` : frozenset[str] — set of target/tail nodes.
+
+        Behavior
+        --------
+        - **Directed binary edges**: returned if any vertex is in the source (`S`).
+        - **Directed hyperedges**: returned if any vertex is in the head set.
+        - **Undirected edges/hyperedges**: returned if any vertex is in
+        the edge's member set (`S ∪ T`).
+
+        Notes
+        -----
+        - Works with binary and hyperedges.
+        - Undirected edges appear in both `out_edges()` and `in_edges()`.
+        - The returned `(S, T)` is the canonical form from `get_edge()`.
+        """
+        V = self._normalize_vertices_arg(vertices)
+        if not V:
+            return
+        for j in range(self.number_of_edges()):
+            S, T = self.get_edge(j)
+            eid = self.idx_to_edge[j]
+            directed = self._is_directed_edge(eid)
+            if directed:
+                if S & V:
+                    yield j, (S, T)
+            else:
+                if (S | T) & V:
+                    yield j, (S, T)
+
+    @property
+    def V(self):
+        """
+        All vertices as a tuple.
+
+        Returns
+        -------
+        tuple
+            Tuple of all vertex IDs in the graph.
+        """
+        return tuple(self.vertices())
+
+    @property
+    def E(self):
+        """
+        All edges as a tuple.
+
+        Returns
+        -------
+        tuple
+            Tuple of all edge identifiers (whatever `self.edges()` yields).
+        """
+        return tuple(self.edges())
+
+    @property
+    def num_vertices(self):
+        """
+        Total number of vertices (vertices) in the graph.
+        """
+        return self.number_of_vertices()
+
+    @property
+    def num_edges(self):
+        """
+        Total number of edges in the graph.
+        """
+        return self.number_of_edges()
+
+    @property
+    def nv(self):
+        """
+        Shorthand for num_vertices.
+        """
+        return self.num_vertices
+
+    @property
+    def ne(self):
+        """
+        Shorthand for num_edges.
+        """
+        return self.num_edges
+
+    @property
+    def shape(self):
+        """
+        Graph shape as a tuple: (num_vertices, num_edges).
+        Useful for quick inspection.
+        """
+        return (self.num_vertices, self.num_edges)
 
     # Materialized views
 
@@ -1818,7 +2272,7 @@ class Graph:
                 s, t, etype = self.edge_definitions[eid]
                 row["source"] = s
                 row["target"] = t
-                row["edge_type"] = etype  # 'regular' | 'node_edge' | None
+                row["edge_type"] = etype  # 'regular' | 'vertex_edge' | None
 
             rows.append(row)
 
@@ -1846,9 +2300,9 @@ class Graph:
 
         return out.clone() if copy else out
 
-    def nodes_view(self, copy=True):
+    def vertices_view(self, copy=True):
         """
-        Read-only node attribute table.
+        Read-only vertex attribute table.
 
         Parameters
         ----------
@@ -1858,11 +2312,11 @@ class Graph:
         Returns
         -------
         polars.DataFrame
-            Columns: ``node_id`` plus pure attributes (may be empty).
+            Columns: ``vertex_id`` plus pure attributes (may be empty).
         """
-        df = self.node_attributes
+        df = self.vertex_attributes
         if df.height == 0:
-            return pl.DataFrame(schema={"node_id": pl.Utf8})
+            return pl.DataFrame(schema={"vertex_id": pl.Utf8})
         return df.clone() if copy else df
 
     def layers_view(self, copy=True):
@@ -1886,9 +2340,9 @@ class Graph:
 
     # Layer set-ops & cross-layer analytics
 
-    def get_layer_nodes(self, layer_id):
+    def get_layer_vertices(self, layer_id):
         """
-        Nodes in a layer.
+        vertices in a layer.
 
         Parameters
         ----------
@@ -1898,7 +2352,7 @@ class Graph:
         -------
         set[str]
         """
-        return self._layers[layer_id]["nodes"].copy()
+        return self._layers[layer_id]["vertices"].copy()
 
     def get_layer_edges(self, layer_id):
         """
@@ -1925,20 +2379,20 @@ class Graph:
         Returns
         -------
         dict
-            ``{"nodes": set[str], "edges": set[str]}``
+            ``{"vertices": set[str], "edges": set[str]}``
         """
         if not layer_ids:
-            return {"nodes": set(), "edges": set()}
+            return {"vertices": set(), "edges": set()}
         
-        union_nodes = set()
+        union_vertices = set()
         union_edges = set()
         
         for layer_id in layer_ids:
             if layer_id in self._layers:
-                union_nodes.update(self._layers[layer_id]["nodes"])
+                union_vertices.update(self._layers[layer_id]["vertices"])
                 union_edges.update(self._layers[layer_id]["edges"])
         
-        return {"nodes": union_nodes, "edges": union_edges}
+        return {"vertices": union_vertices, "edges": union_edges}
 
     def layer_intersection(self, layer_ids):
         """
@@ -1951,32 +2405,32 @@ class Graph:
         Returns
         -------
         dict
-            ``{"nodes": set[str], "edges": set[str]}``
+            ``{"vertices": set[str], "edges": set[str]}``
         """
         if not layer_ids:
-            return {"nodes": set(), "edges": set()}
+            return {"vertices": set(), "edges": set()}
         
         if len(layer_ids) == 1:
             layer_id = layer_ids[0]
             return {
-                "nodes": self._layers[layer_id]["nodes"].copy(),
+                "vertices": self._layers[layer_id]["vertices"].copy(),
                 "edges": self._layers[layer_id]["edges"].copy()
             }
         
         # Start with first layer
-        common_nodes = self._layers[layer_ids[0]]["nodes"].copy()
+        common_vertices = self._layers[layer_ids[0]]["vertices"].copy()
         common_edges = self._layers[layer_ids[0]]["edges"].copy()
         
         # Intersect with remaining layers
         for layer_id in layer_ids[1:]:
             if layer_id in self._layers:
-                common_nodes &= self._layers[layer_id]["nodes"]
+                common_vertices &= self._layers[layer_id]["vertices"]
                 common_edges &= self._layers[layer_id]["edges"]
             else:
                 # Layer doesn't exist, intersection is empty
-                return {"nodes": set(), "edges": set()}
+                return {"vertices": set(), "edges": set()}
         
-        return {"nodes": common_nodes, "edges": common_edges}
+        return {"vertices": common_vertices, "edges": common_edges}
 
     def layer_difference(self, layer1_id, layer2_id):
         """
@@ -1990,7 +2444,7 @@ class Graph:
         Returns
         -------
         dict
-            ``{"nodes": set[str], "edges": set[str]}``
+            ``{"vertices": set[str], "edges": set[str]}``
 
         Raises
         ------
@@ -2004,7 +2458,7 @@ class Graph:
         layer2 = self._layers[layer2_id]
         
         return {
-            "nodes": layer1["nodes"] - layer2["nodes"],
+            "vertices": layer1["vertices"] - layer2["vertices"],
             "edges": layer1["edges"] - layer2["edges"]
         }
 
@@ -2034,7 +2488,7 @@ class Graph:
             raise ValueError(f"Layer {result_layer_id} already exists")
         
         self._layers[result_layer_id] = {
-            "nodes": operation_result["nodes"].copy(),
+            "vertices": operation_result["vertices"].copy(),
             "edges": operation_result["edges"].copy(), 
             "attributes": attributes
         }
@@ -2056,9 +2510,9 @@ class Graph:
         Parameters
         ----------
         edge_id : str, optional
-            If provided, match by ID (any kind: binary/node-edge/hyper).
+            If provided, match by ID (any kind: binary/vertex-edge/hyper).
         source : str, optional
-            When used with ``target``, match only binary/node-edge edges by endpoints.
+            When used with ``target``, match only binary/vertex-edge edges by endpoints.
         target : str, optional
         include_default : bool, optional
             Include the internal default layer in the search.
@@ -2174,24 +2628,24 @@ class Graph:
                 out[lid] = matches
         return out
 
-    def node_presence_across_layers(self, node_id, include_default: bool = False):
+    def vertex_presence_across_layers(self, vertex_id, include_default: bool = False):
         """
-        List layers containing a specific node.
+        List layers containing a specific vertex.
 
         Parameters
         ----------
-        node_id : str
+        vertex_id : str
         include_default : bool, optional
 
         Returns
         -------
         list[str]
         """
-        layers_with_node = []
+        layers_with_vertex = []
         for layer_id, layer_data in self.layers(include_default=include_default).items():
-            if node_id in layer_data["nodes"]:
-                layers_with_node.append(layer_id)
-        return layers_with_node
+            if vertex_id in layer_data["vertices"]:
+                layers_with_vertex.append(layer_id)
+        return layers_with_vertex
 
     def conserved_edges(self, min_layers=2, include_default=False):
         """
@@ -2254,7 +2708,7 @@ class Graph:
         ----------
         ordered_layers : list[str]
             Layer IDs in chronological order.
-        metric : {'edge_change', 'node_change'}, optional
+        metric : {'edge_change', 'vertex_change'}, optional
 
         Returns
         -------
@@ -2288,9 +2742,9 @@ class Graph:
                 removed = len(current_data["edges"] - next_data["edges"])
                 changes.append({'added': added, 'removed': removed, 'net_change': added - removed})
             
-            elif metric == 'node_change':
-                added = len(next_data["nodes"] - current_data["nodes"])
-                removed = len(current_data["nodes"] - next_data["nodes"])
+            elif metric == 'vertex_change':
+                added = len(next_data["vertices"] - current_data["vertices"])
+                removed = len(current_data["vertices"] - next_data["vertices"])
                 changes.append({'added': added, 'removed': removed, 'net_change': added - removed})
         
         return changes
@@ -2346,12 +2800,12 @@ class Graph:
         Returns
         -------
         dict[str, dict]
-            ``{layer_id: {'nodes': int, 'edges': int, 'attributes': dict}}``.
+            ``{layer_id: {'vertices': int, 'edges': int, 'attributes': dict}}``.
         """
         stats = {}
         for layer_id, layer_data in self.layers(include_default=include_default).items():
             stats[layer_id] = {
-                'nodes': len(layer_data["nodes"]),
+                'vertices': len(layer_data["vertices"]),
                 'edges': len(layer_data["edges"]),
                 'attributes': layer_data["attributes"]
             }
@@ -2361,7 +2815,7 @@ class Graph:
 
     def neighbors(self, entity_id):
         """
-        Neighbors of an entity (node or edge-entity).
+        Neighbors of an entity (vertex or edge-entity).
 
         Parameters
         ----------
@@ -2388,7 +2842,7 @@ class Graph:
                     if (("members" in meta) and (entity_id in meta["members"])):
                         out |= (meta["members"] - {entity_id})
             else:
-                # binary / node_edge
+                # binary / vertex_edge
                 s, t, _ = self.edge_definitions[eid]
                 edir = self.edge_directed.get(eid, self.directed)
                 if s == entity_id:
@@ -2397,19 +2851,19 @@ class Graph:
                     out.add(s)
         return list(out)
 
-    def out_neighbors(self, node_id):
+    def out_neighbors(self, vertex_id):
         """
-        Out-neighbors of a node under directed semantics.
+        Out-neighbors of a vertex under directed semantics.
 
         Parameters
         ----------
-        node_id : str
+        vertex_id : str
 
         Returns
         -------
         list[str]
         """
-        if node_id not in self.entity_to_idx:
+        if vertex_id not in self.entity_to_idx:
             return []
         out = set()
         for eid in self.edge_to_idx.keys():
@@ -2417,33 +2871,67 @@ class Graph:
             if kind == "hyper":
                 meta = self.hyperedge_definitions[eid]
                 if meta["directed"]:
-                    if node_id in meta["head"]:
+                    if vertex_id in meta["head"]:
                         out |= (meta["tail"])
                 else:
-                    if node_id in meta.get("members", ()):
-                        out |= (meta["members"] - {node_id})
+                    if vertex_id in meta.get("members", ()):
+                        out |= (meta["members"] - {vertex_id})
             else:
                 s, t, _ = self.edge_definitions[eid]
                 edir = self.edge_directed.get(eid, self.directed)
-                if s == node_id:
+                if s == vertex_id:
                     out.add(t)
-                elif t == node_id and not edir:
+                elif t == vertex_id and not edir:
                     out.add(s)
         return list(out)
 
-    def in_neighbors(self, node_id):
+    def successors(self, vertex_id):
         """
-        In-neighbors of a node under directed semantics.
+        successors of a vertex under directed semantics.
 
         Parameters
         ----------
-        node_id : str
+        vertex_id : str
+
+        Returns
+        -------
+        list[str]
+        """
+        if vertex_id not in self.entity_to_idx:
+            return []
+        out = set()
+        for eid in self.edge_to_idx.keys():
+            kind = self.edge_kind.get(eid, None)
+            if kind == "hyper":
+                meta = self.hyperedge_definitions[eid]
+                if meta["directed"]:
+                    if vertex_id in meta["head"]:
+                        out |= (meta["tail"])
+                else:
+                    if vertex_id in meta.get("members", ()):
+                        out |= (meta["members"] - {vertex_id})
+            else:
+                s, t, _ = self.edge_definitions[eid]
+                edir = self.edge_directed.get(eid, self.directed)
+                if s == vertex_id:
+                    out.add(t)
+                elif t == vertex_id and not edir:
+                    out.add(s)
+        return list(out)
+
+    def in_neighbors(self, vertex_id):
+        """
+        In-neighbors of a vertex under directed semantics.
+
+        Parameters
+        ----------
+        vertex_id : str
 
         Returns
         -------
         list[str]
         """        
-        if node_id not in self.entity_to_idx:
+        if vertex_id not in self.entity_to_idx:
             return []
         inn = set()
         for eid in self.edge_to_idx.keys():
@@ -2451,21 +2939,228 @@ class Graph:
             if kind == "hyper":
                 meta = self.hyperedge_definitions[eid]
                 if meta["directed"]:
-                    if node_id in meta["tail"]:
+                    if vertex_id in meta["tail"]:
                         inn |= (meta["head"])
                 else:
-                    if node_id in meta.get("members", ()):
-                        inn |= (meta["members"] - {node_id})
+                    if vertex_id in meta.get("members", ()):
+                        inn |= (meta["members"] - {vertex_id})
             else:
                 s, t, _ = self.edge_definitions[eid]
                 edir = self.edge_directed.get(eid, self.directed)
-                if t == node_id:
+                if t == vertex_id:
                     inn.add(s)
-                elif s == node_id and not edir:
+                elif s == vertex_id and not edir:
+                    inn.add(t)
+        return list(inn)
+
+    def predecessors(self, vertex_id):
+        """
+        In-neighbors of a vertex under directed semantics.
+
+        Parameters
+        ----------
+        vertex_id : str
+
+        Returns
+        -------
+        list[str]
+        """        
+        if vertex_id not in self.entity_to_idx:
+            return []
+        inn = set()
+        for eid in self.edge_to_idx.keys():
+            kind = self.edge_kind.get(eid, None)
+            if kind == "hyper":
+                meta = self.hyperedge_definitions[eid]
+                if meta["directed"]:
+                    if vertex_id in meta["tail"]:
+                        inn |= (meta["head"])
+                else:
+                    if vertex_id in meta.get("members", ()):
+                        inn |= (meta["members"] - {vertex_id})
+            else:
+                s, t, _ = self.edge_definitions[eid]
+                edir = self.edge_directed.get(eid, self.directed)
+                if t == vertex_id:
+                    inn.add(s)
+                elif s == vertex_id and not edir:
                     inn.add(t)
         return list(inn)
 
     # Slicing / copying / accounting
+
+    def edge_subgraph(self, edges) -> "Graph":
+        """
+        Create a new graph containing only a specified subset of edges.
+
+        Parameters
+        ----------
+        edges : Iterable[str] | Iterable[int]
+            Edge identifiers (strings) or edge indices (integers) to retain
+            in the subgraph.
+
+        Returns
+        -------
+        Graph
+            A new `Graph` instance containing only the selected edges and the
+            vertices incident to them.
+
+        Behavior
+        --------
+        - Copies the current graph and deletes all edges **not** in the provided set.
+        - Optionally, you can prune orphaned vertices (i.e., vertices not incident
+        to any remaining edge) — this is generally recommended for consistency.
+
+        Notes
+        -----
+        - Attributes associated with remaining edges and vertices are preserved.
+        - Hyperedges are supported: if a hyperedge is in the provided set, all
+        its members are retained.
+        - If `edges` is empty, the resulting graph will be empty except for
+        any isolated vertices that remain.
+        """
+        g = self.copy()
+        # Normalize edge IDs
+        if all(isinstance(e, int) for e in edges):
+            edges = {self.idx_to_edge[e] for e in edges}
+        else:
+            edges = set(edges)
+
+        # Drop edges not in selection
+        for eid in list(g.edge_definitions.keys()):
+            if eid not in edges:
+                g.remove_edge(eid)
+
+        # Optional: prune isolated vertices
+        to_remove = [v for v in g.nodes() if not g.incident_edges(v)]
+        for v in to_remove:
+            g.remove_vertex(v)
+
+        return g
+
+    def subgraph(self, vertices) -> "Graph":
+        """
+        Create a vertex-induced subgraph.
+
+        Parameters
+        ----------
+        vertices : Iterable[str]
+            A set or list of vertex identifiers to keep in the subgraph.
+
+        Returns
+        -------
+        Graph
+            A new `Graph` containing only the specified vertices and any edges
+            for which **all** endpoints are within this set.
+
+        Behavior
+        --------
+        - Copies the current graph and removes edges with any endpoint outside
+        the provided vertex set.
+        - Removes all vertices not listed in `vertices`.
+
+        Notes
+        -----
+        - For binary edges, both endpoints must be in `vertices` to be retained.
+        - For hyperedges, **all** member nodes must be included to retain the edge.
+        - Attributes for retained nodes and edges are preserved.
+        """
+        g = self.copy()
+        V = set(vertices)
+
+        # Drop edges that touch any vertex outside the set
+        for j in range(g.number_of_edges()):
+            S, T = g.get_edge(j)
+            if not (S | T).issubset(V):
+                eid = g.idx_to_edge[j]
+                g.remove_edge(eid)
+
+        # Drop all vertices not in the set
+        for v in list(g.nodes()):
+            if v not in V:
+                g.remove_vertex(v)
+
+        return g
+
+    def extract_subgraph(self, vertices=None, edges=None) -> "Graph":
+        """
+        Create a subgraph based on a combination of vertex and/or edge filters.
+
+        Parameters
+        ----------
+        vertices : Iterable[str] | None, optional
+            A set of vertex IDs to include. If provided, behaves like `subgraph()`.
+            If `None`, no vertex filtering is applied.
+        edges : Iterable[str] | Iterable[int] | None, optional
+            A set of edge IDs or indices to include. If provided, behaves like
+            `edge_subgraph()`. If `None`, no edge filtering is applied.
+
+        Returns
+        -------
+        Graph
+            A new `Graph` filtered according to the provided vertex and/or edge
+            sets.
+
+        Behavior
+        --------
+        - If both `vertices` and `edges` are provided, the resulting subgraph is
+        the intersection of the two filters.
+        - If only `vertices` is provided, equivalent to `subgraph(vertices)`.
+        - If only `edges` is provided, equivalent to `edge_subgraph(edges)`.
+        - If neither is provided, a full copy of the graph is returned.
+
+        Notes
+        -----
+        - This is a convenience method; it delegates to `subgraph()` and
+        `edge_subgraph()` internally.
+        """
+        g = self.copy()
+        if vertices is not None:
+            g = g.subgraph(vertices)
+        if edges is not None:
+            g = g.edge_subgraph(edges)
+        return g
+
+    def reverse(self) -> "Graph":
+        """
+        Return a new graph with all directed edges reversed.
+
+        Returns
+        -------
+        Graph
+            A new `Graph` instance with reversed directionality where applicable.
+
+        Behavior
+        --------
+        - **Binary edges:** direction is flipped by swapping source and target.
+        - **Directed hyperedges:** `head` and `tail` sets are swapped.
+        - **Undirected edges/hyperedges:** unaffected.
+        - Edge attributes and metadata are preserved.
+
+        Notes
+        -----
+        - This operation does not modify the original graph.
+        - If the graph is undirected (`self.directed == False`), the result is
+        identical to the original.
+        - For mixed graphs (directed + undirected edges), only the directed
+        ones are reversed.
+        """
+        g = self.copy()
+
+        for eid, defn in g.edge_definitions.items():
+            if not g._is_directed_edge(eid):
+                continue
+            # Binary edge: swap endpoints
+            u, v, etype = defn
+            g.edge_definitions[eid] = (v, u, etype)
+
+        for eid, meta in g.hyperedge_definitions.items():
+            if not meta.get("directed", False):
+                continue
+            # Hyperedge: swap head and tail sets
+            meta["head"], meta["tail"] = meta["tail"], meta["head"]
+
+        return g
 
     def subgraph_from_layer(self, layer_id, *, resolve_layer_weights=True):
         """
@@ -2495,7 +3190,7 @@ class Graph:
         lg.add_layer(layer_id, **self.get_layer_info(layer_id)["attributes"])
         lg.set_active_layer(layer_id)
 
-        layer_nodes = self._layers[layer_id]["nodes"]
+        layer_vertices = self._layers[layer_id]["vertices"]
         layer_edges = self._layers[layer_id]["edges"]
 
         def _row_attrs(df: pl.DataFrame, key_col: str, key_val, drop_key: str):
@@ -2508,14 +3203,14 @@ class Graph:
             d.pop(drop_key, None)
             return d
 
-        # 1) bring over entities (nodes + edge-entities) that participate in this layer
-        for ent_id in layer_nodes:
-            if self.entity_types.get(ent_id) == "node":
-                attrs = _row_attrs(self.node_attributes, "node_id", ent_id, "node_id")
-                lg.add_node(ent_id, layer=layer_id, **attrs)
+        # 1) bring over entities (vertices + edge-entities) that participate in this layer
+        for ent_id in layer_vertices:
+            if self.entity_types.get(ent_id) == "vertex":
+                attrs = _row_attrs(self.vertex_attributes, "vertex_id", ent_id, "vertex_id")
+                lg.add_vertex(ent_id, layer=layer_id, **attrs)
             else:
-                # edge-entity (attributes stored in node_attributes as well)
-                attrs = _row_attrs(self.node_attributes, "node_id", ent_id, "node_id")
+                # edge-entity (attributes stored in vertex_attributes as well)
+                attrs = _row_attrs(self.vertex_attributes, "vertex_id", ent_id, "vertex_id")
                 lg.add_edge_entity(ent_id, layer=layer_id, **attrs)
 
         # 2) bring over edges in this layer (preserve directedness + attrs + effective weight)
@@ -2553,15 +3248,15 @@ class Graph:
                     )
                 continue
 
-            # binary or node-edge
-            src, tgt, etype = self.edge_definitions[eid]  # etype in {'regular','node_edge'}
+            # binary or vertex-edge
+            src, tgt, etype = self.edge_definitions[eid]  # etype in {'regular','vertex_edge'}
             edir = self.edge_directed.get(eid, self.directed)
             lg.add_edge(
                 src,
                 tgt,
                 weight=float(w),
                 edge_id=eid,         # preserve original id
-                edge_type=etype,     # 'regular' or 'node_edge'
+                edge_type=etype,     # 'regular' or 'vertex_edge'
                 edge_directed=edir,
                 layer=layer_id,
                 **ed_attrs
@@ -2602,15 +3297,15 @@ class Graph:
             if la:
                 new_graph.set_layer_attrs(lid, **la)
 
-        # ---- Copy entities (nodes + edge-entities) ----
+        # ---- Copy entities (vertices + edge-entities) ----
         for ent_id, etype in self.entity_types.items():
-            attrs = _row_attrs(self.node_attributes, "node_id", ent_id, "node_id")
-            if etype == "node":
-                new_graph.add_node(ent_id, layer=new_graph._default_layer, **attrs)
+            attrs = _row_attrs(self.vertex_attributes, "vertex_id", ent_id, "vertex_id")
+            if etype == "vertex":
+                new_graph.add_vertex(ent_id, layer=new_graph._default_layer, **attrs)
             else:
                 new_graph.add_edge_entity(ent_id, layer=new_graph._default_layer, **attrs)
 
-        # ---- Copy *binary / node-edge* edges (skip hyperedges here) ----
+        # ---- Copy *binary / vertex-edge* edges (skip hyperedges here) ----
         for edge_id, (source, target, edge_type) in self.edge_definitions.items():
             if edge_type == "hyper":
                 continue  # will be handled below
@@ -2624,7 +3319,7 @@ class Graph:
                 target,
                 weight=weight,
                 edge_id=edge_id,
-                edge_type=edge_type,    # 'regular' or 'node_edge'
+                edge_type=edge_type,    # 'regular' or 'vertex_edge'
                 edge_directed=edge_dir,
                 **edge_attrs,
             )
@@ -2652,14 +3347,14 @@ class Graph:
                     **edge_attrs,
                 )
 
-        # ---- Copy layer memberships (nodes & edges) EXACTLY ----
+        # ---- Copy layer memberships (vertices & edges) EXACTLY ----
         for lid, meta in self._layers.items():
             # ensure layer exists
             if lid not in new_graph._layers:
                 new_graph.add_layer(lid)
 
             # overwrite (not update) to match exactly
-            new_graph._layers[lid]["nodes"] = set(meta["nodes"])
+            new_graph._layers[lid]["vertices"] = set(meta["vertices"])
             new_graph._layers[lid]["edges"] = set(meta["edges"])
 
 
@@ -2699,16 +3394,143 @@ class Graph:
         
         df_bytes = 0
 
-        # Node attributes
-        if isinstance(self.node_attributes, pl.DataFrame):
+        # vertex attributes
+        if isinstance(self.vertex_attributes, pl.DataFrame):
             # Polars provides a built-in estimate of total size in bytes
-            df_bytes += self.node_attributes.estimated_size()
+            df_bytes += self.vertex_attributes.estimated_size()
 
         # Edge attributes
         if isinstance(self.edge_attributes, pl.DataFrame):
             df_bytes += self.edge_attributes.estimated_size()
 
         return matrix_bytes + dict_bytes + df_bytes
+
+    def get_vertex_incidence_matrix_as_lists(self, values: bool = False) -> dict:
+        """
+        Materialize the vertex–edge incidence structure as Python lists.
+
+        Parameters
+        ----------
+        values : bool, optional (default=False)
+            - If `False`, returns edge indices incident to each vertex.
+            - If `True`, returns the **matrix values** (usually weights or 1/0) for
+            each incident edge instead of the indices.
+
+        Returns
+        -------
+        dict[str, list]
+            A mapping from `node_id` → list of incident edges (indices or values),
+            where:
+            - Keys are vertex IDs.
+            - Values are lists of edge indices (if `values=False`) or numeric values
+            from the incidence matrix (if `values=True`).
+
+        Notes
+        -----
+        - Internally uses the sparse incidence matrix `self._matrix`, which is stored
+        as a SciPy CSR (compressed sparse row) matrix or similar.
+        - The incidence matrix `M` is defined as:
+            - Rows: vertices
+            - Columns: edges
+            - Entry `M[i, j]` non-zero ⇨ vertex `i` is incident to edge `j`.
+        - This is a convenient method when you want a native-Python structure for
+        downstream use (e.g., exporting, iterating, or visualization).
+        """
+        result = {}
+        csr = self._matrix.tocsr()
+        for i in range(csr.shape[0]):
+            node_id = self.idx_to_entity[i]
+            row = csr.getrow(i)
+            if values:
+                result[node_id] = row.data.tolist()
+            else:
+                result[node_id] = row.indices.tolist()
+        return result
+
+    def vertex_incidence_matrix(self, values: bool = False, sparse: bool = False):
+        """
+        Return the vertex–edge incidence matrix in sparse or dense form.
+
+        Parameters
+        ----------
+        values : bool, optional (default=False)
+            If `True`, include the numeric values stored in the matrix
+            (e.g., weights or signed incidence values). If `False`, convert the
+            matrix to a binary mask (1 if incident, 0 if not).
+        sparse : bool, optional (default=False)
+            - If `True`, return the underlying sparse matrix (CSR).
+            - If `False`, return a dense NumPy ndarray.
+
+        Returns
+        -------
+        scipy.sparse.csr_matrix | numpy.ndarray
+            The vertex–edge incidence matrix `M`:
+            - Rows correspond to vertices.
+            - Columns correspond to edges.
+            - `M[i, j]` ≠ 0 indicates that vertex `i` is incident to edge `j`.
+
+        Notes
+        -----
+        - If `values=False`, the returned matrix is binarized before returning.
+        - Use `sparse=True` for large graphs to avoid memory blowups.
+        - This is the canonical low-level structure that most algorithms (e.g.,
+        spectral clustering, Laplacian construction, hypergraph analytics) rely on.
+        """
+        M = self._matrix.tocsr()
+
+        if not values:
+            # Convert to binary mask
+            M = M.copy()
+            M.data[:] = 1
+
+        if sparse:
+            return M
+        else:
+            return M.toarray()
+
+    def __hash__(self) -> int:
+        """
+        Return a stable hash representing the current graph structure and metadata.
+
+        Returns
+        -------
+        int
+            A hash value that uniquely (within high probability) identifies the graph
+            based on its topology and attributes.
+
+        Behavior
+        --------
+        - Includes the set of nodes, edges, and directedness in the hash.
+        - Includes graph-level attributes (if any) to capture metadata changes.
+        - Does **not** depend on memory addresses or internal object IDs, so the same
+        graph serialized/deserialized or reconstructed with identical structure
+        will produce the same hash.
+
+        Notes
+        -----
+        - This method enables `Graph` objects to be used in hash-based containers
+        (like `set` or `dict` keys).
+        - If the graph is **mutated** after hashing (e.g., nodes or edges are added
+        or removed), the hash will no longer reflect the new state.
+        - The method uses a deterministic representation: sorted node/edge sets
+        ensure that ordering does not affect the hash.
+        """
+        # Core structural components
+        node_ids = tuple(sorted(self.nodes()))
+        edge_defs = []
+
+        for j in range(self.number_of_edges()):
+            S, T = self.get_edge(j)
+            eid = self.idx_to_edge[j]
+            directed = self._is_directed_edge(eid)
+            edge_defs.append((eid, tuple(sorted(S)), tuple(sorted(T)), directed))
+
+        edge_defs = tuple(sorted(edge_defs))
+
+        # Include high-level metadata if available
+        graph_meta = tuple(sorted(self.graph_attributes.items())) if hasattr(self, "graph_attributes") else ()
+
+        return hash((node_ids, edge_defs, graph_meta))
 
     # History and Timeline
 
@@ -2771,9 +3593,9 @@ class Graph:
     def _install_history_hooks(self):
         # Mutating methods to wrap. Add here if you add new mutators.
         to_wrap = [
-            "add_node", "add_edge_entity", "add_edge", "add_hyperedge",
-            "remove_edge", "remove_node",
-            "set_node_attrs", "set_edge_attrs", "set_layer_attrs", "set_edge_layer_attrs",
+            "add_vertex", "add_edge_entity", "add_edge", "add_hyperedge",
+            "remove_edge", "remove_vertex",
+            "set_vertex_attrs", "set_edge_attrs", "set_layer_attrs", "set_edge_layer_attrs",
             "register_layer", "unregister_layer"
         ]
         for name in to_wrap:
