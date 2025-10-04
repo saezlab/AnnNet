@@ -4,6 +4,10 @@ import polars as pl
 from collections import defaultdict
 from ._base import EdgeType
 import math
+from functools import wraps
+from datetime import datetime, timezone
+import inspect
+import time
 
 class IncidenceGraph:
     """
@@ -103,6 +107,13 @@ class IncidenceGraph:
             "attributes": {}
         }
         self._current_layer = self._default_layer
+
+        # History and Timeline
+        self._history_enabled = True
+        self._history = []           # list[dict]
+        self._version = 0
+        self._history_clock0 = time.perf_counter_ns()
+        self._install_history_hooks()  # wrap mutating methods
 
     # Layer basics
 
@@ -2692,3 +2703,191 @@ class IncidenceGraph:
             df_bytes += self.edge_attributes.estimated_size()
 
         return matrix_bytes + dict_bytes + df_bytes
+
+    # History and Timeline
+
+    def _utcnow_iso(self) -> str:
+        return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+    def _jsonify(self, x):
+        # Make args/return JSON-safe & compact.
+        import numpy as np
+        if x is None or isinstance(x, (bool, int, float, str)):
+            return x
+        if isinstance(x, (set, frozenset)):
+            return sorted(self._jsonify(v) for v in x)
+        if isinstance(x, (list, tuple)):
+            return [self._jsonify(v) for v in x]
+        if isinstance(x, dict):
+            return {str(k): self._jsonify(v) for k, v in x.items()}
+        # NumPy scalars
+        if isinstance(x, (np.generic,)):
+            return x.item()
+        # Polars, SciPy, or other heavy objects -> just a tag
+        t = type(x).__name__
+        return f"<<{t}>>"
+
+    def _log_event(self, op: str, **fields):
+        if not self._history_enabled:
+            return
+        self._version += 1
+        evt = {
+            "version": self._version,
+            "ts_utc": self._utcnow_iso(),                    # ISO-8601 with Z
+            "mono_ns": time.perf_counter_ns() - self._history_clock0,
+            "op": op,
+        }
+        # sanitize
+        for k, v in fields.items():
+            evt[k] = self._jsonify(v)
+        self._history.append(evt)
+
+    def _log_mutation(self, name=None):
+        def deco(fn):
+            op = name or fn.__name__
+            sig = inspect.signature(fn)
+            @wraps(fn)
+            def wrapper(*args, **kwargs):
+                bound = sig.bind(*args, **kwargs)
+                bound.apply_defaults()
+                result = fn(*args, **kwargs)
+                payload = {}
+                # record all call args except 'self'
+                for k, v in bound.arguments.items():
+                    if k != "self":
+                        payload[k] = v
+                payload["result"] = result
+                self._log_event(op, **payload)
+                return result
+            return wrapper
+        return deco
+
+    def _install_history_hooks(self):
+        # Mutating methods to wrap. Add here if you add new mutators.
+        to_wrap = [
+            "add_node", "add_edge_entity", "add_edge", "add_hyperedge",
+            "remove_edge", "remove_node",
+            "set_node_attrs", "set_edge_attrs", "set_layer_attrs", "set_edge_layer_attrs",
+            "register_layer", "unregister_layer"
+        ]
+        for name in to_wrap:
+            if hasattr(self, name):
+                fn = getattr(self, name)
+                # Avoid double-wrapping
+                if getattr(fn, "__wrapped__", None) is None:
+                    setattr(self, name, self._log_mutation(name)(fn))
+
+    def history(self, as_df: bool = False):
+        """
+        Return the append-only mutation history.
+
+        Parameters
+        ----------
+        as_df : bool, default False
+            If True, return a Polars DF [DataFrame]; otherwise return a list of dicts.
+
+        Returns
+        -------
+        list[dict] or polars.DataFrame
+            Each event includes: 'version', 'ts_utc' (UTC [Coordinated Universal Time]
+            ISO-8601 [International Organization for Standardization]), 'mono_ns'
+            (monotonic nanoseconds since logger start), 'op', call snapshot fields,
+            and 'result' when captured.
+
+        Notes
+        -----
+        Ordering is guaranteed by 'version' and 'mono_ns'. The log is in-memory until exported.
+        """
+        return pl.DataFrame(self._history) if as_df else list(self._history)
+
+    def export_history(self, path: str):
+        """
+        Write the mutation history to disk.
+
+        Parameters
+        ----------
+        path : str
+            Output path. Supported extensions: '.parquet', '.ndjson' (a.k.a. '.jsonl'),
+            '.json', '.csv'. Unknown extensions default to Parquet by appending '.parquet'.
+
+        Returns
+        -------
+        int
+            Number of events written. Returns 0 if the history is empty.
+
+        Raises
+        ------
+        OSError
+            If the file cannot be written.
+        """
+        if not self._history:
+            return 0
+        df = pl.DataFrame(self._history)
+        p = path.lower()
+        if p.endswith(".parquet"):
+            df.write_parquet(path);  return len(df)
+        if p.endswith(".ndjson") or p.endswith(".jsonl"):
+            with open(path, "w", encoding="utf-8") as f:
+                for r in df.iter_rows(named=True):
+                    import json
+                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
+            return len(df)
+        if p.endswith(".json"):
+            import json
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(df.to_dicts(), f, ensure_ascii=False)
+            return len(df)
+        if p.endswith(".csv"):
+            df.write_csv(path); return len(df)
+        # Default to Parquet if unknown
+        df.write_parquet(path + ".parquet"); return len(df)
+
+    def enable_history(self, flag: bool = True):
+        """
+        Enable or disable in-memory mutation logging.
+
+        Parameters
+        ----------
+        flag : bool, default True
+            When True, start/continue logging; when False, pause logging.
+
+        Returns
+        -------
+        None
+        """
+        self._history_enabled = bool(flag)
+
+    def clear_history(self):
+        """
+        Clear the in-memory mutation log.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        This does not delete any files previously exported.
+        """
+        self._history.clear()
+
+    def mark(self, label: str):
+        """
+        Insert a manual marker into the mutation history.
+
+        Parameters
+        ----------
+        label : str
+            Human-readable tag for the marker event.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        The event is recorded with 'op'='mark' alongside standard fields
+        ('version', 'ts_utc', 'mono_ns'). Logging must be enabled for the
+        marker to be recorded.
+        """
+        self._log_event("mark", label=label)
