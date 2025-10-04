@@ -329,6 +329,123 @@ def from_dataframe(
     return G
 
 
+def export_edge_list_csv(G, path, layer=None):
+    """
+    Export the binary edge subgraph to a CSV [Comma-Separated Values] file.
+
+    Parameters
+    ----------
+    G : IncidenceGraph
+        Graph instance to export. Must support ``edges_view`` with columns
+        compatible with binary endpoints (e.g., 'source', 'target').
+    path : str or pathlib.Path
+        Output path for the CSV file.
+    layer : str, optional
+        Restrict the export to a specific layer. If None, all layers are exported.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    - Only binary edges are exported. Hyperedges (edges connecting more than two
+      entities) are ignored.
+    - Output columns include: 'source', 'target', 'weight', 'directed', and 'layer'.
+    - If a weight column does not exist, a default weight of 1.0 is written.
+    - If a directedness column is absent, it will be written as ``None``.
+    - This format is compatible with ``load_csv_to_graph(schema="edge_list")``.
+    """
+    df = G.edges_view(layer=layer, include_directed=True, resolved_weight=True)
+    cols = {c.lower(): c for c in df.columns}
+    src = next((cols[k] for k in ("source","src","u","from")), None)
+    dst = next((cols[k] for k in ("target","dst","v","to")), None)
+    if not (src and dst):
+        raise ValueError("No binary endpoints in edges_view; likely hyperedge-only. Use export_hyperedge_csv.")
+    out = pl.DataFrame({
+        "source": df[src],
+        "target": df[dst],
+        "weight": df.get(cols.get("effective_weight", cols.get("weight")), pl.Series([1.0]*len(df))),
+        "directed": df.get(cols.get("directed"), pl.Series([None]*len(df))),
+        "layer": pl.Series([layer]*len(df)) if layer else df.get("layer", pl.Series([None]*len(df))),
+    })
+    out.write_csv(path)
+
+
+def export_hyperedge_csv(G, path, layer=None, directed=None):
+    """
+    Export hyperedges from the graph to a CSV [Comma-Separated Values] file.
+
+    Parameters
+    ----------
+    G : IncidenceGraph
+        Graph instance to export. Must support ``edges_view`` exposing either
+        'members' (for undirected hyperedges) or 'head'/'tail' (for directed hyperedges).
+    path : str or pathlib.Path
+        Output path for the CSV file.
+    layer : str, optional
+        Restrict the export to a specific layer. If None, all layers are exported.
+    directed : bool, optional
+        Force treatment of hyperedges as directed or undirected. If None, the function
+        attempts to infer directedness from the graph.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    - If the graph exposes a 'members' column, the output will contain one row per
+      undirected hyperedge.
+    - If 'head' and 'tail' columns are present, the output will contain one row per
+      directed hyperedge. If ``directed=False`` is passed, 'head' and 'tail' are merged
+      into a 'members' column.
+    - A 'weight' column is included if available; otherwise, all weights default to 1.0.
+    - A 'layer' column is included if present or if ``layer`` is specified.
+    - This format is compatible with ``load_csv_to_graph(schema="hyperedge")``.
+    - If the graph does not expose hyperedge columns, a ``ValueError`` is raised.
+    """
+    df = G.edges_view(layer=layer, include_directed=True, resolved_weight=True)
+    cols = {c.lower(): c for c in df.columns}
+
+    # detect columns that indicate hyper form
+    members = cols.get("members")
+    head    = cols.get("head")
+    tail    = cols.get("tail")
+    dircol  = cols.get("directed")
+    wcol    = cols.get("effective_weight", cols.get("weight"))
+
+    if members:  # undirected hyperedges present
+        out = pl.DataFrame({
+            "members": df[members],
+            "weight": df[wcol] if wcol in df.columns else pl.Series([1.0]*len(df)),
+            "layer": df.get("layer", pl.Series([layer]*len(df))) if layer else df.get("layer", None),
+        })
+        out.write_csv(path); return
+
+    if head and tail:  # directed hyperedges present
+        # respect explicit or column-directedness
+        if directed is None and dircol in df.columns:
+            directed = True
+        if directed is False:
+            # treat as undirected: merge head∪tail into members
+            merged = (df[head].cast(str) + "|" + df[tail].cast(str))  # simplistic join; adjust if your view gives lists/sets
+            out = pl.DataFrame({
+                "members": merged,
+                "weight": df[wcol] if wcol in df.columns else pl.Series([1.0]*len(df)),
+                "layer": df.get("layer", pl.Series([layer]*len(df))) if layer else df.get("layer", None),
+            })
+        else:
+            out = pl.DataFrame({
+                "head": df[head],
+                "tail": df[tail],
+                "weight": df[wcol] if wcol in df.columns else pl.Series([1.0]*len(df)),
+                "layer": df.get("layer", pl.Series([layer]*len(df))) if layer else df.get("layer", None),
+            })
+        out.write_csv(path); return
+
+    raise ValueError("edges_view does not expose hyperedge columns; add them to the view or export via incidence.")
+
 # ---------------------------
 # Ingestors
 # ---------------------------
@@ -595,37 +712,3 @@ def _ingest_lil(
             else:
                 for L in layers:
                     G.add_edge(u, v, directed=directed, weight=w_default, layer=L, **pure_attrs)
-
-
-# ---------------------------
-# Minimal CLI for quick use
-# ---------------------------
-if __name__ == "__main__":
-    import argparse
-
-    p = argparse.ArgumentParser(description="CSV -> IncidenceGraph loader (auto-detecting)")
-    p.add_argument("path", help="Path to CSV file")
-    p.add_argument("--schema", default="auto", choices=["auto","edge_list","hyperedge","incidence","adjacency","lil"], help="Force a schema")
-    p.add_argument("--layer", default=None, help="Default layer")
-    p.add_argument("--directed", default=None, choices=["true","false"], help="Default directedness for binary edges")
-    p.add_argument("--weight", type=float, default=1.0, help="Default weight")
-    args = p.parse_args()
-
-    dflt_dir = None if args.directed is None else (args.directed.lower() == "true")
-
-    if IncidenceGraph is None:
-        raise SystemExit("ERROR: IncidenceGraph not importable; run this inside your project or pass a graph=")
-    G = load_csv_to_graph(
-        args.path,
-        schema=args.schema,
-        default_layer=args.layer,
-        default_directed=dflt_dir,
-        default_weight=args.weight,
-    )
-    # Print a tiny summary
-    try:
-        edges_df = G.edges_view(layer=args.layer, include_directed=True, resolved_weight=True)
-        print(edges_df.head().to_string())
-        print(f"Loaded graph with {len(G.entity_index)} entities and {len(G.edge_index)} edges")
-    except Exception:
-        print("Loaded graph.")
