@@ -2,14 +2,20 @@ import numpy as np
 import scipy.sparse as sp
 import polars as pl
 from collections import defaultdict
-from ._base import EdgeType
 import math
 from functools import wraps
 from datetime import datetime, timezone
 import inspect
 import time
 
-class IncidenceGraph:
+from enum import Enum
+from ._base import EdgeType
+
+class EdgeType(Enum):
+    DIRECTED = "DIRECTED"
+    UNDIRECTED = "UNDIRECTED"
+
+class Graph:
     """
     Sparse incidence-matrix graph with layers, attributes, parallel edges, and hyperedges.
 

@@ -1,7 +1,3 @@
-from .structure import *
-from .metadata import *
-from .views import *
-from .adapter import IncidenceAdapter
-from .incgraph import IncidenceGraph
+from .graph import Graph, EdgeType
 
-__all__ = ["structure", "metadata", "views", "IncidenceAdapter", "IncidenceGraph"]
+__all__ = ["Graph", "EdgeType"]
