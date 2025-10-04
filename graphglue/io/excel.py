@@ -3,11 +3,6 @@ import tempfile
 import pathlib
 from typing import Optional, Union
 
-import polars as pl
-
-from ..core.graph import IncidenceGraph
-
-
 def load_excel_to_graph(
     path: Union[str, pathlib.Path],
     graph=None,
@@ -25,7 +20,7 @@ def load_excel_to_graph(
     ----------
     path : str or Path
         Path to the Excel file.
-    graph : IncidenceGraph, optional
+    graph : Graph, optional
         Existing graph instance. If None, a new one is created.
     schema : {'auto', 'edge_list', 'hyperedge', 'incidence', 'adjacency', 'lil'}, default 'auto'
         Graph schema to assume or infer.
@@ -42,7 +37,7 @@ def load_excel_to_graph(
 
     Returns
     -------
-    IncidenceGraph
+    Graph
         The created or augmented graph.
 
     Notes

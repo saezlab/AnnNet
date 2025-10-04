@@ -1688,7 +1688,7 @@ class Graph:
         Notes
         -----
         - This function reads directly from `self.edge_attributes`, which should be
-        a Polars DataFrame or pandas DataFrame where each row corresponds to an edge.
+        a Polars DataFrame where each row corresponds to an edge.
         - Useful for bulk inspection, serialization, or analytics without looping manually.
         """
         df = self.edge_attributes
@@ -3174,7 +3174,7 @@ class Graph:
 
         Returns
         -------
-        IncidenceGraph
+        Graph
             New graph containing only entities/edges of the layer.
 
         Raises
@@ -3185,7 +3185,7 @@ class Graph:
         if layer_id not in self._layers:
             raise KeyError(f"Layer {layer_id} not found")
 
-        lg = IncidenceGraph(directed=self.directed)
+        lg = Graph(directed=self.directed)
         # Create the destination layer and make it active
         lg.add_layer(layer_id, **self.get_layer_info(layer_id)["attributes"])
         lg.set_active_layer(layer_id)
@@ -3271,7 +3271,7 @@ class Graph:
 
         Returns
         -------
-        IncidenceGraph
+        Graph
         """
         # local helper (do NOT use self._row_attrs here)
         def _row_attrs(df, key_col: str, key_val, drop_key: str):
@@ -3287,7 +3287,7 @@ class Graph:
 
         import polars as pl  # ensure available in this scope
 
-        new_graph = IncidenceGraph(directed=self.directed)
+        new_graph = Graph(directed=self.directed)
 
         # ---- Copy layers and their attributes first ----
         for lid in self._layers:

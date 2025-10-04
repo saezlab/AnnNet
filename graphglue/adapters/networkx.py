@@ -10,8 +10,7 @@ from typing import Any
 from enum import Enum
 import json
 
-from ..core._base import BaseGraph, EdgeType, Attr, Attributes
-from ..core.adapter import IncidenceAdapter   # backend
+from ..core.graph import Graph, EdgeType
 
 
 # ────────────────────────────────
@@ -87,70 +86,140 @@ def _safe_set_edge_attrs(deep, eid, attrs: dict):
 # ────────────────────────────────
 # Core legacy exporter (no manifest)
 # ────────────────────────────────
-def _export_legacy(graph: BaseGraph, directed=True, skip_hyperedges=True, public_only=False, **kwargs):
+import networkx as nx
+
+def _export_legacy(graph, *, directed: bool = True, skip_hyperedges: bool = True,
+                   public_only: bool = False, **kwargs):
+    """
+    Export the graph to a NetworkX Multi(Di)Graph.
+
+    Parameters
+    ----------
+    graph : Graph
+        Your SSOT graph instance.
+    directed : bool, default True
+        If True, build a MultiDiGraph; else MultiGraph. For undirected
+        edges inside a directed export, emit both directions.
+    skip_hyperedges : bool, default True
+        If True, drop hyperedges; else expand them:
+          - directed hyperedges: all pairs head×tail
+          - undirected hyperedges: clique expansion
+    public_only : bool, default False
+        If True, drop internal attrs (e.g., keys starting with "__") and
+        expose only user-facing fields (like `weight`).
+
+    Returns
+    -------
+    networkx.MultiGraph | networkx.MultiDiGraph
+    """
     G = nx.MultiDiGraph() if directed else nx.MultiGraph()
 
-    # Add vertices
+    # -- nodes --
     for v in graph.V:
         v_attr = _serialize_attrs(graph.get_attr_vertex(v), public_only=public_only)
         G.add_node(v, **v_attr)
 
-    # Add edges
-    for eidx, (src, dst) in graph.edges():
-        # 1) serialize edge attrs (drops __-keys if public_only=True)
-        e_attr = _serialize_attrs(graph.get_attr_edge(eidx), public_only=public_only)
+    # Helper: directedness per edge-id
+    def _is_directed_eid(eid: str) -> bool:
+        if graph.edge_kind.get(eid) == "hyper":
+            return bool(graph.hyperedge_definitions[eid].get("directed", False))
+        return bool(graph.edge_directed.get(eid, getattr(graph, "directed", True)))
 
-        # 2) fetch authoritative weight from deep (map index -> eid first if needed)
+    # -- edges --
+    for j in range(graph.number_of_edges()):
+        eid = graph.idx_to_edge[j]
+        S, T = graph.get_edge(j)              # frozensets
+        e_attr = _serialize_attrs(graph.get_attr_edge(j), public_only=public_only)
+
+        # authoritative weight (prefer engine mapping if present)
         weight = None
-        deep = getattr(graph, "deep", None)
-        if deep is not None:
-            # many backends expose a mapping index->edge id
-            eid = None
-            if hasattr(deep, "idx_to_edge"):
-                try:
-                    eid = deep.idx_to_edge[eidx]
-                except Exception:
-                    pass
-            # fall back to using the numeric index if your edge_weights uses indices
-            key = eid if (eid in getattr(deep, "edge_weights", {})) else eidx
-            if hasattr(deep, "edge_weights") and key in deep.edge_weights:
-                weight = deep.edge_weights[key]
+        if hasattr(graph, "edge_weights"):
+            key = eid if eid in graph.edge_weights else j
+            weight = graph.edge_weights.get(key, None)
 
-        # 3) normalize weight into the emitted attrs
+        # normalize weight field(s)
         if public_only:
-            # keep only user-facing `weight`
             if weight is not None:
                 e_attr["weight"] = weight
-            # do NOT keep __weight (it’s internal)
             e_attr.pop("__weight", None)
         else:
-            # keep internal __weight (if present), but prefer the authoritative one
             if weight is not None:
                 e_attr["__weight"] = weight
 
-        # 4) emit edges as before
-        if len(src) == 1 and len(dst) == 1:
-            u = next(iter(src)); v = next(iter(dst))
-            G.add_edge(u, v, key=eidx, **e_attr)
-        else:
-            if skip_hyperedges:
-                continue
-            for u in src:
-                for v in dst:
-                    G.add_edge(u, v, key=eidx, **e_attr)
+        is_hyper = (graph.edge_kind.get(eid) == "hyper")
+        is_directed = _is_directed_eid(eid)
 
+        # ---- binary edge path ----
+        # Binary edges yield |S ∪ T| in {1,2}; hyper edges generally yield >2.
+        members = S | T
+        if not is_hyper and (len(members) <= 2):
+            if len(members) == 1:
+                # self-loop (u,u) — treat as such in both graph types
+                u = next(iter(members))
+                if is_directed:
+                    # if your engine distinguishes loop direction, use S/T; otherwise single arc
+                    G.add_edge(u, u, key=eid, **e_attr)
+                else:
+                    # undirected loop is fine
+                    G.add_edge(u, u, key=eid, **e_attr)
+            else:
+                u, v = tuple(members)
+                if is_directed:
+                    # orientation from S -> T
+                    uu = next(iter(S))  # single element
+                    vv = next(iter(T))  # single element
+                    G.add_edge(uu, vv, key=eid, **e_attr)
+                else:
+                    if directed:
+                        # emit both directions to approximate undirected
+                        G.add_edge(u, v, key=eid, **e_attr)
+                        G.add_edge(v, u, key=eid, **e_attr)
+                    else:
+                        G.add_edge(u, v, key=eid, **e_attr)
+            continue
+
+        # ---- hyperedge path ----
+        if skip_hyperedges:
+            continue
+
+        if is_directed:
+            # head × tail
+            for u in S:
+                for v in T:
+                    if directed:
+                        G.add_edge(u, v, key=eid, **e_attr)
+                    else:
+                        # Undirected target graph: store direction flag
+                        G.add_edge(u, v, key=eid, directed=True, **e_attr)
+        else:
+            # undirected hyperedge ⇒ clique expansion over members
+            mem = list(members)
+            n = len(mem)
+            if directed:
+                # both directions for each unordered pair; skip self loops
+                for a in range(n):
+                    for b in range(n):
+                        if a == b:
+                            continue
+                        G.add_edge(mem[a], mem[b], key=eid, **e_attr)
+            else:
+                # undirected clique, no duplicates, no self-loops
+                for a in range(n):
+                    for b in range(a + 1, n):
+                        G.add_edge(mem[a], mem[b], key=eid, **e_attr)
 
     return G
+
 
 
 # ────────────────────────────────
 # Manifest-aware exporter
 # ────────────────────────────────
-def to_nx(adapter_graph: IncidenceAdapter, directed=True,
+def to_nx(adapter_graph: Graph, directed=True,
           hyperedge_mode="skip", layer=None, layers=None,
           public_only=False):
     """
-    Export IncidenceAdapter → (networkx.Graph, manifest).
+    Export Graph → (networkx.Graph, manifest).
     Manifest preserves hyperedges (with per-endpoint coefficients), layers,
     vertex/edge attrs, and stable edge IDs.
     """
@@ -267,8 +336,8 @@ def load_manifest(path: str) -> dict:
 # ────────────────────────────────
 # Importer
 # ────────────────────────────────
-def from_nx(nxG, manifest) -> IncidenceAdapter:
-    H = IncidenceAdapter()
+def from_nx(nxG, manifest) -> Graph:
+    H = Graph()
 
     # 1) vertices — build nodes; ignore NX node attrs (we’ll reapply from manifest if needed)
     for v in nxG.nodes():

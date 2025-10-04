@@ -1,7 +1,7 @@
 """
 This module purposefully avoids importing stdlib `csv` and uses Polars for IO.
 
-It ingests a CSV into IncidenceGraph by auto-detecting common schemas:
+It ingests a CSV into Graph by auto-detecting common schemas:
 - Edge list (including DOK/COO triples and variations)
 - Hyperedge table (members column or head/tail sets)
 - Incidence matrix (rows=entities, cols=edges, ±w orientation)
@@ -10,7 +10,7 @@ It ingests a CSV into IncidenceGraph by auto-detecting common schemas:
 
 If auto-detection fails or you want control, pass schema=... explicitly.
 
-Dependencies: polars, numpy, scipy (only if you use sparse helpers), IncidenceGraph
+Dependencies: polars, numpy, scipy (only if you use sparse helpers), Graph
 
 Design notes:
 - We treat unknown columns as attributes ("pure" non-structural) and write them via
@@ -24,10 +24,10 @@ Design notes:
   schema="edge_list" / "hyperedge" / "incidence" / "adjacency" / "lil".
 
 Public entry points:
-- load_csv_to_graph(path, graph=None, schema="auto", **options) -> IncidenceGraph
-- from_dataframe(df, graph=None, schema="auto", **options) -> IncidenceGraph
+- load_csv_to_graph(path, graph=None, schema="auto", **options) -> Graph
+- from_dataframe(df, graph=None, schema="auto", **options) -> Graph
 
-Both will create and return an IncidenceGraph (or mutate the provided one).
+Both will create and return an Graph (or mutate the provided one).
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ import re
 import polars as pl
 import numpy as np
 
-from ..core.graph import IncidenceGraph
+from ..core.graph import Graph
 
 # ---------------------------
 # Helpers / parsing utilities
@@ -56,7 +56,7 @@ WGT_COLS = ["weight", "w"]
 DIR_COLS = ["directed", "is_directed", "dir", "orientation"]
 LAYER_COLS = ["layer", "layers"]
 EDGE_ID_COLS = ["edge", "edge_id", "id"]
-NODE_ID_COLS = ["node", "node_id", "id", "name", "label"]
+vertex_ID_COLS = ["vertex", "vertex_id", "id", "name", "label"]
 NEIGH_COLS = ["neighbors", "nbrs", "adj", "adjacency", "neighbors_out", "neighbors_in"]
 MEMBERS_COLS = ["members", "verts", "participants"]
 HEAD_COLS = ["head", "heads"]
@@ -65,7 +65,7 @@ ROW_COLS = ["row", "i", "r"]
 COL_COLS = ["col", "column", "j", "c"]
 VAL_COLS = ["val", "value", "w", "weight"]
 
-RESERVED = set(SRC_COLS + DST_COLS + WGT_COLS + DIR_COLS + LAYER_COLS + EDGE_ID_COLS + NODE_ID_COLS + NEIGH_COLS + MEMBERS_COLS + HEAD_COLS + TAIL_COLS + ROW_COLS + COL_COLS + VAL_COLS)
+RESERVED = set(SRC_COLS + DST_COLS + WGT_COLS + DIR_COLS + LAYER_COLS + EDGE_ID_COLS + vertex_ID_COLS + NEIGH_COLS + MEMBERS_COLS + HEAD_COLS + TAIL_COLS + ROW_COLS + COL_COLS + VAL_COLS)
 
 
 def _norm(s: Any) -> str:
@@ -173,7 +173,7 @@ def _detect_schema(df: pl.DataFrame) -> str:
     if any(c in cols for c in SRC_COLS) and any(c in cols for c in DST_COLS):
         return "edge_list"
 
-    # Heuristic: if first column is a node id and remaining many numeric -> incidence
+    # Heuristic: if first column is a vertex id and remaining many numeric -> incidence
     if df.width >= 3:
         first = df.get_column(df.columns[0])
         rest_numeric = all(_is_numeric_series(df.get_column(c)) for c in df.columns[1:])
@@ -199,7 +199,7 @@ def _detect_schema(df: pl.DataFrame) -> str:
 def load_csv_to_graph(
     path: str,
     *,
-    graph: Optional["IncidenceGraph"] = None,
+    graph: Optional["Graph"] = None,
     schema: str = "auto",
     default_layer: Optional[str] = None,
     default_directed: Optional[bool] = None,
@@ -211,19 +211,19 @@ def load_csv_to_graph(
     **kwargs: Any,
 ):
     """
-    Load a CSV and construct/augment an IncidenceGraph.
+    Load a CSV and construct/augment an Graph.
 
     Parameters
     ----------
     path : str
         Path to the CSV file.
-    graph : IncidenceGraph or None, optional
-        If provided, mutate this graph; otherwise create a new IncidenceGraph using
-        `IncidenceGraph(**kwargs)`.
+    graph : Graph or None, optional
+        If provided, mutate this graph; otherwise create a new Graph using
+        `Graph(**kwargs)`.
     schema : {'auto','edge_list','hyperedge','incidence','adjacency','lil'}, default 'auto'
         Parsing mode. 'auto' tries to infer the schema from columns and types.
     default_layer : str or None, optional
-        Layer to register nodes/edges when none is specified in the data.
+        Layer to register vertices/edges when none is specified in the data.
     default_directed : bool or None, optional
         Default directedness for binary edges when not implied by data.
     default_weight : float, default 1.0
@@ -237,17 +237,17 @@ def load_csv_to_graph(
     low_memory : bool, default True
         Pass to Polars read_csv for balanced memory usage.
     **kwargs : Any
-        Passed to IncidenceGraph constructor if `graph` is None.
+        Passed to Graph constructor if `graph` is None.
 
     Returns
     -------
-    IncidenceGraph
+    Graph
         The populated graph instance.
 
     Raises
     ------
     RuntimeError
-        If no IncidenceGraph can be constructed or imported.
+        If no Graph can be constructed or imported.
     ValueError
         If schema is unknown or parsing fails.
     """
@@ -272,7 +272,7 @@ def load_csv_to_graph(
 def from_dataframe(
     df: pl.DataFrame,
     *,
-    graph: Optional["IncidenceGraph"] = None,
+    graph: Optional["Graph"] = None,
     schema: str = "auto",
     default_layer: Optional[str] = None,
     default_directed: Optional[bool] = None,
@@ -280,15 +280,15 @@ def from_dataframe(
     **kwargs: Any,
 ):
     """
-    Build/augment an IncidenceGraph from a Polars DataFrame.
+    Build/augment an Graph from a Polars DataFrame.
 
     Parameters
     ----------
     df : polars.DataFrame
         Input table parsed from CSV.
-    graph : IncidenceGraph or None, optional
-        If provided, mutate this graph; otherwise create a new IncidenceGraph using
-        `IncidenceGraph(**kwargs)`.
+    graph : Graph or None, optional
+        If provided, mutate this graph; otherwise create a new Graph using
+        `Graph(**kwargs)`.
     schema : {'auto','edge_list','hyperedge','incidence','adjacency','lil'}, default 'auto'
         Parsing mode. 'auto' tries to infer the schema.
     default_layer : str or None, optional
@@ -300,14 +300,14 @@ def from_dataframe(
 
     Returns
     -------
-    IncidenceGraph
+    Graph
         The populated graph instance.
     """
     G = graph
     if G is None:
-        if IncidenceGraph is None:
-            raise RuntimeError("IncidenceGraph class not importable; pass an instance via `graph=`.")
-        G = IncidenceGraph(**kwargs)  # type: ignore
+        if Graph is None:
+            raise RuntimeError("Graph class not importable; pass an instance via `graph=`.")
+        G = Graph(**kwargs)  # type: ignore
 
     mode = schema.lower().strip()
     if mode == "auto":
@@ -335,7 +335,7 @@ def export_edge_list_csv(G, path, layer=None):
 
     Parameters
     ----------
-    G : IncidenceGraph
+    G : Graph
         Graph instance to export. Must support ``edges_view`` with columns
         compatible with binary endpoints (e.g., 'source', 'target').
     path : str or pathlib.Path
@@ -397,7 +397,7 @@ def export_hyperedge_csv(G, path, layer=None, directed=None):
 
     Parameters
     ----------
-    G : IncidenceGraph
+    G : Graph
         Graph instance to export. Must support ``edges_view`` exposing either
         'members' (for undirected hyperedges) or 'head'/'tail' (for directed hyperedges).
     path : str or pathlib.Path
@@ -523,9 +523,9 @@ def _ingest_edge_list(
         # attributes for the edge (pure)
         pure_attrs = {k: row[k] for k in attrs_cols if row[k] is not None}
 
-        # ensure nodes
-        G.add_node(u)
-        G.add_node(v)
+        # ensure vertices
+        G.add_vertex(u)
+        G.add_vertex(v)
 
         # create edge per layer (or default)
         if not layers:
@@ -575,14 +575,14 @@ def _ingest_hyperedge(
         if mcol:
             members = _split_set(row[mcol])
             for ent in members:
-                G.add_node(ent)
+                G.add_vertex(ent)
             for L in layer:
                 G.add_hyperedge(members=members, layer=L, directed=False, weight=weight, **pure_attrs)
         else:
             head = _split_set(row[hcol]) if hcol else set()
             tail = _split_set(row[tcol]) if tcol else set()
             for ent in head | tail:
-                G.add_node(ent)
+                G.add_vertex(ent)
             for L in layer:
                 G.add_hyperedge(head=head, tail=tail, layer=L, directed=True, weight=weight, **pure_attrs)
 
@@ -594,16 +594,16 @@ def _ingest_incidence(
     default_weight: float,
 ):
     """Parse incidence matrices (first col = entity id, remaining numeric edge columns)."""
-    idcol = _pick_first(df, NODE_ID_COLS) or df.columns[0]
+    idcol = _pick_first(df, vertex_ID_COLS) or df.columns[0]
     if idcol != df.columns[0]:
         df = df.rename({idcol: df.columns[0]})
         idcol = df.columns[0]
 
-    # Create / ensure all nodes
+    # Create / ensure all vertices
     for nid in df.get_column(idcol).to_list():
         nid_s = _norm(nid)
         if nid_s:
-            G.add_node(nid_s)
+            G.add_vertex(nid_s)
 
     # Each remaining column is an edge column; determine kind per column
     for edge_col in df.columns[1:]:
@@ -657,9 +657,9 @@ def _ingest_adjacency(
         row_labels = [str(i) for i in range(df.height)]
         mat_cols = df.columns
 
-    # Ensure all nodes exist
+    # Ensure all vertices exist
     for nid in row_labels:
-        G.add_node(nid)
+        G.add_vertex(nid)
     for c in mat_cols:
         if not _is_numeric_series(df.get_column(c)):
             raise ValueError("Adjacency ingest: non-numeric column detected in matrix region.")
@@ -669,7 +669,7 @@ def _ingest_adjacency(
     if len(row_labels) != len(mat_cols):
         raise ValueError("Adjacency ingest: number of rows must equal number of columns.")
 
-    # Map col index -> node id
+    # Map col index -> vertex id
     col_ids = [ _norm(c) for c in mat_cols ]
 
     directed = default_directed
@@ -705,8 +705,8 @@ def _ingest_lil(
     default_directed: Optional[bool],
     default_weight: float,
 ):
-    """Parse LIL-style neighbor tables: one row per node with a neighbors column."""
-    idcol = _pick_first(df, NODE_ID_COLS) or df.columns[0]
+    """Parse LIL-style neighbor tables: one row per vertex with a neighbors column."""
+    idcol = _pick_first(df, vertex_ID_COLS) or df.columns[0]
     ncol = _pick_first(df, NEIGH_COLS)
     wcol = _pick_first(df, WGT_COLS)
     dcol = _pick_first(df, DIR_COLS)
@@ -721,7 +721,7 @@ def _ingest_lil(
         u = _norm(row[idcol])
         if not u:
             continue
-        G.add_node(u)
+        G.add_vertex(u)
         nbrs = _split_set(row[ncol])
         w_default = float(row[wcol]) if (wcol and row[wcol] is not None and str(row[wcol]).strip() != "") else default_weight
         directed = _truthy(row[dcol]) if dcol else default_directed
@@ -732,7 +732,7 @@ def _ingest_lil(
         for v in nbrs:
             if not v:
                 continue
-            G.add_node(v)
+            G.add_vertex(v)
             if not layers:
                 G.add_edge(u, v, directed=directed, weight=w_default, layer=default_layer, **pure_attrs)
             else:
