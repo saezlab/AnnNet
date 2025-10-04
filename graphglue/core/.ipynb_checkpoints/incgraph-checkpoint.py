@@ -6,31 +6,7 @@ from ._base import EdgeType
 import math
 
 class IncidenceGraph:
-    """
-    Sparse incidence-matrix graph with layers, attributes, parallel edges, and hyperedges.
 
-    The graph is backed by a DOK (Dictionary Of Keys) sparse matrix and exposes
-    layered views and attribute tables stored as Polars DF (DataFrame). Supports:
-    nodes, binary edges (directed/undirected), edge-entities (node-edge hybrids),
-    k-ary hyperedges (directed/undirected), per-layer membership and weights,
-    and Polars-backed attribute upserts.
-
-    Parameters
-    ----------
-    directed : bool, optional
-        Whether edges are directed by default. Individual edges can override this.
-
-    Notes
-    -----
-    - Incidence columns encode orientation: +w on source/head, −w on target/tail for
-      directed edges; +w on all members for undirected edges/hyperedges.
-    - Attributes are **pure**: structural keys are filtered out so attribute tables
-      contain only user data.
-
-    See Also
-    --------
-    add_node, add_edge, add_hyperedge, edges_view, nodes_view, layers_view
-    """
     # Constants (Attribute helpers)
     _NODE_RESERVED = {"node_id"}               # nothing structural for nodes
     _EDGE_RESERVED = {"edge_id","source","target","weight","edge_type","directed","layer","layer_weight","kind","members","head","tail"}    
@@ -39,24 +15,6 @@ class IncidenceGraph:
     # Construction
 
     def __init__(self, directed=True):
-        """
-        Initialize an empty incidence-matrix graph.
-
-        Parameters
-        ----------
-        directed : bool, optional
-            Global default for edge directionality. Individual edges can override this.
-
-        Notes
-        -----
-        - Stores entities (nodes and edge-entities), edges (including parallels), and
-        an incidence matrix in DOK (Dictionary Of Keys) sparse format.
-        - Attribute tables are Polars DF (DataFrame) with canonical key columns:
-        ``node_attributes(node_id)``, ``edge_attributes(edge_id)``,
-        ``layer_attributes(layer_id)``, and
-        ``edge_layer_attributes(layer_id, edge_id, weight)``.
-        - A ``'default'`` layer is created and set active.
-        """        
         self.directed = directed
         
         # Entity mappings (nodes + node-edge hybrids)
@@ -107,26 +65,7 @@ class IncidenceGraph:
     # Layer basics
 
     def add_layer(self, layer_id, **attributes):
-        """
-        Create a new empty layer.
-
-        Parameters
-        ----------
-        layer_id : str
-            New layer identifier (ID).
-        **attributes
-            Pure layer attributes to store (non-structural).
-
-        Returns
-        -------
-        str
-            The created layer ID.
-
-        Raises
-        ------
-        ValueError
-            If the layer already exists.
-        """
+        """Create new empty layer."""
         if layer_id in self._layers:
             raise ValueError(f"Layer {layer_id} already exists")
         
@@ -141,110 +80,37 @@ class IncidenceGraph:
         return layer_id
 
     def set_active_layer(self, layer_id):
-        """
-        Set the active layer for subsequent operations.
-
-        Parameters
-        ----------
-        layer_id : str
-            Existing layer ID.
-
-        Raises
-        ------
-        KeyError
-            If the layer does not exist.
-        """
+        """Set the active layer for operations."""
         if layer_id not in self._layers:
             raise KeyError(f"Layer {layer_id} not found")
         self._current_layer = layer_id
 
     def get_active_layer(self):
-        """
-        Get the currently active layer ID.
-
-        Returns
-        -------
-        str
-            Active layer ID.
-        """
+        """Get the currently active layer ID."""
         return self._current_layer
     
     def layers(self, include_default: bool = False):
         """
-        Get a mapping of layer IDs to their metadata.
-
-        Parameters
-        ----------
-        include_default : bool, optional
-            Include the internal ``'default'`` layer if True.
-
-        Returns
-        -------
-        dict[str, dict]
-            ``{layer_id: {"nodes": set, "edges": set, "attributes": dict}}``.
+        Return dict of layers. Excludes the internal 'default' layer unless flagged.
         """
         if include_default:
             return self._layers
         return {k: v for k, v in self._layers.items() if k != self._default_layer}
 
     def list_layers(self, include_default: bool = False):
-        """
-        List layer IDs.
-
-        Parameters
-        ----------
-        include_default : bool, optional
-            Include the internal ``'default'`` layer if True.
-
-        Returns
-        -------
-        list[str]
-            Layer IDs.
-        """
+        """List layer IDs, excluding 'default' unless flagged."""
         return list(self.layers(include_default=include_default).keys())
 
     def has_layer(self, layer_id):
-        """
-        Check whether a layer exists.
-
-        Parameters
-        ----------
-        layer_id : str
-
-        Returns
-        -------
-        bool
-        """
+        """Check if layer exists."""
         return layer_id in self._layers
     
     def layer_count(self):
-        """
-        Get the number of layers (including the internal default).
-
-        Returns
-        -------
-        int
-        """
+        """Get number of layers."""
         return len(self._layers)
 
     def get_layer_info(self, layer_id):
-        """
-        Get a layer's metadata snapshot.
-
-        Parameters
-        ----------
-        layer_id : str
-
-        Returns
-        -------
-        dict
-            Copy of ``{"nodes": set, "edges": set, "attributes": dict}``.
-
-        Raises
-        ------
-        KeyError
-            If the layer does not exist.
-        """
+        """Get layer information."""
         if layer_id not in self._layers:
             raise KeyError(f"Layer {layer_id} not found")
         return self._layers[layer_id].copy()
@@ -252,44 +118,17 @@ class IncidenceGraph:
     # ID + entity ensure helpers
 
     def _get_next_edge_id(self) -> str:
-        """
-        INTERNAL: Generate a unique edge ID for parallel edges.
-
-        Returns
-        -------
-        str
-            Fresh ``edge_<n>`` identifier (monotonic counter).
-        """
+        """Generate unique edge ID for parallel edges."""
         edge_id = f"edge_{self._next_edge_id}"
         self._next_edge_id += 1
         return edge_id
     
     def _ensure_node_table(self) -> None:
-        """
-        INTERNAL: Ensure the node attribute table exists with a canonical schema.
-
-        Notes
-        -----
-        - Creates an empty Polars DF [DataFrame] with a single ``Utf8`` ``node_id`` column
-        if missing or malformed.
-        """        
         df = getattr(self, "node_attributes", None)
         if not isinstance(df, pl.DataFrame) or "node_id" not in df.columns:
             self.node_attributes = pl.DataFrame({"node_id": pl.Series([], dtype=pl.Utf8)})
 
     def _ensure_node_row(self, node_id: str) -> None:
-        """
-        INTERNAL: Ensure a row for ``node_id`` exists in the node attribute DF.
-
-        Parameters
-        ----------
-        node_id : str
-
-        Notes
-        -----
-        - Appends a new row with ``node_id`` and ``None`` for other columns if absent.
-        - Preserves existing schema and columns.
-        """    
         df = self.node_attributes
         # if row already exists, nothing to do
         if df.height and df.filter(pl.col("node_id") == node_id).height > 0:
@@ -306,28 +145,6 @@ class IncidenceGraph:
     # Build graph
 
     def add_node(self, node_id, layer=None, **attributes):
-        """
-        Add (or upsert) a node and optionally attach it to a layer.
-
-        Parameters
-        ----------
-        node_id : str
-            Node ID (must be unique across entities).
-        layer : str, optional
-            Target layer. Defaults to the active layer.
-        **attributes
-            Pure node attributes to store.
-
-        Returns
-        -------
-        str
-            The node ID (echoed).
-
-        Notes
-        -----
-        - Ensures a row exists in the Polars DF [DataFrame] for attributes.
-        - Resizes the incidence matrix if needed.
-        """
         layer = layer or self._current_layer
 
         # Add to global superset if new
@@ -357,21 +174,12 @@ class IncidenceGraph:
 
     def add_edge_entity(self, edge_entity_id, layer=None, **attributes):
         """
-        Add an **edge entity** (node-edge hybrid) that can connect to nodes/edges.
-
-        Parameters
-        ----------
-        edge_entity_id : str
-            Entity ID to register as type ``'edge'`` in the entity set.
-        layer : str, optional
-            Target layer. Defaults to the active layer.
-        **attributes
-            Attributes stored in the node attribute DF (treated like nodes).
-
-        Returns
-        -------
-        str
-            The edge-entity ID.
+        Explicitly add an edge as an entity that can be connected to other nodes/edges.
+        
+        Args:
+            edge_entity_id: ID for the edge entity
+            layer: layer to add it to
+            **attributes: attributes for the edge entity
         """
         layer = layer or self._current_layer
         
@@ -392,18 +200,7 @@ class IncidenceGraph:
         return edge_entity_id
   
     def _add_edge_entity(self, edge_id):
-        """
-        INTERNAL: Register an **edge-entity** so edges can attach to it (node-edge mode).
-
-        Parameters
-        ----------
-        edge_id : str
-            Identifier to insert into the entity index as type ``'edge'``.
-
-        Notes
-        -----
-        - Adds a new entity row and resizes the DOK incidence matrix accordingly.
-        """
+        """Add an edge as an entity (for node-edge hybrid connections)."""
         if edge_id not in self.entity_to_idx:
             idx = self._num_entities
             self.entity_to_idx[edge_id] = idx
@@ -427,53 +224,6 @@ class IncidenceGraph:
         edge_directed=None,
         **attributes,
     ):
-            """
-            Add or update a binary edge between two entities.
-
-            Parameters
-            ----------
-            source : str
-                Source entity ID (node or edge-entity for node-edge mode).
-            target : str
-                Target entity ID.
-            layer : str, optional
-                Layer to place the edge into. Defaults to the active layer.
-            weight : float, optional
-                Global edge weight stored in the incidence column (default 1.0).
-            edge_id : str, optional
-                Explicit edge ID. If omitted, a fresh ID is generated.
-            edge_type : {'regular', 'node_edge'}, optional
-                Edge kind. ``'node_edge'`` allows connecting to an edge-entity.
-            propagate : {'none', 'shared', 'all'}, optional
-                Layer propagation:
-                - ``'none'`` : only the specified layer
-                - ``'shared'`` : all layers that already contain **both** endpoints
-                - ``'all'`` : all layers that contain **either** endpoint (and add the other)
-            layer_weight : float, optional
-                Per-layer weight override for this edge (stored in edge-layer DF).
-            edge_directed : bool, optional
-                Override default directedness for this edge. If None, uses graph default.
-            **attributes
-                Pure edge attributes to upsert.
-
-            Returns
-            -------
-            str
-                The edge ID (new or updated).
-
-            Raises
-            ------
-            ValueError
-                If ``propagate`` or ``edge_type`` is invalid.
-            TypeError
-                If ``weight`` is not numeric.
-
-            Notes
-            -----
-            - Directed edges write ``+weight`` at source row and ``-weight`` at target row.
-            - Undirected edges write ``+weight`` at both endpoints.
-            - Updating an existing edge ID overwrites its matrix column and metadata.
-            """
             # validate inputs
             if propagate not in {"none", "shared", "all"}:
                 raise ValueError(f"propagate must be one of 'none'|'shared'|'all', got {propagate!r}")
@@ -578,22 +328,7 @@ class IncidenceGraph:
             return edge_id
 
     def add_parallel_edge(self, source, target, weight=1.0, **attributes):
-        """
-        Add a parallel edge (same endpoints, different ID).
-
-        Parameters
-        ----------
-        source : str
-        target : str
-        weight : float, optional
-        **attributes
-            Pure edge attributes.
-
-        Returns
-        -------
-        str
-            The new edge ID.
-        """
+        """Add a parallel edge (same nodes, different edge ID)."""
         return self.add_edge(source, target, weight=weight, edge_id=None, **attributes)
    
     def add_hyperedge(
@@ -609,42 +344,9 @@ class IncidenceGraph:
         **attributes,
     ):
         """
-        Create a k-ary hyperedge as a single incidence column.
-
-        Modes
-        -----
-        - **Undirected**: pass ``members`` (>=2). Each member gets ``+weight``.
-        - **Directed**: pass ``head`` and ``tail`` (both non-empty, disjoint).
-        Head gets ``+weight``; tail gets ``-weight``.
-
-        Parameters
-        ----------
-        members : Iterable[str], optional
-            Undirected member set (size ≥ 2).
-        head : Iterable[str], optional
-            Directed head set (non-empty).
-        tail : Iterable[str], optional
-            Directed tail set (non-empty, disjoint from head).
-        layer : str, optional
-            Layer to place the hyperedge into. Defaults to the active layer.
-        weight : float, optional
-            Global weight stored in the column.
-        edge_id : str, optional
-            Explicit ID; generated if omitted.
-        edge_directed : bool, optional
-            Force directed/undirected; inferred from parameters if None.
-        **attributes
-            Pure edge attributes.
-
-        Returns
-        -------
-        str
-            The hyperedge ID.
-
-        Raises
-        ------
-        ValueError
-            For invalid argument combinations or empty/disjointness violations.
+        Create a k-ary hyperedge as a single incidence-matrix column.
+        - Undirected: pass members (>=2).
+        - Directed: pass head and tail (both non-empty, disjoint).
         """
         # ---- validate form ----
         if members is None and (head is None or tail is None):
@@ -754,50 +456,18 @@ class IncidenceGraph:
         return edge_id
 
     def add_edge_to_layer(self, lid, eid):
-        """
-        Attach an existing edge to a layer (no weight changes).
-
-        Parameters
-        ----------
-        lid : str
-            Layer ID.
-        eid : str
-            Edge ID.
-
-        Raises
-        ------
-        KeyError
-            If the layer does not exist.
-        """
         if lid not in self._layers:
             raise KeyError(f"Layer {lid} does not exist")
         self._layers[lid]["edges"].add(eid)
 
     def _propagate_to_shared_layers(self, edge_id, source, target):
-        """
-        INTERNAL: Add an edge to all layers that already contain **both** endpoints.
-
-        Parameters
-        ----------
-        edge_id : str
-        source : str
-        target : str
-        """
+        """Add edge to layers where both source and target exist."""
         for layer_id, layer_data in self._layers.items():
             if source in layer_data["nodes"] and target in layer_data["nodes"]:
                 layer_data["edges"].add(edge_id)
 
     def _propagate_to_all_layers(self, edge_id, source, target):
-        """
-        INTERNAL: Add an edge to any layer containing **either** endpoint and
-        insert the missing endpoint into that layer.
-
-        Parameters
-        ----------
-        edge_id : str
-        source : str
-        target : str
-        """
+        """Add edge to all layers containing either source or target."""
         for layer_id, layer_data in self._layers.items():
             if source in layer_data["nodes"] or target in layer_data["nodes"]:
                 layer_data["edges"].add(edge_id)
@@ -810,23 +480,7 @@ class IncidenceGraph:
     # Remove / mutate down
 
     def remove_edge(self, edge_id):
-        """
-        Remove an edge (binary or hyperedge) from the graph.
-
-        Parameters
-        ----------
-        edge_id : str
-
-        Raises
-        ------
-        KeyError
-            If the edge is not found.
-
-        Notes
-        -----
-        - Physically removes the incidence column (CSR [Compressed Sparse Row] slice).
-        - Cleans edge attributes, layer memberships, and per-layer entries.
-        """
+        """Remove an edge from the graph."""
         if edge_id not in self.edge_to_idx:
             raise KeyError(f"Edge {edge_id} not found")
 
@@ -888,23 +542,7 @@ class IncidenceGraph:
         self.hyperedge_definitions.pop(edge_id, None)
 
     def remove_node(self, node_id):
-        """
-        Remove a node and all incident edges (binary + hyperedges).
-
-        Parameters
-        ----------
-        node_id : str
-
-        Raises
-        ------
-        KeyError
-            If the node is not found.
-
-        Notes
-        -----
-        - Rebuilds entity indexing and shrinks the incidence matrix accordingly.
-        """
-
+        """Remove a node and all incident edges (binary + hyperedges)."""
         if node_id not in self.entity_to_idx:
             raise KeyError(f"Node {node_id} not found")
 
@@ -983,24 +621,6 @@ class IncidenceGraph:
             layer_data["nodes"].discard(node_id)
 
     def remove_layer(self, layer_id):
-        """
-        Remove a non-default layer and its per-layer attributes.
-
-        Parameters
-        ----------
-        layer_id : str
-
-        Raises
-        ------
-        ValueError
-            If attempting to remove the internal default layer.
-        KeyError
-            If the layer does not exist.
-
-        Notes
-        -----
-        - Does not delete nodes/edges globally; only membership and layer metadata.
-        """
         if layer_id == self._default_layer:
             raise ValueError("Cannot remove default layer")
         if layer_id not in self._layers:
@@ -1024,60 +644,20 @@ class IncidenceGraph:
     # Attributes & weights
 
     def set_graph_attribute(self, key, value):
-        """
-        Set a graph-level attribute.
-
-        Parameters
-        ----------
-        key : str
-        value : Any
-        """
+        """Set graph-level attribute."""
         self.graph_attributes[key] = value
     
     def get_graph_attribute(self, key, default=None):
-        """
-        Get a graph-level attribute.
-
-        Parameters
-        ----------
-        key : str
-        default : Any, optional
-
-        Returns
-        -------
-        Any
-        """
+        """Get graph-level attribute."""
         return self.graph_attributes.get(key, default)
 
     def set_node_attrs(self, node_id, **attrs):
-        """
-        Upsert pure node attributes (non-structural) into the node DF.
-
-        Parameters
-        ----------
-        node_id : str
-        **attrs
-            Key/value attributes. Structural keys are ignored.
-        """
-            # keep attributes table pure
+        # keep attributes table pure
         clean = {k: v for k, v in attrs.items() if k not in self._NODE_RESERVED}
         if clean:
             self.node_attributes = self._upsert_row(self.node_attributes, node_id, clean)
 
     def get_node_attr(self, node_id, key, default=None):
-        """
-        Get a single node attribute (scalar) or default if missing.
-
-        Parameters
-        ----------
-        node_id : str
-        key : str
-        default : Any, optional
-
-        Returns
-        -------
-        Any
-        """
         df = self.node_attributes
         if key not in df.columns:
             return default
@@ -1088,24 +668,7 @@ class IncidenceGraph:
         return default if val is None else val
 
     def get_node_attribute(self, node_id, attribute): #legacy alias
-        """
-        (Legacy alias) Get a single node attribute from the Polars DF [DataFrame].
-
-        Parameters
-        ----------
-        node_id : str
-        attribute : str or enum.Enum
-            Column name or Enum with ``.value``.
-
-        Returns
-        -------
-        Any or None
-            Scalar value if present, else ``None``.
-
-        See Also
-        --------
-        get_node_attr
-        """
+        """Polars-only: returns scalar or None."""
         # allow Attr enums
         attribute = getattr(attribute, "value", attribute)
 
@@ -1123,34 +686,12 @@ class IncidenceGraph:
         return s.item(0) if s.len() else None
 
     def set_edge_attrs(self, edge_id, **attrs):
-        """
-        Upsert pure edge attributes (non-structural) into the edge DF.
-
-        Parameters
-        ----------
-        edge_id : str
-        **attrs
-            Key/value attributes. Structural keys are ignored.
-        """
         # keep attributes table pure: strip structural keys
         clean = {k: v for k, v in attrs.items() if k not in self._EDGE_RESERVED}
         if clean:
             self.edge_attributes = self._upsert_row(self.edge_attributes, edge_id, clean)
 
     def get_edge_attr(self, edge_id, key, default=None):
-        """
-        Get a single edge attribute (scalar) or default if missing.
-
-        Parameters
-        ----------
-        edge_id : str
-        key : str
-        default : Any, optional
-
-        Returns
-        -------
-        Any
-        """
         df = self.edge_attributes
         if key not in df.columns:
             return default
@@ -1161,24 +702,7 @@ class IncidenceGraph:
         return default if val is None else val
 
     def get_edge_attribute(self, edge_id, attribute): #legacy alias
-        """
-        (Legacy alias) Get a single edge attribute from the Polars DF [DataFrame].
-
-        Parameters
-        ----------
-        edge_id : str
-        attribute : str or enum.Enum
-            Column name or Enum with ``.value``.
-
-        Returns
-        -------
-        Any or None
-            Scalar value if present, else ``None``.
-
-        See Also
-        --------
-        get_edge_attr
-        """
+        """Polars-only: returns scalar or None."""
         # allow Attr enums
         attribute = getattr(attribute, "value", attribute)
 
@@ -1196,33 +720,11 @@ class IncidenceGraph:
         return s.item(0) if s.len() else None
 
     def set_layer_attrs(self, layer_id, **attrs):
-        """
-        Upsert pure layer attributes.
-
-        Parameters
-        ----------
-        layer_id : str
-        **attrs
-            Key/value attributes. Structural keys are ignored.
-        """
         clean = {k: v for k, v in attrs.items() if k not in self._LAYER_RESERVED}
         if clean:
             self.layer_attributes = self._upsert_row(self.layer_attributes, layer_id, clean)
 
     def get_layer_attr(self, layer_id, key, default=None):
-        """
-        Get a single layer attribute (scalar) or default if missing.
-
-        Parameters
-        ----------
-        layer_id : str
-        key : str
-        default : Any, optional
-
-        Returns
-        -------
-        Any
-        """
         df = self.layer_attributes
         if key not in df.columns:
             return default
@@ -1233,16 +735,6 @@ class IncidenceGraph:
         return default if val is None else val
  
     def set_edge_layer_attrs(self, layer_id, edge_id, **attrs):
-        """
-        Upsert per-layer attributes for a specific edge.
-
-        Parameters
-        ----------
-        layer_id : str
-        edge_id : str
-        **attrs
-            Pure attributes (structural keys are ignored).
-        """
         # keep attributes table pure: strip structural keys
         clean = {k: v for k, v in attrs.items() if k not in self._EDGE_RESERVED}
         if not clean:
@@ -1253,20 +745,6 @@ class IncidenceGraph:
         )
 
     def get_edge_layer_attr(self, layer_id, edge_id, key, default=None):
-        """
-        Get a per-layer attribute for an edge.
-
-        Parameters
-        ----------
-        layer_id : str
-        edge_id : str
-        key : str
-        default : Any, optional
-
-        Returns
-        -------
-        Any
-        """
         df = self.edge_layer_attributes
         if key not in df.columns:
             return default
@@ -1277,24 +755,6 @@ class IncidenceGraph:
         return default if val is None else val
 
     def set_layer_edge_weight(self, layer_id, edge_id, weight): #legacy weight helper
-        """
-        Set a legacy per-layer weight override for an edge.
-
-        Parameters
-        ----------
-        layer_id : str
-        edge_id : str
-        weight : float
-
-        Raises
-        ------
-        KeyError
-            If the layer or edge does not exist.
-
-        See Also
-        --------
-        get_effective_edge_weight
-        """
         if layer_id not in self._layers:
             raise KeyError(f"Layer {layer_id} not found")
         if edge_id not in self.edge_to_idx:
@@ -1303,18 +763,9 @@ class IncidenceGraph:
 
     def get_effective_edge_weight(self, edge_id, layer=None):
         """
-        Resolve the effective weight for an edge, optionally within a layer.
-
-        Parameters
-        ----------
-        edge_id : str
-        layer : str, optional
-            If provided, return the layer override if present; otherwise global weight.
-
-        Returns
-        -------
-        float
-            Effective weight.
+        If layer is None: return the global (edge_id) weight.
+        If layer is given: return the layer-specific override if present,
+                    else the global weight.
         """
         if layer is not None:
             df = self.edge_layer_attributes
@@ -1339,20 +790,6 @@ class IncidenceGraph:
         return float(self.edge_weights[edge_id])
 
     def audit_attributes(self):
-        """
-        Audit attribute tables for extra/missing rows and invalid edge-layer pairs.
-
-        Returns
-        -------
-        dict
-            {
-            'extra_node_rows': list[str],
-            'extra_edge_rows': list[str],
-            'missing_node_rows': list[str],
-            'missing_edge_rows': list[str],
-            'invalid_edge_layer_rows': list[tuple[str, str]],
-            }
-        """
         node_ids = {eid for eid, t in self.entity_types.items() if t == "node"}
         edge_ids = set(self.edge_to_idx.keys())
 
@@ -1391,24 +828,6 @@ class IncidenceGraph:
         }
     
     def _pl_dtype_for_value(self, v):
-        """
-        INTERNAL: Infer an appropriate Polars dtype for a Python value.
-
-        Parameters
-        ----------
-        v : Any
-
-        Returns
-        -------
-        polars.datatypes.DataType
-            One of ``pl.Null``, ``pl.Boolean``, ``pl.Int64``, ``pl.Float64``,
-            ``pl.Utf8``, ``pl.Binary``, ``pl.Object``, or ``pl.List(inner)``.
-
-        Notes
-        -----
-        - Enums are mapped to ``pl.Object`` (useful for categorical enums).
-        - Lists/tuples infer inner dtype from the first element (defaults to ``Utf8``).
-        """
         import enum, polars as pl
         if v is None: return pl.Null
         if isinstance(v, bool): return pl.Boolean
@@ -1423,27 +842,7 @@ class IncidenceGraph:
         return pl.Utf8
 
     def _ensure_attr_columns(self, df: pl.DataFrame, attrs: dict) -> pl.DataFrame:
-        """
-        INTERNAL: Create/align attribute columns and dtypes to accept ``attrs``.
-
-        Parameters
-        ----------
-        df : polars.DataFrame
-            Existing attribute table.
-        attrs : dict
-            Incoming key/value pairs to upsert.
-
-        Returns
-        -------
-        polars.DataFrame
-            DataFrame with columns added/cast so inserts/updates won't hit ``Null`` dtypes.
-
-        Notes
-        -----
-        - New columns are created with the inferred dtype.
-        - If a column is ``Null`` and the incoming value is not, it is cast to the inferred dtype.
-        - If dtypes conflict (mixed over time), both sides upcast to ``Utf8`` to avoid schema errors.
-        """
+        """Create/cast attribute columns so updates/inserts won't hit Null dtypes."""
         schema = df.schema
         for col, val in attrs.items():
             target = self._pl_dtype_for_value(val)
@@ -1461,39 +860,13 @@ class IncidenceGraph:
 
     def _upsert_row(self, df: pl.DataFrame, idx, attrs: dict) -> pl.DataFrame:
         """
-        INTERNAL: Upsert a row in a Polars DF [DataFrame] using explicit key columns.
-
-        Keys
-        ----
-        - ``node_attributes``           → key: ``["node_id"]``
-        - ``edge_attributes``           → key: ``["edge_id"]``
-        - ``layer_attributes``          → key: ``["layer_id"]``
-        - ``edge_layer_attributes``     → key: ``["layer_id", "edge_id"]``
-
-        Parameters
-        ----------
-        df : polars.DataFrame
-            Target attribute table.
-        idx : str | tuple[str, str]
-            Key value(s). For edge-layer, pass ``(layer_id, edge_id)``.
-        attrs : dict
-            Columns to insert/update.
-
-        Returns
-        -------
-        polars.DataFrame
-            A **new** DataFrame with the row inserted/updated (caller must reassign).
-
-        Raises
-        ------
-        ValueError
-            If key columns cannot be inferred from ``df`` schema or a composite key is malformed.
-
-        Notes
-        -----
-        - Ensures necessary columns/dtypes first (via ``_ensure_attr_columns``).
-        - Updates cast literals to existing column dtypes; inserts align schemas before ``vstack``.
-        - Resolves dtype mismatches by upcasting both sides to ``Utf8``.
+        Polars upsert using explicit key columns (no index).
+        Keys:
+        - node_attributes           -> ["node_id"]
+        - edge_attributes           -> ["edge_id"]
+        - layer_attributes          -> ["layer_id"]
+        - edge_layer_attributes     -> ["layer_id", "edge_id"]
+        Returns a NEW DataFrame; caller must reassign.
         """
         if not isinstance(attrs, dict) or not attrs:
             return df
@@ -1575,34 +948,10 @@ class IncidenceGraph:
     # Basic queries & metrics
 
     def is_edge_directed(self, edge_id):
-        """
-        Check if an edge is directed (per-edge flag overrides graph default).
-
-        Parameters
-        ----------
-        edge_id : str
-
-        Returns
-        -------
-        bool
-        """
         return bool(self.edge_directed.get(edge_id, self.directed))
 
     def has_edge(self, source, target, edge_id=None):
-        """
-        Test for the existence of an edge.
-
-        Parameters
-        ----------
-        source : str
-        target : str
-        edge_id : str, optional
-            If provided, check for this specific ID.
-
-        Returns
-        -------
-        bool
-        """
+        """Check if edge exists. If edge_id specified, check that specific edge."""
         if edge_id:
             return edge_id in self.edge_to_idx
         
@@ -1613,19 +962,7 @@ class IncidenceGraph:
         return False
             
     def get_edge_ids(self, source, target):
-        """
-        List all edge IDs between two endpoints.
-
-        Parameters
-        ----------
-        source : str
-        target : str
-
-        Returns
-        -------
-        list[str]
-            Edge IDs (may be empty).
-        """
+        """Get all edge IDs between two nodes (for parallel edges)."""
         edge_ids = []
         for eid, (src, tgt, _) in self.edge_definitions.items():
             if src == source and tgt == target:
@@ -1633,17 +970,7 @@ class IncidenceGraph:
         return edge_ids
     
     def degree(self, entity_id):
-        """
-        Degree of a node or edge-entity (number of incident non-zero entries).
-
-        Parameters
-        ----------
-        entity_id : str
-
-        Returns
-        -------
-        int
-        """
+        """Get degree of a node or edge entity."""
         if entity_id not in self.entity_to_idx:
             return 0
         
@@ -1652,33 +979,15 @@ class IncidenceGraph:
         return len(row.nonzero()[1])
   
     def nodes(self):
-        """
-        Get all node IDs (excluding edge-entities).
-
-        Returns
-        -------
-        list[str]
-        """
+        """Get all node IDs (excluding edge entities)."""
         return [eid for eid, etype in self.entity_types.items() if etype == 'node']
     
     def edges(self):
-        """
-        Get all edge IDs.
-
-        Returns
-        -------
-        list[str]
-        """
+        """Get all edge IDs."""
         return list(self.edge_to_idx.keys())
     
     def edge_list(self):
-        """
-        Materialize (source, target, edge_id, weight) for binary/node-edge edges.
-
-        Returns
-        -------
-        list[tuple[str, str, str, float]]
-        """
+        """Get list of (source, target, edge_id, weight) tuples."""
         edges = []
         for edge_id, (source, target, edge_type) in self.edge_definitions.items():
             weight = self.edge_weights[edge_id]
@@ -1686,68 +995,32 @@ class IncidenceGraph:
         return edges
     
     def get_directed_edges(self):
-        """
-        List IDs of directed edges.
-
-        Returns
-        -------
-        list[str]
-        """
+        """Return all directed edges."""
         return [eid for eid in self.edge_to_idx.keys() 
                 if self.edge_directed.get(eid, self.directed)]
 
     def get_undirected_edges(self):
-        """
-        List IDs of undirected edges.
-
-        Returns
-        -------
-        list[str]
-        """
+        """Return all undirected edges."""
         return [eid for eid in self.edge_to_idx.keys() 
                 if not self.edge_directed.get(eid, self.directed)]
 
     def number_of_nodes(self):
-        """
-        Count nodes (excluding edge-entities).
-
-        Returns
-        -------
-        int
-        """
+        """Get number of nodes (excluding edge entities)."""
         return len([e for e in self.entity_types.values() if e == 'node'])
     
     def number_of_edges(self):
-        """
-        Count edges (columns in the incidence matrix).
-
-        Returns
-        -------
-        int
-        """
+        """Get number of edges."""
         return self._num_edges
 
     def global_entity_count(self):
-        """
-        Count unique entities present across all layers (union of memberships).
-
-        Returns
-        -------
-        int
-        """
+        """Count unique entities across all layers."""
         all_nodes = set()
         for layer_data in self._layers.values():
             all_nodes.update(layer_data["nodes"])
         return len(all_nodes)
 
     def global_edge_count(self):
-        """
-        Count unique edges present across all layers (union of memberships).
-
-        Returns
-        -------
-        int
-        """
+        """Count unique edges across all layers."""
         all_edges = set()
         for layer_data in self._layers.values():
             all_edges.update(layer_data["edges"])
@@ -1756,28 +1029,6 @@ class IncidenceGraph:
     # Materialized views
 
     def edges_view(self, layer=None, include_directed=True, include_weight=True, resolved_weight=True, copy=True):
-        """
-        Build a Polars DF view of edges with optional layer join.
-
-        Parameters
-        ----------
-        layer : str, optional
-            If provided, join per-layer edge attributes (prefixed with ``layer_``).
-        include_directed : bool, optional
-            Include a ``directed`` column.
-        include_weight : bool, optional
-            Include a ``global_weight`` column.
-        resolved_weight : bool, optional
-            Include an ``effective_weight`` column.
-        copy : bool, optional
-            Return a cloned DF to keep it read-only.
-
-        Returns
-        -------
-        polars.DataFrame
-            Columns include: ``edge_id``, ``kind`` ('binary'/'hyper'), endpoint metadata,
-            and optional weight/directedness and attribute columns.
-        """    
         # build base rows from in-memory graph state
         rows = []
         for eid in self.edge_to_idx.keys():
@@ -1831,17 +1082,7 @@ class IncidenceGraph:
 
     def nodes_view(self, copy=True):
         """
-        Read-only node attribute table.
-
-        Parameters
-        ----------
-        copy : bool, optional
-            Return a cloned DF.
-
-        Returns
-        -------
-        polars.DataFrame
-            Columns: ``node_id`` plus pure attributes (may be empty).
+        Read-only table: node_id + pure attributes.
         """
         df = self.node_attributes
         if df.height == 0:
@@ -1850,17 +1091,7 @@ class IncidenceGraph:
 
     def layers_view(self, copy=True):
         """
-        Read-only layer attribute table.
-
-        Parameters
-        ----------
-        copy : bool, optional
-            Return a cloned DF.
-
-        Returns
-        -------
-        polars.DataFrame
-            Columns: ``layer_id`` plus pure attributes (may be empty).
+        Read-only table: layer_id + pure attributes.
         """
         df = self.layer_attributes
         if df.height == 0:
@@ -1870,45 +1101,17 @@ class IncidenceGraph:
     # Layer set-ops & cross-layer analytics
 
     def get_layer_nodes(self, layer_id):
-        """
-        Nodes in a layer.
-
-        Parameters
-        ----------
-        layer_id : str
-
-        Returns
-        -------
-        set[str]
-        """
+        """Get nodes in specified layer."""
         return self._layers[layer_id]["nodes"].copy()
 
     def get_layer_edges(self, layer_id):
-        """
-        Edges in a layer.
-
-        Parameters
-        ----------
-        layer_id : str
-
-        Returns
-        -------
-        set[str]
-        """
+        """Get edges in specified layer."""
         return self._layers[layer_id]["edges"].copy()
 
     def layer_union(self, layer_ids):
         """
-        Union of multiple layers.
-
-        Parameters
-        ----------
-        layer_ids : Iterable[str]
-
-        Returns
-        -------
-        dict
-            ``{"nodes": set[str], "edges": set[str]}``
+        Union of multiple layers - returns dict with combined nodes/edges.
+        Returns: {"nodes": set(), "edges": set()}
         """
         if not layer_ids:
             return {"nodes": set(), "edges": set()}
@@ -1925,16 +1128,8 @@ class IncidenceGraph:
 
     def layer_intersection(self, layer_ids):
         """
-        Intersection of multiple layers.
-
-        Parameters
-        ----------
-        layer_ids : Iterable[str]
-
-        Returns
-        -------
-        dict
-            ``{"nodes": set[str], "edges": set[str]}``
+        Intersection of multiple layers - returns dict with common nodes/edges.
+        Returns: {"nodes": set(), "edges": set()}
         """
         if not layer_ids:
             return {"nodes": set(), "edges": set()}
@@ -1963,22 +1158,8 @@ class IncidenceGraph:
 
     def layer_difference(self, layer1_id, layer2_id):
         """
-        Set difference: elements in ``layer1_id`` not in ``layer2_id``.
-
-        Parameters
-        ----------
-        layer1_id : str
-        layer2_id : str
-
-        Returns
-        -------
-        dict
-            ``{"nodes": set[str], "edges": set[str]}``
-
-        Raises
-        ------
-        KeyError
-            If either layer is missing.
+        Difference: elements in layer1 but not in layer2.
+        Returns: {"nodes": set(), "edges": set()}
         """
         if layer1_id not in self._layers or layer2_id not in self._layers:
             raise KeyError("One or both layers not found")
@@ -1993,25 +1174,12 @@ class IncidenceGraph:
 
     def create_layer_from_operation(self, result_layer_id, operation_result, **attributes):
         """
-        Create a new layer from the result of a set operation.
-
-        Parameters
-        ----------
-        result_layer_id : str
-        operation_result : dict
-            Output of ``layer_union``/``layer_intersection``/``layer_difference``.
-        **attributes
-            Pure layer attributes.
-
-        Returns
-        -------
-        str
-            The created layer ID.
-
-        Raises
-        ------
-        ValueError
-            If the target layer already exists.
+        Create new layer from operation result.
+        
+        Args:
+            result_layer_id: ID for new layer
+            operation_result: dict from layer_union/intersection/difference
+            attributes: layer attributes
         """
         if result_layer_id in self._layers:
             raise ValueError(f"Layer {result_layer_id} already exists")
@@ -2034,30 +1202,11 @@ class IncidenceGraph:
         undirected_match: bool | None = None
     ):
         """
-        Locate where an edge exists across layers.
+        Find where an edge exists across layers.
 
-        Parameters
-        ----------
-        edge_id : str, optional
-            If provided, match by ID (any kind: binary/node-edge/hyper).
-        source : str, optional
-            When used with ``target``, match only binary/node-edge edges by endpoints.
-        target : str, optional
-        include_default : bool, optional
-            Include the internal default layer in the search.
-        undirected_match : bool, optional
-            When endpoint matching, allow undirected symmetric matches.
-
-        Returns
-        -------
-        list[str] or dict[str, list[str]]
-            If ``edge_id`` given: list of layer IDs.
-            Else: ``{layer_id: [edge_id, ...]}``.
-
-        Raises
-        ------
-        ValueError
-            If both modes (ID and endpoints) are provided or neither is valid.
+        Modes:
+        - If edge_id is given: return [layer_id,...] containing that edge (any kind).
+        - If (source,target) is given: match ONLY binary/node_edge edges with exactly those endpoints.
         """
         has_id = edge_id is not None
         has_pair = (source is not None) and (target is not None)
@@ -2098,27 +1247,9 @@ class IncidenceGraph:
         include_default: bool = False,
     ):
         """
-        Locate layers containing a hyperedge with exactly these sets.
-
-        Parameters
-        ----------
-        members : Iterable[str], optional
-            Undirected member set (exact match).
-        head : Iterable[str], optional
-            Directed head set (exact match).
-        tail : Iterable[str], optional
-            Directed tail set (exact match).
-        include_default : bool, optional
-
-        Returns
-        -------
-        dict[str, list[str]]
-            ``{layer_id: [edge_id, ...]}``.
-
-        Raises
-        ------
-        ValueError
-            For invalid combinations or empty sets.
+        Return {layer_id: [edge_id,...]} where a hyperedge with exactly these sets exists.
+        - Undirected: pass members (set equality).
+        - Directed: pass head and tail (set equality on each).
         """
         undirected = members is not None
         if undirected and (head is not None or tail is not None):
@@ -2159,16 +1290,8 @@ class IncidenceGraph:
 
     def node_presence_across_layers(self, node_id, include_default: bool = False):
         """
-        List layers containing a specific node.
-
-        Parameters
-        ----------
-        node_id : str
-        include_default : bool, optional
-
-        Returns
-        -------
-        list[str]
+        Check which layers contain a specific node.
+        Returns: list of layer_ids containing the node
         """
         layers_with_node = []
         for layer_id, layer_data in self.layers(include_default=include_default).items():
@@ -2178,17 +1301,8 @@ class IncidenceGraph:
 
     def conserved_edges(self, min_layers=2, include_default=False):
         """
-        Edges present in at least ``min_layers`` layers.
-
-        Parameters
-        ----------
-        min_layers : int, optional
-        include_default : bool, optional
-
-        Returns
-        -------
-        dict[str, int]
-            ``{edge_id: count}``.
+        Edges present in at least `min_layers` *real* layers.
+        Returns: dict {edge_id: count}. Excludes 'default' unless include_default=True.
         """
         layers_to_check = self.layers(include_default=include_default)  # hides 'default' by default
         edge_counts = {}
@@ -2199,20 +1313,8 @@ class IncidenceGraph:
 
     def layer_specific_edges(self, layer_id):
         """
-        Edges that appear **only** in the specified layer.
-
-        Parameters
-        ----------
-        layer_id : str
-
-        Returns
-        -------
-        set[str]
-
-        Raises
-        ------
-        KeyError
-            If the layer does not exist.
+        Find edges that exist only in the specified layer.
+        Returns: set of edge_ids
         """
         if layer_id not in self._layers:
             raise KeyError(f"Layer {layer_id} not found")
@@ -2231,25 +1333,13 @@ class IncidenceGraph:
 
     def temporal_dynamics(self, ordered_layers, metric='edge_change'):
         """
-        Compute changes between consecutive layers in a temporal sequence.
-
-        Parameters
-        ----------
-        ordered_layers : list[str]
-            Layer IDs in chronological order.
-        metric : {'edge_change', 'node_change'}, optional
-
-        Returns
-        -------
-        list[dict[str, int]]
-            Per-step dictionaries with keys: ``'added'``, ``'removed'``, ``'net_change'``.
-
-        Raises
-        ------
-        ValueError
-            If fewer than two layers are provided.
-        KeyError
-            If a referenced layer does not exist.
+        Analyze changes across ordered layers (e.g., time series).
+        
+        Args:
+            ordered_layers: list of layer_ids in temporal order
+            metric: 'edge_change', 'node_change'
+        
+        Returns: list of change metrics between consecutive layers
         """
         if len(ordered_layers) < 2:
             raise ValueError("Need at least 2 layers for temporal analysis")
@@ -2281,27 +1371,16 @@ class IncidenceGraph:
     def create_aggregated_layer(self, source_layer_ids, target_layer_id, method='union', 
                             weight_func=None, **attributes):
         """
-        Create a new layer by aggregating multiple source layers.
-
-        Parameters
-        ----------
-        source_layer_ids : list[str]
-        target_layer_id : str
-        method : {'union', 'intersection'}, optional
-        weight_func : callable, optional
-            Reserved for future weight merging logic (currently unused).
-        **attributes
-            Pure layer attributes.
-
-        Returns
-        -------
-        str
-            The created layer ID.
-
-        Raises
-        ------
-        ValueError
-            For unknown methods or missing source layers, or if target exists.
+        Create new layer by aggregating multiple source layers.
+        
+        Args:
+            source_layer_ids: list of layer IDs to aggregate
+            target_layer_id: ID for new aggregated layer
+            method: 'union', 'intersection'
+            weight_func: function to combine edge weights (future use)
+            attributes: attributes for new layer
+        
+        Returns: target_layer_id
         """
         if not source_layer_ids:
             raise ValueError("Must specify at least one source layer")
@@ -2319,18 +1398,7 @@ class IncidenceGraph:
         return self.create_layer_from_operation(target_layer_id, result, **attributes)
 
     def layer_statistics(self, include_default: bool = False):
-        """
-        Basic per-layer statistics.
-
-        Parameters
-        ----------
-        include_default : bool, optional
-
-        Returns
-        -------
-        dict[str, dict]
-            ``{layer_id: {'nodes': int, 'edges': int, 'attributes': dict}}``.
-        """
+        """Get statistics for each layer."""
         stats = {}
         for layer_id, layer_data in self.layers(include_default=include_default).items():
             stats[layer_id] = {
@@ -2343,18 +1411,6 @@ class IncidenceGraph:
     # Traversal (neighbors)
 
     def neighbors(self, entity_id):
-        """
-        Neighbors of an entity (node or edge-entity).
-
-        Parameters
-        ----------
-        entity_id : str
-
-        Returns
-        -------
-        list[str]
-            Adjacent entities. For hyperedges, uses head/tail orientation.
-        """        
         if entity_id not in self.entity_to_idx:
             return []
         out = set()
@@ -2381,17 +1437,6 @@ class IncidenceGraph:
         return list(out)
 
     def out_neighbors(self, node_id):
-        """
-        Out-neighbors of a node under directed semantics.
-
-        Parameters
-        ----------
-        node_id : str
-
-        Returns
-        -------
-        list[str]
-        """
         if node_id not in self.entity_to_idx:
             return []
         out = set()
@@ -2415,17 +1460,6 @@ class IncidenceGraph:
         return list(out)
 
     def in_neighbors(self, node_id):
-        """
-        In-neighbors of a node under directed semantics.
-
-        Parameters
-        ----------
-        node_id : str
-
-        Returns
-        -------
-        list[str]
-        """        
         if node_id not in self.entity_to_idx:
             return []
         inn = set()
@@ -2451,25 +1485,7 @@ class IncidenceGraph:
     # Slicing / copying / accounting
 
     def subgraph_from_layer(self, layer_id, *, resolve_layer_weights=True):
-        """
-        Build a new graph restricted to a single layer.
-
-        Parameters
-        ----------
-        layer_id : str
-        resolve_layer_weights : bool, optional
-            If True, materialize each edge with its effective per-layer weight.
-
-        Returns
-        -------
-        IncidenceGraph
-            New graph containing only entities/edges of the layer.
-
-        Raises
-        ------
-        KeyError
-            If the layer does not exist.
-        """
+        """Return a new IncidenceGraph restricted to one layer."""
         if layer_id not in self._layers:
             raise KeyError(f"Layer {layer_id} not found")
 
@@ -2554,13 +1570,7 @@ class IncidenceGraph:
         return lg
 
     def copy(self):
-        """
-        Deep copy the entire graph, including layers, edges, hyperedges, and attributes.
-
-        Returns
-        -------
-        IncidenceGraph
-        """
+        """Deep copy the entire graph (entities, edges, hyperedges, attributes, layers)."""
         # local helper (do NOT use self._row_attrs here)
         def _row_attrs(df, key_col: str, key_val, drop_key: str):
             import polars as pl  # safe even if already imported at module level
@@ -2667,14 +1677,6 @@ class IncidenceGraph:
         return new_graph
 
     def memory_usage(self):
-        """
-        Approximate total memory usage in bytes.
-
-        Returns
-        -------
-        int
-            Estimated bytes for the incidence matrix, dictionaries, and attribute DFs.
-        """        
         # Approximate matrix memory: each non-zero entry stores row, col, and value (4 bytes each)
         matrix_bytes = self._matrix.nnz * (4 + 4 + 4)
         # Estimate dict memory: ~100 bytes per entry
