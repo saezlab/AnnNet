@@ -425,7 +425,7 @@ def from_igraph(igG: ig.Graph, manifest: dict) -> "Graph":
     Vertex IDs are read from the igraph 'name' attribute if present,
     otherwise integer indices are used as fallback.
     """
-    from .graph import Graph
+    from ..core.graph import Graph
     
     H = Graph()
 

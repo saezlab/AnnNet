@@ -532,6 +532,8 @@ class Graph:
             - Undirected edges write ``+weight`` at both endpoints.
             - Updating an existing edge ID overwrites its matrix column and metadata.
             """
+            if edge_type is None:
+                edge_type = "regular"
             # ---- normalize endpoints: accept str OR iterable; route hyperedges ----
             def _to_tuple(x):
                 # str/bytes -> (x,), not iterable of chars
@@ -1751,12 +1753,12 @@ class Graph:
         df = self.vertex_attributes
         try:
             import polars as pl  # noqa: F401
-            for row in df.filter(pl.col("node_id") == vertex).iter_rows(named=True):
+            for row in df.filter(pl.col("vertex_id") == vertex).iter_rows(named=True):
                 return dict(row)
             return {}
         except Exception:
             try:
-                row = df[df["node_id"] == vertex].to_dict(orient="records")
+                row = df[df["vertex_id"] == vertex].to_dict(orient="records")
                 return row[0] if row else {}
             except Exception:
                 return {}
@@ -1794,31 +1796,31 @@ class Graph:
 
     def get_attr_vertices(self, vertices=None) -> dict:
         """
-        Retrieve vertex (node) attributes as a dictionary.
+        Retrieve vertex (vertex) attributes as a dictionary.
 
         Parameters
         ----------
         vertices : Iterable[str] | None, optional
-            A list or iterable of node IDs to retrieve attributes for.
-            - If `None` (default), attributes for **all** nodes are returned.
-            - If provided, only those nodes will be included in the output.
+            A list or iterable of vertex IDs to retrieve attributes for.
+            - If `None` (default), attributes for **all** verices are returned.
+            - If provided, only those verices will be included in the output.
 
         Returns
         -------
         dict[str, dict]
-            A dictionary mapping `node_id` → `attribute_dict`, where:
-            - `node_id` is the unique string identifier of the vertex.
+            A dictionary mapping `vertex_id` → `attribute_dict`, where:
+            - `vertex_id` is the unique string identifier of the vertex.
             - `attribute_dict` is a dictionary of attribute names and values.
 
         Notes
         -----
-        - This reads from `self.node_attributes`, which stores per-node metadata.
-        - Use this for bulk data extraction instead of repeated single-node calls.
+        - This reads from `self.vertex_attributes`, which stores per-vertex metadata.
+        - Use this for bulk data extraction instead of repeated single-vertex calls.
         """
-        df = self.node_attributes
+        df = self.vertex_attributes
         if vertices is not None:
-            df = df.filter(pl.col("node_id").is_in(vertices))
-        return {row["node_id"]: row.as_dict() for row in df.iter_rows(named=True)}
+            df = df.filter(pl.col("vertex_id").is_in(vertices))
+        return {row["vertex_id"]: row.as_dict() for row in df.iter_rows(named=True)}
 
     def get_attr_from_edges(self, key: str, default=None) -> dict:
         """
@@ -1891,7 +1893,7 @@ class Graph:
         -----
         - Returns a **shallow copy** to prevent external mutation of internal state.
         - Graph-level attributes are meant to store metadata not tied to individual
-        nodes or edges (e.g., versioning info, provenance, global labels).
+        verices or edges (e.g., versioning info, provenance, global labels).
         """
         return dict(self.graph_attributes)
 
@@ -1899,7 +1901,7 @@ class Graph:
 
     def get_vertex(self, index: int) -> str:
         """
-        Return the node ID corresponding to a given internal index.
+        Return the vertex ID corresponding to a given internal index.
 
         Parameters
         ----------
@@ -1909,7 +1911,7 @@ class Graph:
         Returns
         -------
         str
-            The node ID.
+            The vertex ID.
         """
         return self.idx_to_entity[index]
     
@@ -1925,7 +1927,7 @@ class Graph:
         Returns
         -------
         tuple[frozenset, frozenset]
-            (S, T) where S and T are frozensets of node IDs.
+            (S, T) where S and T are frozensets of vertex IDs.
             - For directed binary edges: ({u}, {v})
             - For undirected binary edges: (M, M)
             - For directed hyperedges: (head_set, tail_set)
@@ -1961,24 +1963,24 @@ class Graph:
                 M = frozenset([u, v])
                 return (M, M)
 
-    def incident_edges(self, node_id) -> list[int]:
+    def incident_edges(self, vertex_id) -> list[int]:
         """
-        Return all edge indices incident to a given node.
+        Return all edge indices incident to a given vertex.
 
         Parameters
         ----------
-        node_id : str
-            Node identifier.
+        vertex_id : str
+            vertex identifier.
 
         Returns
         -------
         list[int]
-            List of edge indices incident to the node.
+            List of edge indices incident to the vertex.
         """
         incident = []
         # Fast path: direct matrix row lookup if available
-        if node_id in self.entity_to_idx:
-            row_idx = self.entity_to_idx[node_id]
+        if vertex_id in self.entity_to_idx:
+            row_idx = self.entity_to_idx[vertex_id]
             try:
                 incident.extend(self._matrix.tocsr().getrow(row_idx).indices.tolist())
                 return incident
@@ -1992,12 +1994,12 @@ class Graph:
             kind = self.edge_kind.get(eid)
             if kind == "hyper":
                 meta = self.hyperedge_definitions[eid]
-                if (meta.get("directed", False) and (node_id in meta["head"] or node_id in meta["tail"])) \
-                or (not meta.get("directed", False) and node_id in meta["members"]):
+                if (meta.get("directed", False) and (vertex_id in meta["head"] or vertex_id in meta["tail"])) \
+                or (not meta.get("directed", False) and vertex_id in meta["members"]):
                     incident.append(j)
             else:
                 u, v, _etype = self.edge_definitions[eid]
-                if node_id == u or node_id == v:
+                if vertex_id == u or vertex_id == v:
                     incident.append(j)
 
         return incident
@@ -2196,8 +2198,8 @@ class Graph:
         tuple[int, tuple[frozenset, frozenset]]
             Tuples of the form `(edge_index, (S, T))`, where:
             - `edge_index` : int — internal integer index of the edge.
-            - `S` : frozenset[str] — set of source/head nodes.
-            - `T` : frozenset[str] — set of target/tail nodes.
+            - `S` : frozenset[str] — set of source/head verices.
+            - `T` : frozenset[str] — set of target/tail verices.
 
         Behavior
         --------
@@ -2241,8 +2243,8 @@ class Graph:
         tuple[int, tuple[frozenset, frozenset]]
             Tuples of the form `(edge_index, (S, T))`, where:
             - `edge_index` : int — internal integer index of the edge.
-            - `S` : frozenset[str] — set of source/head nodes.
-            - `T` : frozenset[str] — set of target/tail nodes.
+            - `S` : frozenset[str] — set of source/head verices.
+            - `T` : frozenset[str] — set of target/tail verices.
 
         Behavior
         --------
@@ -3169,8 +3171,8 @@ class Graph:
         Notes
         -----
         - For binary edges, both endpoints must be in `vertices` to be retained.
-        - For hyperedges, **all** member nodes must be included to retain the edge.
-        - Attributes for retained nodes and edges are preserved.
+        - For hyperedges, **all** member verices must be included to retain the edge.
+        - Attributes for retained verices and edges are preserved.
         """
         g = self.copy()
         V = set(vertices)
@@ -3526,7 +3528,7 @@ class Graph:
         Returns
         -------
         dict[str, list]
-            A mapping from `node_id` → list of incident edges (indices or values),
+            A mapping from `vertex_id` → list of incident edges (indices or values),
             where:
             - Keys are vertex IDs.
             - Values are lists of edge indices (if `values=False`) or numeric values
@@ -3546,12 +3548,12 @@ class Graph:
         result = {}
         csr = self._matrix.tocsr()
         for i in range(csr.shape[0]):
-            node_id = self.idx_to_entity[i]
+            vertex_id = self.idx_to_entity[i]
             row = csr.getrow(i)
             if values:
-                result[node_id] = row.data.tolist()
+                result[vertex_id] = row.data.tolist()
             else:
-                result[node_id] = row.indices.tolist()
+                result[vertex_id] = row.indices.tolist()
         return result
 
     def vertex_incidence_matrix(self, values: bool = False, sparse: bool = False):
@@ -3607,7 +3609,7 @@ class Graph:
 
         Behavior
         --------
-        - Includes the set of nodes, edges, and directedness in the hash.
+        - Includes the set of verices, edges, and directedness in the hash.
         - Includes graph-level attributes (if any) to capture metadata changes.
         - Does **not** depend on memory addresses or internal object IDs, so the same
         graph serialized/deserialized or reconstructed with identical structure
@@ -3617,13 +3619,13 @@ class Graph:
         -----
         - This method enables `Graph` objects to be used in hash-based containers
         (like `set` or `dict` keys).
-        - If the graph is **mutated** after hashing (e.g., nodes or edges are added
+        - If the graph is **mutated** after hashing (e.g., verices or edges are added
         or removed), the hash will no longer reflect the new state.
-        - The method uses a deterministic representation: sorted node/edge sets
+        - The method uses a deterministic representation: sorted vertex/edge sets
         ensure that ordering does not affect the hash.
         """
         # Core structural components
-        node_ids = tuple(sorted(self.nodes()))
+        vertex_ids = tuple(sorted(self.verices()))
         edge_defs = []
 
         for j in range(self.number_of_edges()):
@@ -3637,7 +3639,7 @@ class Graph:
         # Include high-level metadata if available
         graph_meta = tuple(sorted(self.graph_attributes.items())) if hasattr(self, "graph_attributes") else ()
 
-        return hash((node_ids, edge_defs, graph_meta))
+        return hash((vertex_ids, edge_defs, graph_meta))
 
     # History and Timeline
 
