@@ -3139,7 +3139,7 @@ class Graph:
                 g.remove_edge(eid)
 
         # Optional: prune isolated vertices
-        to_remove = [v for v in g.nodes() if not g.incident_edges(v)]
+        to_remove = [v for v in g.vertices() if not g.incident_edges(v)]
         for v in to_remove:
             g.remove_vertex(v)
 
@@ -3183,7 +3183,7 @@ class Graph:
                 g.remove_edge(eid)
 
         # Drop all vertices not in the set
-        for v in list(g.nodes()):
+        for v in list(g.vertices()):
             if v not in V:
                 g.remove_vertex(v)
 

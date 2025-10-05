@@ -362,7 +362,7 @@ def from_nx(nxG, manifest) -> "Graph":
     This ensures exact round-trip fidelity for hyperedges, layers,
     and per-endpoint coefficients that NetworkX cannot represent.
     """
-    from .graph import Graph
+    from ..core.graph import Graph
     
     H = Graph()
 
