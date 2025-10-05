@@ -1,45 +1,27 @@
-# Placeholder for igraph.py
+try:
+    import igraph as ig
+except ModuleNotFoundError as e:
+    raise ModuleNotFoundError(
+        "Optional dependency 'python-igraph' is not installed. "
+        "Install with: ppip install graphglue[igraph]"
+    ) from e
+
 from typing import Any
 from enum import Enum
 import json
 
-try:
-    import igraph as ig  # python-igraph
-except ModuleNotFoundError as e:  # pragma: no cover
-    raise ModuleNotFoundError(
-        "Optional dependency 'python-igraph' is not installed. "
-        "Install with: pip install graphglue[igraph]"
-    ) from e
-from ..core._base import BaseGraph  # types
-from ..core.adapter import IncidenceAdapter  # backend
 
-# ────────────────────────────────
-# Utilities (mirrored from the NX adapter where relevant)
-# ────────────────────────────────
-
-def _is_mapping(v: Any) -> bool:
-    return hasattr(v, "items")
+def _serialize_value(v: Any) -> Any:
+    if isinstance(v, Enum):
+        return v.name
+    if hasattr(v, "items"):
+        return dict(v)
+    return v
 
 
-def _serialize_attrs(attrs, public_only: bool = False) -> dict:
-    try:
-        attrs = dict(attrs)  # Attributes is mapping-like
-    except Exception:
-        return {}
-    if public_only:
-        return {k: v.name if isinstance(v, Enum) else (dict(v) if _is_mapping(v) else v)
-                for k, v in attrs.items() if not str(k).startswith("__")}
-    return {k: v.name if isinstance(v, Enum) else (dict(v) if _is_mapping(v) else v)
-            for k, v in attrs.items()}
-
-
-def _attrs_to_dict(a):
-    try:
-        items = dict(a)
-    except Exception:
-        return {}
+def _attrs_to_dict(attrs_dict: dict) -> dict:
     out = {}
-    for k, v in items.items():
+    for k, v in attrs_dict.items():
         if isinstance(v, Enum):
             out[k] = v.name
         elif hasattr(v, "items"):
@@ -49,237 +31,404 @@ def _attrs_to_dict(a):
     return out
 
 
-def _safe_set_node_attrs(deep, vid, attrs: dict):
-    if hasattr(deep, "set_node_attrs"):
-        deep.set_node_attrs(vid, **attrs)
-        return
-    df = deep.vertex_attributes
-    if vid not in getattr(df, "index", []):
-        if hasattr(deep, "add_node"):
-            deep.add_node(vid)
-    for k in attrs.keys():
-        if k not in df.columns:
-            df[k] = None
-        df.at[vid, k] = attrs[k]
+def _is_directed_eid(graph: "Graph", eid: str) -> bool:
+    kind = graph.edge_kind.get(eid)
+    if kind == "hyper":
+        return bool(graph.hyperedge_definitions[eid].get("directed", False))
+    return bool(graph.edge_directed.get(eid, graph.directed))
 
 
-def _safe_set_edge_attrs(deep, eid, attrs: dict):
-    if hasattr(deep, "set_edge_attrs"):
-        deep.set_edge_attrs(eid, **attrs)
-        return
-    df = deep.edge_attributes
-    if eid not in getattr(df, "index", []):
-        df.loc[eid] = {c: None for c in df.columns}
-    for k in attrs.keys():
-        if k not in df.columns:
-            df[k] = None
-        df.at[eid, k] = attrs[k]
-
-
-# ────────────────────────────────
-# Core legacy exporter (no manifest)
-# ────────────────────────────────
-
-def _export_legacy(graph: BaseGraph, directed: bool = True,
-                   skip_hyperedges: bool = True, public_only: bool = False, **kwargs) -> ig.Graph:
-    """Export to python-igraph.Graph.
-
-    Note: igraph requires integer vertex indices; we preserve external vertex IDs
-    in the vertex attribute `name`. Edge IDs are stored in edge attribute `eid`.
-    If `public_only=True`, internal attrs starting with `__` are dropped and the
-    authoritative `weight` is exposed as `weight` (not `__weight`).
+def _export_legacy(graph: "Graph", *, directed: bool = True,
+                   skip_hyperedges: bool = True, public_only: bool = False):
     """
-
-    # 1) materialize vertex ordering and index map
-    vertices = list(graph.V)
+    Export Graph to igraph.Graph without manifest.
+    
+    igraph requires integer vertex indices; external vertex IDs are preserved
+    in vertex attribute 'name'. Edge IDs stored in edge attribute 'eid'.
+    
+    Parameters
+    ----------
+    graph : Graph
+        Source graph instance.
+    directed : bool
+        If True, export as directed igraph.Graph; else undirected.
+        Undirected edges in directed export are emitted bidirectionally.
+    skip_hyperedges : bool
+        If True, drop hyperedges. If False:
+          - directed hyperedges expand head×tail (cartesian product)
+          - undirected hyperedges expand to clique
+    public_only : bool
+        If True, strip private attrs starting with "__".
+    
+    Returns
+    -------
+    igraph.Graph
+    """
+    vertices = list(graph.vertices())
     vidx = {v: i for i, v in enumerate(vertices)}
 
     G = ig.Graph(directed=directed)
     G.add_vertices(len(vertices))
-    G.vs["name"] = vertices  # preserve external IDs
+    G.vs["name"] = vertices
 
-    # 2) vertex attributes
     for v in vertices:
-        v_attr = _serialize_attrs(graph.get_attr_vertex(v), public_only=public_only)
-        # assign per-vertex to avoid alignment pitfalls
+        v_attrs = graph.vertex_attributes.filter(
+            graph.vertex_attributes["vertex_id"] == v
+        ).to_dicts()
+        v_attr = v_attrs[0] if v_attrs else {}
+        v_attr.pop("vertex_id", None)
+        
+        if public_only:
+            v_attr = {k: _serialize_value(val) for k, val in v_attr.items() 
+                     if not str(k).startswith("__")}
+        else:
+            v_attr = {k: _serialize_value(val) for k, val in v_attr.items()}
+        
         for k, val in v_attr.items():
-            # ensure attribute vector exists
             if k not in G.vs.attributes():
                 G.vs[k] = [None] * G.vcount()
             G.vs[vidx[v]][k] = val
 
-    # 3) edges + attributes
-    for eidx, (src, dst) in graph.edges():
-        # serialize edge attrs
-        e_attr = _serialize_attrs(graph.get_attr_edge(eidx), public_only=public_only)
-
-        # authoritative weight from backend (if available)
-        deep = getattr(graph, "deep", None)
-        weight = None
-        if deep is not None:
-            eid = None
-            if hasattr(deep, "idx_to_edge"):
-                try:
-                    eid = deep.idx_to_edge[eidx]
-                except Exception:
-                    pass
-            key = eid if (eid in getattr(deep, "edge_weights", {})) else eidx
-            if hasattr(deep, "edge_weights") and key in deep.edge_weights:
-                weight = deep.edge_weights[key]
-
+    for eidx in range(graph.number_of_edges()):
+        eid = graph.idx_to_edge[eidx]
+        S, T = graph.get_edge(eidx)
+        
+        e_attrs = graph.edge_attributes.filter(
+            graph.edge_attributes["edge_id"] == eid
+        ).to_dicts()
+        e_attr = e_attrs[0] if e_attrs else {}
+        e_attr.pop("edge_id", None)
+        
         if public_only:
-            if weight is not None:
-                e_attr["weight"] = weight
-            e_attr.pop("__weight", None)
+            e_attr = {k: _serialize_value(val) for k, val in e_attr.items() 
+                     if not str(k).startswith("__")}
         else:
-            if weight is not None:
-                e_attr["__weight"] = weight
+            e_attr = {k: _serialize_value(val) for k, val in e_attr.items()}
 
-        # emit edges
-        if len(src) == 1 and len(dst) == 1:
-            u = next(iter(src)); v = next(iter(dst))
-            G.add_edge(vidx[u], vidx[v])
-            e = G.es[-1]
-            # stable key as attribute
-            e["eid"] = (deep.idx_to_edge[eidx] if (deep is not None and hasattr(deep, "idx_to_edge") and eidx in deep.idx_to_edge)
-                         else f"edge_{eidx}")
-            for k, val in e_attr.items():
-                e[k] = val
+        weight = graph.edge_weights.get(eid, 1.0)
+        if public_only:
+            e_attr["weight"] = weight
         else:
-            if skip_hyperedges:
-                continue
-            for u in src:
-                for v in dst:
-                    G.add_edge(vidx[u], vidx[v])
+            e_attr["__weight"] = weight
+
+        is_hyper = (graph.edge_kind.get(eid) == "hyper")
+        is_dir = _is_directed_eid(graph, eid)
+        members = S | T
+
+        if not is_hyper and len(members) <= 2:
+            if len(members) == 1:
+                u = next(iter(members))
+                G.add_edge(vidx[u], vidx[u])
+                e = G.es[-1]
+                e["eid"] = eid
+                for k, val in e_attr.items():
+                    e[k] = val
+            else:
+                if is_dir:
+                    uu = next(iter(S))
+                    vv = next(iter(T))
+                    G.add_edge(vidx[uu], vidx[vv])
                     e = G.es[-1]
-                    e["eid"] = (deep.idx_to_edge[eidx] if (deep is not None and hasattr(deep, "idx_to_edge") and eidx in deep.idx_to_edge)
-                                 else f"edge_{eidx}")
+                    e["eid"] = eid
                     for k, val in e_attr.items():
                         e[k] = val
+                else:
+                    u, v = tuple(members)
+                    if directed:
+                        G.add_edge(vidx[u], vidx[v])
+                        e = G.es[-1]
+                        e["eid"] = eid
+                        for k, val in e_attr.items():
+                            e[k] = val
+                        G.add_edge(vidx[v], vidx[u])
+                        e = G.es[-1]
+                        e["eid"] = eid
+                        for k, val in e_attr.items():
+                            e[k] = val
+                    else:
+                        G.add_edge(vidx[u], vidx[v])
+                        e = G.es[-1]
+                        e["eid"] = eid
+                        for k, val in e_attr.items():
+                            e[k] = val
+            continue
+
+        if skip_hyperedges:
+            continue
+
+        if is_dir:
+            for u in S:
+                for v in T:
+                    G.add_edge(vidx[u], vidx[v])
+                    e = G.es[-1]
+                    e["eid"] = eid
+                    if not directed:
+                        e["directed"] = True
+                    for k, val in e_attr.items():
+                        e[k] = val
+        else:
+            mem = list(members)
+            n = len(mem)
+            if directed:
+                for a in range(n):
+                    for b in range(n):
+                        if a == b:
+                            continue
+                        G.add_edge(vidx[mem[a]], vidx[mem[b]])
+                        e = G.es[-1]
+                        e["eid"] = eid
+                        for k, val in e_attr.items():
+                            e[k] = val
+            else:
+                for a in range(n):
+                    for b in range(a + 1, n):
+                        G.add_edge(vidx[mem[a]], vidx[mem[b]])
+                        e = G.es[-1]
+                        e["eid"] = eid
+                        for k, val in e_attr.items():
+                            e[k] = val
 
     return G
 
 
-# ────────────────────────────────
-# Manifest-aware exporter
-# ────────────────────────────────
+def _coeff_from_obj(obj) -> float:
+    if isinstance(obj, (int, float)):
+        return float(obj)
+    if hasattr(obj, "items"):
+        v = obj.get("__value", 1)
+        if hasattr(v, "items"):
+            v = v.get("__value", 1)
+        try:
+            return float(v)
+        except Exception:
+            return 1.0
+    return 1.0
 
-def to_igraph(adapter_graph: IncidenceAdapter, directed: bool = True,
-              hyperedge_mode: str = "skip", layer=None, layers=None,
-              public_only: bool = False):
-    """
-    Export IncidenceAdapter → (igraph.Graph, manifest).
-    Manifest preserves hyperedges (with per-endpoint coefficients), layers,
-    vertex/edge attrs, and stable edge IDs.
-    """
 
+def _endpoint_coeff_map(edge_attrs: dict, key: str, vertices: set) -> dict:
+    out = {}
+    side = edge_attrs.get(key, {})
+    for v in vertices:
+        val = side.get(v, {})
+        out[v] = _coeff_from_obj(val)
+    return out
+
+
+def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip", 
+              layer=None, layers=None, public_only=False):
+    """
+    Export Graph → (igraph.Graph, manifest).
+    
+    Manifest preserves hyperedges with per-endpoint coefficients, layers,
+    vertex/edge attrs, and stable edge IDs. igraph uses integer vertex
+    indices; external IDs are stored in vertex attribute 'name'.
+    
+    Parameters
+    ----------
+    graph : Graph
+        Source Graph instance.
+    directed : bool, default True
+        Export as directed igraph.Graph (True) or undirected (False).
+    hyperedge_mode : {"skip", "expand"}, default "skip"
+        How to handle hyperedges:
+        - "skip": drop hyperedges entirely from igraph.Graph
+        - "expand": cartesian product (directed) or clique (undirected)
+    layer : str, optional
+        Export single layer only.
+    layers : list[str], optional
+        Export union of specified layers.
+    public_only : bool, default False
+        If True, strip attributes starting with "__".
+    
+    Returns
+    -------
+    tuple[igraph.Graph, dict]
+        (igG, manifest) where:
+        - igG: igraph.Graph with integer vertex indices and 'name' attribute
+          for external vertex IDs. Edge IDs stored in 'eid' attribute.
+        - manifest: dict preserving full structure (hyperedges, layers,
+          attributes, weights) for exact round-tripping.
+    
+    Notes
+    -----
+    igraph cannot represent hyperedges natively. The manifest is the SSOT
+    (Single Source Of Truth) for reconstruction. The igraph.Graph is lossy:
+    hyperedges are either dropped or expanded into multiple binary edges.
+    """
     igG = _export_legacy(
-        adapter_graph,
+        graph,
         directed=directed,
         skip_hyperedges=(hyperedge_mode == "skip"),
-        public_only=public_only,
+        public_only=public_only
     )
 
-    deep = getattr(adapter_graph, "deep", None)
-
-    def _coeff_from_obj(obj) -> float:
-        if isinstance(obj, (int, float)):
-            return float(obj)
-        if hasattr(obj, "items"):
-            v = obj.get("__value", 1)
-            if hasattr(v, "items"):
-                v = v.get("__value", 1)
-            try:
-                return float(v)
-            except Exception:
-                return 1.0
-        return 1.0
-
-    def _endpoint_coeff_map(edge_attrs: dict, key: str, vertices: set) -> dict:
-        out = {}
-        side = edge_attrs.get(key, {})
-        for v in vertices:
-            val = side.get(v, {})
-            out[v] = _coeff_from_obj(val)
-        return out
-
-    vertex_attrs = {v: _attrs_to_dict(adapter_graph.get_attr_vertex(v)) for v in adapter_graph.V}
+    vertex_attrs = {}
+    for v in graph.vertices():
+        v_attrs = graph.vertex_attributes.filter(
+            graph.vertex_attributes["vertex_id"] == v
+        ).to_dicts()
+        if v_attrs:
+            attrs = dict(v_attrs[0])
+            attrs.pop("vertex_id", None)
+            vertex_attrs[v] = _attrs_to_dict(attrs)
+        else:
+            vertex_attrs[v] = {}
 
     edge_attrs = {}
-    for eidx, _ in adapter_graph.edges():
-        eid = None
-        if deep and hasattr(deep, "idx_to_edge"):
-            try:
-                eid = deep.idx_to_edge[eidx]
-            except Exception:
-                pass
-        if eid is None:
-            eid = f"edge_{eidx}"
-        edge_attrs[eid] = _attrs_to_dict(adapter_graph.get_attr_edge(eidx))
+    for eidx in range(graph.number_of_edges()):
+        eid = graph.idx_to_edge[eidx]
+        e_attrs = graph.edge_attributes.filter(
+            graph.edge_attributes["edge_id"] == eid
+        ).to_dicts()
+        if e_attrs:
+            attrs = dict(e_attrs[0])
+            attrs.pop("edge_id", None)
+            edge_attrs[eid] = _attrs_to_dict(attrs)
+        else:
+            edge_attrs[eid] = {}
 
-    manifest = {}
-    if deep:
-        manifest_edges = {}
-        for eidx, (S, T) in adapter_graph.edges():
-            eid = None
-            if hasattr(deep, "idx_to_edge"):
-                try:
-                    eid = deep.idx_to_edge[eidx]
-                except Exception:
-                    pass
-            if eid is None:
-                eid = f"edge_{eidx}"
+    manifest_edges = {}
+    for eidx in range(graph.number_of_edges()):
+        S, T = graph.get_edge(eidx)
+        eid = graph.idx_to_edge[eidx]
 
-            if len(S) == 1 and len(T) == 1:
-                u, v = next(iter(S)), next(iter(T))
+        is_hyper = (graph.edge_kind.get(eid) == "hyper")
+
+        if not is_hyper:
+            members = S | T
+            if len(members) == 1:
+                u = next(iter(members))
+                manifest_edges[eid] = (u, u, "regular")
+            elif len(members) == 2:
+                u, v = sorted(members)
                 manifest_edges[eid] = (u, v, "regular")
             else:
                 eattr = edge_attrs.get(eid, {})
                 head_map = _endpoint_coeff_map(eattr, "__source_attr", S)
                 tail_map = _endpoint_coeff_map(eattr, "__target_attr", T)
                 manifest_edges[eid] = (head_map, tail_map, "hyper")
+        else:
+            eattr = edge_attrs.get(eid, {})
+            head_map = _endpoint_coeff_map(eattr, "__source_attr", S)
+            tail_map = _endpoint_coeff_map(eattr, "__target_attr", T)
+            manifest_edges[eid] = (head_map, tail_map, "hyper")
 
-        manifest = {
-            "edges": manifest_edges,
-            "weights": deep.edge_weights.copy(),
-            "layers": {
-                lid: list(deep.get_layer_edges(lid))
-                for lid in deep.layers(include_default=True)
-            },
-            "vertex_attrs": vertex_attrs,
-            "edge_attrs": edge_attrs,
-        }
+    weights = dict(graph.edge_weights)
+
+    layers_section = {}
+    if layer:
+        if graph.has_layer(layer):
+            layers_section[layer] = list(graph.get_layer_edges(layer))
+    elif layers:
+        for lid in layers:
+            if graph.has_layer(lid):
+                layers_section[lid] = list(graph.get_layer_edges(lid))
     else:
-        manifest = {
-            "vertex_attrs": vertex_attrs,
-            "edge_attrs": edge_attrs,
-        }
+        for lid in graph.list_layers(include_default=True):
+            layers_section[lid] = list(graph.get_layer_edges(lid))
+
+    manifest = {
+        "edges": manifest_edges,
+        "weights": weights,
+        "layers": layers_section,
+        "vertex_attrs": vertex_attrs,
+        "edge_attrs": edge_attrs,
+    }
 
     return igG, manifest
 
 
-# ────────────────────────────────
-# Manifest save/load
-# ────────────────────────────────
-
 def save_manifest(manifest: dict, path: str):
+    """
+    Write manifest to JSON file.
+    
+    Parameters
+    ----------
+    manifest : dict
+        Manifest dictionary from to_igraph().
+    path : str
+        Output file path (typically .json extension).
+    
+    Returns
+    -------
+    None
+    
+    Raises
+    ------
+    OSError
+        If file cannot be written.
+    """
     with open(path, "w") as f:
         json.dump(manifest, f, indent=2)
 
 
 def load_manifest(path: str) -> dict:
+    """
+    Load manifest from JSON file.
+    
+    Parameters
+    ----------
+    path : str
+        Path to manifest JSON file created by save_manifest().
+    
+    Returns
+    -------
+    dict
+        Manifest dictionary suitable for from_igraph().
+    
+    Raises
+    ------
+    OSError
+        If file cannot be read.
+    json.JSONDecodeError
+        If file contains invalid JSON.
+    """
     with open(path) as f:
         return json.load(f)
 
 
-# ────────────────────────────────
-# Importer
-# ────────────────────────────────
+def from_igraph(igG: ig.Graph, manifest: dict) -> "Graph":
+    """
+    Reconstruct a Graph from igraph.Graph + manifest.
+    
+    Parameters
+    ----------
+    igG : igraph.Graph
+        igraph.Graph (largely ignored for structural data - used only
+        for fallback vertex extraction if manifest is incomplete).
+        Vertex 'name' attribute should contain external vertex IDs.
+    manifest : dict
+        Manifest dictionary created by to_igraph(). Must contain:
+        - "edges" : dict[str, tuple]
+            {edge_id: (u, v, "regular") | (head_map, tail_map, "hyper")}
+        - "weights" : dict[str, float]
+            {edge_id: weight}
+        - "layers" : dict[str, list[str]]
+            {layer_id: [edge_id, ...]}
+        - "vertex_attrs" : dict[str, dict]
+            {vertex_id: {attr: value, ...}}
+        - "edge_attrs" : dict[str, dict]
+            {edge_id: {attr: value, ...}}
+    
+    Returns
+    -------
+    Graph
+        Reconstructed Graph instance with full hyperedge structure,
+        layers, weights, and attributes restored from manifest.
+    
+    Notes
+    -----
+    The manifest is the single source of truth (SSOT). The igraph.Graph
+    is only consulted for vertex names if the manifest is incomplete.
+    This ensures exact round-trip fidelity for hyperedges, layers,
+    and per-endpoint coefficients that igraph cannot represent natively.
+    Vertex IDs are read from the igraph 'name' attribute if present,
+    otherwise integer indices are used as fallback.
+    """
+    from .graph import Graph
+    
+    H = Graph()
 
-def from_igraph(igG: ig.Graph, manifest: dict) -> IncidenceAdapter:
-    H = IncidenceAdapter()
-
-    # 1) vertices — prefer names if present, else index
     names = igG.vs["name"] if "name" in igG.vs.attributes() else list(range(igG.vcount()))
     for v in names:
         try:
@@ -287,66 +436,120 @@ def from_igraph(igG: ig.Graph, manifest: dict) -> IncidenceAdapter:
         except Exception:
             pass
 
-    # 2) edges — use manifest as the authoritative source (like NX adapter)
     edges_def = manifest.get("edges", {})
-    if edges_def:
-        for eid, defn in edges_def.items():
-            kind = defn[-1]
-            if kind == "regular":
-                u, v = defn[0], defn[1]
-                H.deep.add_edge(u, v, edge_id=eid, edge_directed=True)
-            elif kind == "hyper":
-                head, tail = tuple(defn[0]), tuple(defn[1])
-                H.deep.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=True)
+    for eid, defn in edges_def.items():
+        kind = defn[-1]
+        if kind == "regular":
+            u, v = defn[0], defn[1]
+            H.add_edge(u, v, edge_id=eid, edge_directed=True)
+        elif kind == "hyper":
+            head_map, tail_map = defn[0], defn[1]
+            if isinstance(head_map, dict) and isinstance(tail_map, dict):
+                head = list(head_map.keys())
+                tail = list(tail_map.keys())
+                H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=True)
             else:
                 try:
                     u, v = defn[0], defn[1]
-                    H.deep.add_edge(u, v, edge_id=eid, edge_directed=True)
+                    H.add_edge(u, v, edge_id=eid, edge_directed=True)
                 except Exception:
                     pass
-    else:
-        # best-effort fallback if manifest lacks edges: read from igraph
-        for e in igG.es:
-            src = names[e.source]
-            dst = names[e.target]
-            eid = e.get("eid", f"edge_{e.index}")
-            H.deep.add_edge(src, dst, edge_id=eid, edge_directed=igG.is_directed())
-
-    # 3) weights — ONLY from manifest
-    for eid, w in manifest.get("weights", {}).items():
-        try:
-            H.deep.edge_weights[eid] = w
-        except Exception:
-            pass
-
-    # 4) layers — ensure present and reattach
-    for lid, eids in manifest.get("layers", {}).items():
-        if lid not in H.deep.layers(include_default=True):
-            H.deep.add_layer(lid)
-        for eid in eids:
+        else:
             try:
-                H.deep.add_edge_to_layer(lid, eid)
+                u, v = defn[0], defn[1]
+                H.add_edge(u, v, edge_id=eid, edge_directed=True)
             except Exception:
                 pass
 
-    # 5) reapply vertex/edge attrs from manifest
+    for eid, w in manifest.get("weights", {}).items():
+        try:
+            H.edge_weights[eid] = w
+        except Exception:
+            pass
+
+    for lid, eids in manifest.get("layers", {}).items():
+        if lid not in H.list_layers(include_default=True):
+            H.add_layer(lid)
+        for eid in eids:
+            try:
+                H.add_edge_to_layer(lid, eid)
+            except Exception:
+                pass
+
     for vid, attrs in manifest.get("vertex_attrs", {}).items():
-        _safe_set_node_attrs(H.deep, vid, attrs)
+        if attrs:
+            try:
+                H.set_vertex_attrs(vid, **attrs)
+            except Exception:
+                pass
+    
     for eid, attrs in manifest.get("edge_attrs", {}).items():
-        _safe_set_edge_attrs(H.deep, eid, attrs)
+        if attrs:
+            try:
+                H.set_edge_attrs(eid, **attrs)
+            except Exception:
+                pass
 
     return H
 
 
-# ────────────────────────────────
-# Compatibility shims
-# ────────────────────────────────
-
-def to_backend(graph: BaseGraph, **kwargs):
-    """Legacy wrapper: returns only the igraph.Graph, no manifest."""
+def to_backend(graph, **kwargs):
+    """
+    Export Graph to igraph without manifest (legacy compatibility).
+    
+    Parameters
+    ----------
+    graph : Graph
+        Source Graph instance to export.
+    **kwargs
+        Forwarded to _export_legacy(). Supported:
+        - directed : bool, default True
+            Export as directed igraph.Graph (True) or undirected (False).
+        - skip_hyperedges : bool, default True
+            If True, drop hyperedges. If False, expand them
+            (cartesian product for directed, clique for undirected).
+        - public_only : bool, default False
+            Strip attributes starting with "__" if True.
+    
+    Returns
+    -------
+    igraph.Graph
+        igraph.Graph with integer vertex indices. External vertex IDs
+        are stored in vertex attribute 'name'. Edge IDs stored in edge
+        attribute 'eid'. Hyperedges are either dropped or expanded into
+        multiple binary edges. No manifest is returned, so round-tripping
+        will lose hyperedge structure, layers, and precise edge IDs.
+    
+    Notes
+    -----
+    This is a lossy export. Use to_igraph() with manifest for full fidelity.
+    igraph requires integer vertex indices internally; the 'name' attribute
+    preserves your original string IDs.
+    """
     return _export_legacy(graph, **kwargs)
 
 
 class IGraphAdapter:
-    def export(self, graph: BaseGraph, **kwargs):
+    """
+    Legacy adapter class for backward compatibility.
+    
+    Methods
+    -------
+    export(graph, **kwargs)
+        Export Graph to igraph.Graph without manifest (lossy).
+    """
+    def export(self, graph, **kwargs):
+        """
+        Export Graph to igraph.Graph without manifest.
+        
+        Parameters
+        ----------
+        graph : Graph
+        **kwargs
+            See to_backend() for supported parameters.
+        
+        Returns
+        -------
+        igraph.Graph
+        """
         return _export_legacy(graph, **kwargs)

@@ -3,7 +3,7 @@ try:
 except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
         "Optional dependency 'networkx' is not installed. "
-        "Install with: pip install networkx"
+        "Install with: pip install graphglue[networkx]"
     ) from e
 
 from typing import Any
@@ -279,16 +279,89 @@ def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
 
 
 def save_manifest(manifest: dict, path: str):
+    """
+    Write manifest to JSON file.
+    
+    Parameters
+    ----------
+    manifest : dict
+        Manifest dictionary from to_nx().
+    path : str
+        Output file path (typically .json extension).
+    
+    Returns
+    -------
+    None
+    
+    Raises
+    ------
+    OSError
+        If file cannot be written.
+    """
     with open(path, "w") as f:
         json.dump(manifest, f, indent=2)
 
 
 def load_manifest(path: str) -> dict:
+    """
+    Load manifest from JSON file.
+    
+    Parameters
+    ----------
+    path : str
+        Path to manifest JSON file created by save_manifest().
+    
+    Returns
+    -------
+    dict
+        Manifest dictionary suitable for from_nx().
+    
+    Raises
+    ------
+    OSError
+        If file cannot be read.
+    json.JSONDecodeError
+        If file contains invalid JSON.
+    """
     with open(path) as f:
         return json.load(f)
 
 
 def from_nx(nxG, manifest) -> "Graph":
+    """
+    Reconstruct a Graph from NetworkX graph + manifest.
+    
+    Parameters
+    ----------
+    nxG : networkx.Graph | networkx.MultiGraph | networkx.DiGraph | networkx.MultiDiGraph
+        NetworkX graph (ignored for structural data - only used for
+        validation/compatibility).
+    manifest : dict
+        Manifest dictionary created by to_nx(). Must contain:
+        - "edges" : dict[str, tuple]
+            {edge_id: (u, v, "regular") | (head_map, tail_map, "hyper")}
+        - "weights" : dict[str, float]
+            {edge_id: weight}
+        - "layers" : dict[str, list[str]]
+            {layer_id: [edge_id, ...]}
+        - "vertex_attrs" : dict[str, dict]
+            {vertex_id: {attr: value, ...}}
+        - "edge_attrs" : dict[str, dict]
+            {edge_id: {attr: value, ...}}
+    
+    Returns
+    -------
+    Graph
+        Reconstructed Graph instance with full hyperedge structure,
+        layers, weights, and attributes restored from manifest.
+    
+    Notes
+    -----
+    The manifest is the single source of truth (SSOT). The NetworkX
+    graph is ignored for edge definitions - only the manifest is used.
+    This ensures exact round-trip fidelity for hyperedges, layers,
+    and per-endpoint coefficients that NetworkX cannot represent.
+    """
     from .graph import Graph
     
     H = Graph()
@@ -357,7 +430,35 @@ def from_nx(nxG, manifest) -> "Graph":
 
 
 def to_backend(graph, **kwargs):
-    """Legacy wrapper: returns only networkx.Graph, no manifest."""
+    """
+    Export Graph to NetworkX without manifest (legacy compatibility).
+    
+    Parameters
+    ----------
+    graph : Graph
+        Source Graph instance to export.
+    **kwargs
+        Forwarded to _export_legacy(). Supported:
+        - directed : bool, default True
+            Export as MultiDiGraph (True) or MultiGraph (False).
+        - skip_hyperedges : bool, default True
+            If True, drop hyperedges. If False, expand them
+            (cartesian product for directed, clique for undirected).
+        - public_only : bool, default False
+            Strip attributes starting with "__" if True.
+    
+    Returns
+    -------
+    networkx.MultiGraph | networkx.MultiDiGraph
+        NetworkX graph containing binary edges only. Hyperedges are
+        either dropped or expanded. No manifest is returned, so
+        round-tripping will lose hyperedge structure, layers, and
+        precise edge IDs.
+    
+    Notes
+    -----
+    This is a lossy export. Use to_nx() with manifest for full fidelity.
+    """
     return _export_legacy(graph, **kwargs)
 
 

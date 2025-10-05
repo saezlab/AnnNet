@@ -532,6 +532,37 @@ class Graph:
             - Undirected edges write ``+weight`` at both endpoints.
             - Updating an existing edge ID overwrites its matrix column and metadata.
             """
+            # ---- normalize endpoints: accept str OR iterable; route hyperedges ----
+            def _to_tuple(x):
+                # str/bytes -> (x,), not iterable of chars
+                if isinstance(x, (str, bytes)):
+                    return (x,), False
+                try:
+                    xs = tuple(x)
+                except TypeError:
+                    # non-iterable -> treat as single vertex id
+                    return (x,), False
+                return xs, (len(xs) != 1)  # (sequence, is_multi)
+
+            S, src_multi = _to_tuple(source)
+            T, tgt_multi = _to_tuple(target)
+
+            # If any endpoint has >1 members, this is a hyperedge
+            if src_multi or tgt_multi:
+                if edge_directed:
+                    return self.add_hyperedge(
+                        head=S, tail=T, edge_directed=True,
+                        layer=layer, weight=weight, edge_id=edge_id, **attributes
+                    )
+                else:
+                    members = tuple(set(S) | set(T))
+                    return self.add_hyperedge(
+                        members=members, edge_directed=False,
+                        layer=layer, weight=weight, edge_id=edge_id, **attributes
+                    )
+
+            # Binary case: unwrap singletons to plain vertex IDs (str)
+            source, target = S[0], T[0]
             # validate inputs
             if propagate not in {"none", "shared", "all"}:
                 raise ValueError(f"propagate must be one of 'none'|'shared'|'all', got {propagate!r}")
@@ -1666,7 +1697,72 @@ class Graph:
 
         return df.vstack(to_append)
 
+    ## Full attrobute dict for a single entity
+    
+    def get_edge_attrs(self, edge) -> dict:
+        """
+        Return the full attribute dict for a single edge.
+
+        Parameters
+        ----------
+        edge : int | str
+            Edge index (int) or edge id (str).
+
+        Returns
+        -------
+        dict
+            Attribute dictionary for that edge. {} if not found.
+        """
+        # normalize to edge id
+        if isinstance(edge, int):
+            eid = self.idx_to_edge[edge]
+        else:
+            eid = edge
+
+        df = self.edge_attributes
+        # Polars-safe: iterate the (at most one) row as a dict
+        try:
+            import polars as pl  # noqa: F401
+            for row in df.filter(pl.col("edge_id") == eid).iter_rows(named=True):
+                return dict(row)
+            return {}
+        except Exception:
+            # Fallback if df is pandas or dict-like
+            try:
+                row = df[df["edge_id"] == eid].to_dict(orient="records")
+                return row[0] if row else {}
+            except Exception:
+                return {}
+
+    def get_vertex_attrs(self, vertex) -> dict:
+        """
+        Return the full attribute dict for a single vertex.
+
+        Parameters
+        ----------
+        vertex : str
+            Vertex id.
+
+        Returns
+        -------
+        dict
+            Attribute dictionary for that vertex. {} if not found.
+        """
+        df = self.vertex_attributes
+        try:
+            import polars as pl  # noqa: F401
+            for row in df.filter(pl.col("node_id") == vertex).iter_rows(named=True):
+                return dict(row)
+            return {}
+        except Exception:
+            try:
+                row = df[df["node_id"] == vertex].to_dict(orient="records")
+                return row[0] if row else {}
+            except Exception:
+                return {}
+
     ## Bulk attributes
+
     def get_attr_edges(self, indexes=None) -> dict:
         """
         Retrieve edge attributes as a dictionary.
@@ -1835,6 +1931,17 @@ class Graph:
             - For directed hyperedges: (head_set, tail_set)
             - For undirected hyperedges: (members, members)
         """
+        if isinstance(index, str):
+            eid = index
+            try:
+                index = self.edge_to_idx[eid]
+            except KeyError:
+                raise KeyError(f"Unknown edge id: {eid}") from None
+        else:
+            eid = self.idx_to_edge[index]
+
+        kind = self.edge_kind.get(eid)
+
         eid = self.idx_to_edge[index]
         kind = self.edge_kind.get(eid)
 
