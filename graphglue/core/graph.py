@@ -1368,13 +1368,26 @@ class Graph:
         layer_id : str
         edge_id : str
         **attrs
-            Pure attributes (structural keys are ignored).
+            Pure attributes. Structural keys are ignored (except 'weight', which is allowed here).
         """
-        # keep attributes table pure: strip structural keys
-        clean = {k: v for k, v in attrs.items() if k not in self._EDGE_RESERVED}
+        # allow 'weight' through; keep ignoring true structural keys
+        clean = {k: v for k, v in attrs.items() if (k not in self._EDGE_RESERVED) or (k == "weight")}
         if not clean:
             return
+
+        # Ensure edge_layer_attributes compares strings to strings (defensive against prior bad writes)
+        if isinstance(self.edge_layer_attributes, pl.DataFrame) and self.edge_layer_attributes.height > 0:
+            # Cast only if columns exist to avoid raising in early init states
+            to_cast = []
+            if "layer_id" in self.edge_layer_attributes.columns:
+                to_cast.append(pl.col("layer_id").cast(pl.Utf8))
+            if "edge_id" in self.edge_layer_attributes.columns:
+                to_cast.append(pl.col("edge_id").cast(pl.Utf8))
+            if to_cast:
+                self.edge_layer_attributes = self.edge_layer_attributes.with_columns(*to_cast)
+
         # edge_layer_attributes is a pl.DataFrame with columns: layer_id, edge_id, ...
+
         self.edge_layer_attributes = self._upsert_row(
             self.edge_layer_attributes, (layer_id, edge_id), clean
         )
