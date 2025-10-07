@@ -356,12 +356,17 @@ def export_edge_list_csv(G, path, layer=None):
     - If a directedness column is absent, it will be written as ``None``.
     - This format is compatible with ``load_csv_to_graph(schema="edge_list")``.
     """
-    df = G.edges_view(**kwargs) if kwargs else G.edges_view()
+    df = G.edges_view(layer=layer) if layer is not None else G.edges_view()
 
     if not isinstance(df, pl.DataFrame):
         df = pl.DataFrame(df)
 
     cols = {c.lower(): c for c in df.columns}
+
+    # If a 'kind' column exists, drop hyper rows so we only export binary edges.
+    kindcol = cols.get("kind")
+    if kindcol:
+        df = df.filter(pl.col(kindcol).cast(str).str.to_lowercase() != "hyper")
 
     # Find mandatory source/target columns
     src = next((cols[k] for k in ("source", "src", "u", "from") if k in cols), None)
@@ -369,19 +374,23 @@ def export_edge_list_csv(G, path, layer=None):
     if not (src and dst):
         raise ValueError("No binary endpoints in edges_view; likely hyperedge-only. Use export_hyperedge_csv.")
 
+    # Filter out rows lacking endpoints (safety if view is mixed)
+    df = df.filter(pl.col(src).is_not_null() & pl.col(dst).is_not_null())
+
     # Optional columns
-    dircol   = cols.get("directed")
-    weightcol = next((cols[k] for k in ("effective_weight", "weight", "w") if k in cols), None)
+    dircol = cols.get("directed") or cols.get("edge_directed")
+    # Prefer resolved/global weights if present
+    wcol = cols.get("effective_weight") or cols.get("global_weight") \
+           or cols.get("weight") or cols.get("w")
     layercol = cols.get("layer")
 
     n = df.height
 
-    # Build output frame with safe fallbacks
     out = pl.DataFrame({
         "source":   df[src],
         "target":   df[dst],
-        "weight":   df[weightcol] if weightcol else pl.Series("weight", [1.0] * n),
-        "directed": df[dircol] if dircol else pl.Series("directed", [None] * n),
+        "weight":   (df[wcol] if wcol else pl.Series("weight", [1.0] * n)),
+        "directed": (df[dircol] if dircol else pl.Series("directed", [None] * n)),
         "layer": (
             pl.Series("layer", [layer] * n) if layer is not None
             else (df[layercol] if layercol else pl.Series("layer", [None] * n))
@@ -424,51 +433,106 @@ def export_hyperedge_csv(G, path, layer=None, directed=None):
     - This format is compatible with ``load_csv_to_graph(schema="hyperedge")``.
     - If the graph does not expose hyperedge columns, a ``ValueError`` is raised.
     """
-    df = G.edges_view(**view_kwargs) if view_kwargs else G.edges_view()
+    df = G.edges_view(layer=layer) if layer is not None else G.edges_view()
     if not isinstance(df, pl.DataFrame):
         df = pl.DataFrame(df)
 
     cols = {c.lower(): c for c in df.columns}
+
+    # Keep only hyperedges if 'kind' is available.
+    kindcol = cols.get("kind")
+    if kindcol:
+        df = df.filter(pl.col(kindcol).cast(str).str.to_lowercase() == "hyper")
+
     members = cols.get("members")
     head    = cols.get("head")
     tail    = cols.get("tail")
-    dircol  = cols.get("directed")
-    wcol    = next((cols[k] for k in ("effective_weight","weight","w") if k in cols), None)
+    dircol  = cols.get("directed") or cols.get("edge_directed")
+    # Prefer resolved/global weights if present
+    wcol    = cols.get("effective_weight") or cols.get("global_weight") \
+              or cols.get("weight") or cols.get("w")
     layercol = cols.get("layer")
     n = df.height
 
+    # Helper to coerce values/lists/tuples to pipe-joined strings; leaves strings as-is.
+    def _to_pipe_joined(series: pl.Series, name: str) -> pl.Series:
+        vals = series.to_list()
+        out = []
+        for v in vals:
+            if v is None:
+                out.append(None)
+            elif isinstance(v, (list, tuple, set)):
+                out.append("|".join(sorted(str(x) for x in v)))
+            else:
+                s = str(v).strip()
+                # Fast path: JSON array like ["a","b"]
+                if s.startswith("[") and s.endswith("]"):
+                    try:
+                        arr = json.loads(s)
+                        out.append("|".join(sorted(str(x) for x in arr)))
+                        continue
+                    except Exception:
+                        pass
+                # Split on common separators if present
+                parts = [p.strip() for p in _SET_SEP.split(s)] if _SET_SEP.search(s) else [s]
+                out.append("|".join(sorted(p for p in parts if p)))
+        return pl.Series(name, out)
+
     if members:
+        m = _to_pipe_joined(df[members], "members")
+        # drop null/empty rows (mixed views might include non-hyper rows)
+        mask = m.is_not_null() & (m.str.len_chars() > 0)
         out = pl.DataFrame({
-            "members": df[members],
-            "weight":  df[wcol] if wcol else pl.Series("weight", [1.0]*n),
-            "layer":   (pl.Series("layer", [layer]*n) if layer is not None
-                        else (df[layercol] if layercol else pl.Series("layer", [None]*n))),
+            "members": m.filter(mask),
+            "weight":  (df[wcol].filter(mask) if wcol else pl.Series("weight", [1.0] * int(mask.sum()))),
+            "layer":   (
+                pl.Series("layer", [layer] * int(mask.sum())) if layer is not None
+                else (df[layercol].filter(mask) if layercol else pl.Series("layer", [None] * int(mask.sum())))
+            ),
         })
-        out.write_csv(path); return
+        out.write_csv(path)
+        return
 
     if head and tail:
         is_dir = directed
-        if is_dir is None and dircol:
-            is_dir = True  # if head/tail present we treat as directed by default
+        if is_dir is None:
+            # If head/tail columns exist, default to directed unless explicitly overridden
+            is_dir = True
+
+        h = _to_pipe_joined(df[head], "head")
+        t = _to_pipe_joined(df[tail], "tail")
+        # drop rows where either side is missing
+        mask = h.is_not_null() & (h.str.len_chars() > 0) & t.is_not_null() & (t.str.len_chars() > 0)
 
         if is_dir:
             out = pl.DataFrame({
-                "head":    df[head],
-                "tail":    df[tail],
-                "weight":  df[wcol] if wcol else pl.Series("weight", [1.0]*n),
-                "layer":   (pl.Series("layer", [layer]*n) if layer is not None
-                            else (df[layercol] if layercol else pl.Series("layer", [None]*n))),
+                "head":    h.filter(mask),
+                "tail":    t.filter(mask),
+                "weight":  (df[wcol].filter(mask) if wcol else pl.Series("weight", [1.0] * int(mask.sum()))),
+                "layer":   (
+                    pl.Series("layer", [layer] * int(mask.sum())) if layer is not None
+                    else (df[layercol].filter(mask) if layercol else pl.Series("layer", [None] * int(mask.sum())))
+                ),
             })
         else:
-            # merge head/tail into members (string-join fallback)
-            merged = (df[head].cast(str) + "|" + df[tail].cast(str))
+            # Merge head/tail into undirected 'members'
+            merged = pl.Series(
+                "members",
+                [
+                    "|".join(sorted([p for p in (hval.split("|") + tval.split("|")) if p]))
+                    for hval, tval in zip(h.filter(mask).to_list(), t.filter(mask).to_list())
+                ]
+            )
             out = pl.DataFrame({
                 "members": merged,
-                "weight":  df[wcol] if wcol else pl.Series("weight", [1.0]*n),
-                "layer":   (pl.Series("layer", [layer]*n) if layer is not None
-                            else (df[layercol] if layercol else pl.Series("layer", [None]*n))),
+                "weight":  (df[wcol].filter(mask) if wcol else pl.Series("weight", [1.0] * int(mask.sum()))),
+                "layer":   (
+                    pl.Series("layer", [layer] * int(mask.sum())) if layer is not None
+                    else (df[layercol].filter(mask) if layercol else pl.Series("layer", [None] * int(mask.sum())))
+                ),
             })
-        out.write_csv(path); return
+        out.write_csv(path)
+        return
 
     raise ValueError("edges_view does not expose hyperedge columns; export via incidence or adjust edges_view.")
 
