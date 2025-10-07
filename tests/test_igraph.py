@@ -17,12 +17,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from graphglue.core.graph import Graph
 
 # Optional deps presence
-HAS_NX = True
-try:
-    import networkx as nx  # noqa: F401
-except Exception:
-    HAS_NX = False
-
 HAS_IG = True
 try:
     import igraph as ig  # noqa: F401
