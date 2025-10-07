@@ -313,19 +313,109 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
             tail_map = _endpoint_coeff_map(eattr, "__target_attr", T)
             manifest_edges[eid] = (head_map, tail_map, "hyper")
 
-    weights = dict(graph.edge_weights)
-
+    # Capture per-layer edge weight overrides, if any
+    layer_weights = {}
+    for lid, eids in layers_section.items():
+        per_edge = {}
+        for eid in eids:
+            w = None
+            # try canonical accessor
+            try:
+                w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+            except Exception:
+                pass
+            # fallback: read from attribute table if present
+            if w is None:
+                try:
+                    w = graph.get_edge_layer_attr(lid, eid, "weight")
+                except Exception:
+                    pass
+            if w is not None:
+                per_edge[eid] = float(w)
+        if per_edge:
+            layer_weights[lid] = per_edge
+    # Build layer → edge_id[] with robust fallbacks. Some Graph implementations
+    # expose membership differently; we try several options to avoid empty lists.
     layers_section = {}
     if layer:
-        if graph.has_layer(layer):
-            layers_section[layer] = list(graph.get_layer_edges(layer))
-    elif layers:
-        for lid in layers:
-            if graph.has_layer(lid):
-                layers_section[lid] = list(graph.get_layer_edges(lid))
+        lids = [layer] if isinstance(layer, str) else list(layer)
     else:
-        for lid in graph.list_layers(include_default=True):
-            layers_section[lid] = list(graph.get_layer_edges(lid))
+        try:
+            lids = list(graph.list_layers(include_default=True))
+        except Exception:
+            try:
+                lids = list(graph.list_layers())
+            except Exception:
+                lids = []
+
+    # Convenience: all exported, non-hyper edge ids
+    try:
+        all_eids = [e for e in manifest_edges.keys()]  # if manifest_edges is dict-like
+    except Exception:
+        try:
+            all_eids = [e[3] for e in manifest_edges]  # if list of tuples (u,v,d,eid)
+        except Exception:
+            all_eids = []
+
+    for lid in lids:
+        eids = []
+        # 1) Preferred: direct API
+        try:
+            eids = list(graph.get_layer_edges(lid))
+        except Exception:
+            eids = []
+        # 2) Fallback: is_edge_in_layer(...) over known edges
+        if not eids and all_eids:
+            tmp = []
+            for eid in all_eids:
+                try:
+                    if getattr(graph, "is_edge_in_layer")(lid, eid):
+                        tmp.append(eid)
+                except Exception:
+                    pass
+            if tmp:
+                eids = tmp
+        # 3) Fallback: inspect edge-layer attribute table (Polars [a DataFrame library] or dict)
+        if not eids:
+            try:
+                t = getattr(graph, "edge_layer_attributes")
+            except Exception:
+                t = None
+            if t is not None:
+                try:
+                    import polars as pl  # noqa: F401
+                    if hasattr(t, "columns") and {"layer", "edge"} <= set(t.columns):
+                        eids = list(t.filter(pl.col("layer") == lid)["edge"].to_list())
+                except Exception:
+                    if isinstance(t, dict) and lid in t:
+                        # expect shape: {lid: {eid: {...}}}
+                        try:
+                            eids = list(t[lid].keys())
+                        except Exception:
+                           pass
+        # 4) Fallback: layer info object
+        if not eids:
+            try:
+                info = graph.get_layer_info(lid)
+                eids = list(info.get("edges", []))
+            except Exception:
+                pass
+        layers_section[lid] = list(dict.fromkeys(eids))  # de-dup while preserving order
+
+
+    # capture per-layer edge weight overrides (only when present)
+    layer_weights = {}
+    for lid, eids in layers_section.items():
+        per_edge = {}
+        for eid in eids:
+            try:
+                w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+            except Exception:
+                w = None
+            if w is not None:
+                per_edge[eid] = float(w)
+        if per_edge:
+            layer_weights[lid] = per_edge
 
     manifest = {
         "edges": manifest_edges,
@@ -333,6 +423,7 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
         "layers": layers_section,
         "vertex_attrs": vertex_attrs,
         "edge_attrs": edge_attrs,
+        "layer_weights": layer_weights
     }
 
     return igG, manifest
@@ -476,17 +567,22 @@ def from_igraph(igG: ig.Graph, manifest: dict) -> "Graph":
             except Exception:
                 pass
 
-    for vid, attrs in manifest.get("vertex_attrs", {}).items():
-        if attrs:
+    # Reapply per-layer weight overrides captured in the manifest
+    lw = {}
+    try:
+        lw = manifest.get("layer_weights", {}) or {}
+    except Exception:
+        lw = {}
+    for lid, per_edge in lw.items():
+        # ensure layer exists
+        try:
+            if lid not in H.list_layers(include_default=True):
+                H.add_layer(lid)
+        except Exception:
+            pass
+        for eid, w in per_edge.items():
             try:
-                H.set_vertex_attrs(vid, **attrs)
-            except Exception:
-                pass
-    
-    for eid, attrs in manifest.get("edge_attrs", {}).items():
-        if attrs:
-            try:
-                H.set_edge_attrs(eid, **attrs)
+                H.set_edge_layer_attrs(lid, eid, weight=float(w))
             except Exception:
                 pass
 
