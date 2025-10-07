@@ -10,6 +10,123 @@ from typing import Any
 from enum import Enum
 import json
 
+def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
+    """
+    Returns:
+      layers_section: {layer_id: [edge_id, ...]}
+      layer_weights:  {layer_id: {edge_id: weight}}
+    Backends supported: Polars-like, .to_dicts()-like, dict.
+    """
+    layers_section: dict = {}
+    layer_weights: dict = {}
+
+    # --- Source A: edge_layer_attributes table (Polars-like)
+    t = getattr(graph, "edge_layer_attributes", None)
+    if t is not None and hasattr(t, "filter"):
+        try:
+            # Attempt Polars path without hard dependency
+            import polars as pl  # optional; if missing, we'll fall through
+            # Get all rows then group by layer in Python (keeps us backend-agnostic)
+            if hasattr(t, "to_dicts"):
+                rows = t.to_dicts()
+            else:
+                # last-ditch: try turning the entire table into a list of dicts
+                # many DataFrame-likes support .rows(named=True)
+                rows = getattr(t, "rows", lambda named=False: [])(named=True)  # type: ignore
+            for r in rows:
+                lid = r.get("layer")
+                if lid is None:
+                    continue
+                eid = r.get("edge_id", r.get("edge"))
+                if eid is None:
+                    continue
+                layers_section.setdefault(lid, []).append(eid)
+                w = r.get("weight")
+                if w is not None:
+                    layer_weights.setdefault(lid, {})[eid] = float(w)
+        except Exception:
+            pass  # fall through to other sources
+
+    # --- Source B: edge_layer_attributes with .to_dicts() but no Polars
+    if not layers_section and t is not None and hasattr(t, "to_dicts"):
+        try:
+            for r in t.to_dicts():
+                lid = r.get("layer")
+                if lid is None:
+                    continue
+                eid = r.get("edge_id", r.get("edge"))
+                if eid is None:
+                    continue
+                layers_section.setdefault(lid, []).append(eid)
+                w = r.get("weight")
+                if w is not None:
+                    layer_weights.setdefault(lid, {})[eid] = float(w)
+        except Exception:
+            pass
+
+    # --- Source C: dict mapping layer -> {edge_id: attrs}
+    if not layers_section and isinstance(t, dict):
+        for lid, ed in t.items():
+            if isinstance(ed, dict):
+                eids = list(ed.keys())
+                layers_section.setdefault(lid, []).extend(eids)
+                # pick weights if present
+                for eid, attrs in ed.items():
+                    if isinstance(attrs, dict) and "weight" in attrs and attrs["weight"] is not None:
+                        layer_weights.setdefault(lid, {})[eid] = float(attrs["weight"])
+
+    # --- Fallback D: per-edge scan (if graph exposes edge iteration + get_edge_layers)
+    if not layers_section:
+        edges_iter = None
+        for attr in ("edges", "iter_edges", "edge_ids"):
+            if hasattr(graph, attr):
+                try:
+                    edges_iter = list(getattr(graph, attr)())
+                    break
+                except Exception:
+                    pass
+        if edges_iter:
+            for eid in edges_iter:
+                lids = []
+                for probe in ("get_edge_layers", "edge_layers"):
+                    if hasattr(graph, probe):
+                        try:
+                            lids = list(getattr(graph, probe)(eid))
+                            break
+                        except Exception:
+                            pass
+                for lid in lids or []:
+                    layers_section.setdefault(lid, []).append(eid)
+
+    # --- Collect per-layer weight overrides using canonical accessor
+    if hasattr(graph, "get_edge_layer_attr"):
+        for lid, eids in list(layers_section.items()):
+            for eid in eids:
+                w = None
+                try:
+                    w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+                except Exception:
+                    try:
+                        # some implementations don't support default=
+                        w = graph.get_edge_layer_attr(lid, eid, "weight")
+                    except Exception:
+                        w = None
+                if w is not None:
+                    layer_weights.setdefault(lid, {})[eid] = float(w)
+
+    # Ensure deterministic and non-empty lists in manifest
+    for lid, eids in layers_section.items():
+        # unique, stable order
+        seen = set()
+        uniq = []
+        for e in eids:
+            if e not in seen:
+                seen.add(e)
+                uniq.append(e)
+        layers_section[lid] = uniq
+
+    return layers_section, layer_weights
+
 
 def _serialize_value(v: Any) -> Any:
     if isinstance(v, Enum):
@@ -313,113 +430,146 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
             tail_map = _endpoint_coeff_map(eattr, "__target_attr", T)
             manifest_edges[eid] = (head_map, tail_map, "hyper")
 
-    # Capture per-layer edge weight overrides, if any
-    layer_weights = {}
-    for lid, eids in layers_section.items():
-        per_edge = {}
-        for eid in eids:
-            w = None
-            # try canonical accessor
+    # ---------- BEGIN robust layer discovery + weights ----------
+    def _rows_from_table(t):
+        """Return a list[dict] from common table backends: Polars."""
+        # Polars
+        if hasattr(t, "to_dicts"):
             try:
-                w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+                return list(t.to_dicts())
             except Exception:
                 pass
-            # fallback: read from attribute table if present
-            if w is None:
-                try:
-                    w = graph.get_edge_layer_attr(lid, eid, "weight")
-                except Exception:
-                    pass
-            if w is not None:
-                per_edge[eid] = float(w)
-        if per_edge:
-            layer_weights[lid] = per_edge
-    # Build layer → edge_id[] with robust fallbacks. Some Graph implementations
-    # expose membership differently; we try several options to avoid empty lists.
-    layers_section = {}
-    if layer:
-        lids = [layer] if isinstance(layer, str) else list(layer)
-    else:
-        try:
-            lids = list(graph.list_layers(include_default=True))
-        except Exception:
-            try:
-                lids = list(graph.list_layers())
-            except Exception:
-                lids = []
+        return []
 
-    # Convenience: all exported, non-hyper edge ids
+    # Gather all edge ids we exported
     try:
-        all_eids = [e for e in manifest_edges.keys()]  # if manifest_edges is dict-like
+        all_eids = [e for e in manifest_edges.keys()]
+    except Exception:
+        all_eids = []
+
+    # Start with whatever the graph reports natively
+    layers_section: dict = {}
+    try:
+        lids_native = list(graph.list_layers(include_default=True))
     except Exception:
         try:
-            all_eids = [e[3] for e in manifest_edges]  # if list of tuples (u,v,d,eid)
+            lids_native = list(graph.list_layers())
         except Exception:
-            all_eids = []
+            lids_native = []
 
-    for lid in lids:
-        eids = []
-        # 1) Preferred: direct API
+    for lid in lids_native:
         try:
             eids = list(graph.get_layer_edges(lid))
         except Exception:
             eids = []
-        # 2) Fallback: is_edge_in_layer(...) over known edges
-        if not eids and all_eids:
-            tmp = []
+        if eids:
+            seen = set()
+            uniq = []
+            for e in eids:
+                if e not in seen:
+                    seen.add(e)
+                    uniq.append(e)
+            layers_section[lid] = uniq
+
+    # Now inspect edge_layer_attributes to find missing layers (e.g., "Lw")
+    table_layers = {}
+    t = getattr(graph, "edge_layer_attributes", None)
+    if t is not None:
+        # Case A: mapping {layer: {edge_id: attrs}}
+        if isinstance(t, dict):
+            for lid, mapping in t.items():
+                if isinstance(mapping, dict):
+                    table_layers.setdefault(lid, []).extend(list(mapping.keys()))
+        # Case B: any table-like (Polars)
+        rows = _rows_from_table(t)
+        if rows:
+            for r in rows:
+                lid = r.get("layer") or r.get("layer_id") or r.get("lid")
+                if lid is None:
+                    continue
+                eid = r.get("edge_id", r.get("edge"))
+                if eid is not None:
+                    table_layers.setdefault(lid, []).append(eid)
+
+    # Merge table-discovered layers into layers_section
+    for lid, eids in table_layers.items():
+        if not eids:
+            continue
+        if lid in layers_section:
+            seen = set(layers_section[lid])
+            layers_section[lid].extend([e for e in eids if e not in seen])
+        else:
+            # stable, deduped
+            layers_section[lid] = list(dict.fromkeys(eids))
+
+    # If still missing layers, check common internal maps
+    etl = getattr(graph, "edge_to_layers", None)  # {edge_id: [layer,...]}
+    if etl:
+        for eid, lids in etl.items():
+            for lid in (lids or []):
+                layers_section.setdefault(lid, [])
+                if eid not in layers_section[lid]:
+                    layers_section[lid].append(eid)
+
+    le = getattr(graph, "layer_edges", None)  # {layer: [edge_id,...]}
+    if le:
+        for lid, eids in le.items():
+            layers_section.setdefault(lid, [])
+            for eid in list(eids):
+                if eid not in layers_section[lid]:
+                    layers_section[lid].append(eid)
+
+    # As a last resort, probe per-edge membership if an API (Application Programming Interface) exists
+    if hasattr(graph, "is_edge_in_layer") and all_eids:
+        # also synthesize layer IDs from anything present
+        known_lids = set(layers_section.keys())
+        # if your graph can list non-default layers separately, try that too
+        try:
+            known_lids.update(list(graph.list_layers()))
+        except Exception:
+            pass
+        for lid in known_lids:
+            arr = layers_section.setdefault(lid, [])
+            seen = set(arr)
             for eid in all_eids:
                 try:
-                    if getattr(graph, "is_edge_in_layer")(lid, eid):
-                        tmp.append(eid)
+                    if graph.is_edge_in_layer(lid, eid) and eid not in seen:
+                        arr.append(eid); seen.add(eid)
                 except Exception:
                     pass
-            if tmp:
-                eids = tmp
-        # 3) Fallback: inspect edge-layer attribute table (Polars [a DataFrame library] or dict)
-        if not eids:
-            try:
-                t = getattr(graph, "edge_layer_attributes")
-            except Exception:
-                t = None
-            if t is not None:
-                try:
-                    import polars as pl  # noqa: F401
-                    if hasattr(t, "columns") and {"layer", "edge"} <= set(t.columns):
-                        eids = list(t.filter(pl.col("layer") == lid)["edge"].to_list())
-                except Exception:
-                    if isinstance(t, dict) and lid in t:
-                        # expect shape: {lid: {eid: {...}}}
-                        try:
-                            eids = list(t[lid].keys())
-                        except Exception:
-                           pass
-        # 4) Fallback: layer info object
-        if not eids:
-            try:
-                info = graph.get_layer_info(lid)
-                eids = list(info.get("edges", []))
-            except Exception:
-                pass
-        layers_section[lid] = list(dict.fromkeys(eids))  # de-dup while preserving order
 
+    # Remove empty layers to avoid `{}` vs only "default"
+    layers_section = {lid: lst for lid, lst in layers_section.items() if lst}
 
-    # capture per-layer edge weight overrides (only when present)
-    layer_weights = {}
-    for lid, eids in layers_section.items():
-        per_edge = {}
-        for eid in eids:
-            try:
-                w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
-            except Exception:
+    # Respect `layer` / `layers` parameters by post-filtering
+    if layer is not None or layers is not None:
+        requested = []
+        if layer is not None:
+            requested.extend([layer] if isinstance(layer, str) else list(layer))
+        if layers is not None:
+            requested.extend(list(layers))
+        requested = {str(x) for x in requested}
+        layers_section = {lid: eids for lid, eids in layers_section.items() if str(lid) in requested}
+
+    # Per-layer weight overrides (only if present)
+    layer_weights: dict = {}
+    if hasattr(graph, "get_edge_layer_attr"):
+        for lid, eids in layers_section.items():
+            for eid in eids:
                 w = None
-            if w is not None:
-                per_edge[eid] = float(w)
-        if per_edge:
-            layer_weights[lid] = per_edge
-
+                try:
+                    w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+                except Exception:
+                    try:
+                        w = graph.get_edge_layer_attr(lid, eid, "weight")
+                    except Exception:
+                        w = None
+                if w is not None:
+                    layer_weights.setdefault(lid, {})[eid] = float(w)
+    # ---------- END robust layer discovery + weights ----------
     manifest = {
         "edges": manifest_edges,
-        "weights": weights,
+        "weights": layer_weights,
         "layers": layers_section,
         "vertex_attrs": vertex_attrs,
         "edge_attrs": edge_attrs,
