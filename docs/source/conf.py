@@ -36,7 +36,7 @@ autosectionlabel_prefix_document = True
 autodoc_default_options = {
     'members': True,
     'undoc-members': True,
-    'private-members': True,
+    'private-members': False,
     'special-members': '__init__',
     'inherited-members': True,
     'show-inheritance': True,

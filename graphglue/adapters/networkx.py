@@ -147,6 +147,7 @@ def _export_legacy(graph: "Graph", *, directed: bool = True,
                         G.add_edge(mem[a], mem[b], key=eid, **e_attr)
 
     return G
+    return G
 
 
 def _coeff_from_obj(obj) -> float:

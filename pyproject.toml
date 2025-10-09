@@ -29,7 +29,7 @@ docs = [
 ]
 tests = [
     "pytest>=7.0",
-    "tox>=3.20.1",
+    "tox>=4.11",
     "tox-gh>=1.5.0",
     "coverage>=6.0",
     "codecov-cli>=10.2.0",
@@ -95,7 +95,9 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=2.3.2",
-    "polars>=0.20.0"
+    "polars>=0.20.0",
+    "pandas>=2.0.3",
+    "scipy>=1.9.0",
 ]
 description = "A Python tool to build, manipulate, and interoperate with flexible graph structures"
 license = "GPL-3.0-or-later"
@@ -214,7 +216,7 @@ select = [
 ]
 
 [tool.tox]
-envlist = [
+env_list = [
     "covclean",
     "lint",
     "py{39,310,311,312,313}",
@@ -223,7 +225,7 @@ envlist = [
     "docs"
 ]
 isolated_build = true
-min_version = "3.20.0"
+min_version = "4.0"
 skip_missing_interpreters = true
 
 [tool.tox.envs]
@@ -247,65 +249,63 @@ platform = [
 ]
 usedevelop = true
 
-[tool.tox.envs.clean-docs]
-allowlist_externals = ["make"]
+[tool.tox.env.clean-docs]
 changedir = "{toxinidir}/docs"
-commands = [
-    "make clean"
-]
-description = "Clean the documentation artifacts."
 skip_install = true
-
-[tool.tox.envs.covclean]
+allowlist_externals = ["make"]
 commands = [
-    "coverage erase"
+  ["make", "clean"]
 ]
-deps = [".[tests]"]
-description = "Clean coverage files."
+
+[tool.tox.env.covclean]
 skip_install = true
-
-[tool.tox.envs.coverage]
-commands = [
-    "coverage report --omit=\"tox/*\"",
-    "coverage xml --omit=\"tox/*\" -o {toxinidir}/coverage.xml",
-    "diff-cover --compare-branch origin/main {toxinidir}/coverage.xml"
-]
-depends = "py{39,310,311,312,313}"
 deps = [".[tests]"]
-description = "Report the coverage difference."
+commands = [
+  ["coverage", "erase"]
+]
+
+[tool.tox.env.coverage]
+skip_install = true
+deps = [".[tests]"]
+depends = ["py39", "py310", "py311", "py312", "py313"]
 parallel_show_output = true
-skip_install = true
-
-[tool.tox.envs.docs]
-allowlist_externals = ["uv"]
 commands = [
-    "uv sync --extra docs",
-    "uv run sphinx-build --color -b html {toxinidir}/docs/source {toxinidir}/docs/build/html",
-    "python -c 'import pathlib; print(f\"Documentation is available under:\", pathlib.Path(f\"{toxinidir}\") / \"docs\" / \"build\" / \"html\" / \"index.html\")'"
+  ["coverage", "report", "--omit=tox/*"],
+  ["coverage", "xml", "--omit=tox/*", "-o", "{toxinidir}/coverage.xml"],
+  ["diff-cover", "--compare-branch", "origin/main", "{toxinidir}/coverage.xml"]
 ]
-description = "Build the documentation."
-skip_install = true
 
-[tool.tox.envs.lint]
-commands = [
-    "pre-commit run --all-files --show-diff-on-failure {posargs:}"
-]
+[tool.tox.env.lint]
+skip_install = true
 deps = [".[dev]"]
-description = "Perform linting."
-skip_install = true
+commands = [
+  ["pre-commit", "run", "--all-files", "--show-diff-on-failure"]
+]
 
-[tool.tox.envs.py313]
+[tool.tox.env.readme]
+skip_install = true
+allowlist_externals = ["uv"]
+deps = [".[dev]"]
+commands = [
+  ["uv", "build", "--wheel", "--out-dir", "{envtmpdir}/build"],
+  ["twine", "check", "{envtmpdir}/build/*"]
+]
+
+[tool.tox.env.py313]
 setenv = "_PYTEST_TOX_POSARGS=--log-cli-level=ERROR"
 
-[tool.tox.envs.readme]
-allowlist_externals = ["uv"]
-commands = [
-    "uv build --wheel --out-dir {envtmpdir}/build",
-    "twine check {envtmpdir}/build/*"
-]
-deps = [".[dev]"]
-description = "Check if README renders on PyPI."
+
+[tool.tox.env.docs]
+description = "Build the documentation."
 skip_install = true
+allowlist_externals = ["uv", "python"]
+commands = [
+  ["uv", "sync", "--group", "docs"],
+  ["uv", "run", "sphinx-build", "--color", "-b", "html",
+   "{toxinidir}/docs/source", "{toxinidir}/docs/build/html"],
+  ["python", "-c",
+   "import pathlib; print('Documentation is available under:', pathlib.Path('{toxinidir}')/'docs'/'build'/'html'/'index.html')"]
+]
 
 [tool.tox-gh-actions]
 env = [
