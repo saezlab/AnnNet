@@ -4,6 +4,7 @@
 # User-specific stuff
 .idea/
 .vscode/
+.ipynb_checkpoints/
 
 # CMake
 cmake-build-*/
