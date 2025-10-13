@@ -1186,7 +1186,7 @@ class Graph:
         **attrs
             Key/value attributes. Structural keys are ignored.
         """
-            # keep attributes table pure
+        # keep attributes table pure
         clean = {k: v for k, v in attrs.items() if k not in self._vertex_RESERVED}
         if clean:
             self.vertex_attributes = self._upsert_row(self.vertex_attributes, vertex_id, clean)
@@ -1712,7 +1712,7 @@ class Graph:
 
         return df.vstack(to_append)
 
-    ## Full attrobute dict for a single entity
+    ## Full attribute dict for a single entity
     
     def get_edge_attrs(self, edge) -> dict:
         """
@@ -3841,3 +3841,451 @@ class Graph:
         marker to be recorded.
         """
         self._log_event("mark", label=label)
+
+    # --- Lazy NX proxy
+    @property
+    def nx(self):
+        """
+        Accessor for the lazy NX proxy.
+        Usage: G.nx.louvain_communities(G), G.nx.shortest_path_length(G, weight="weight")
+        """
+        if not hasattr(self, "_nx_proxy"):
+            self._nx_proxy = self._LazyNXProxy(self)
+        return self._nx_proxy
+
+    class _LazyNXProxy:
+        """
+        Lazy, cached NX (NetworkX) adapter:
+          - On-demand backend conversion (no persistent NX graph).
+          - Cache keyed by options until Graph._version changes.
+          - Selective edge attr exposure (weight/capacity only when needed).
+          - Clear warnings when conversion is lossy.
+          - Auto label→ID mapping for node arguments (kwargs + positionals).
+          - NEW: _nx_simple to collapse Multi* → simple Graph/DiGraph for algos that need it.
+          - NEW: _nx_edge_aggs to control parallel-edge aggregation (e.g., {"capacity":"sum"}).
+        """
+
+        # ------------------------------ init -----------------------------------
+        def __init__(self, owner: "Graph"):
+            self._G = owner
+            self._cache = {}  # key -> {"nxG": nx.Graph, "version": int}
+            self.cache_enabled = True
+
+        # ---------------------------- public API --------------------------------
+        def clear(self):
+            """Drop all cached NX graphs."""
+            self._cache.clear()
+
+        def peek_nodes(self, k: int = 10):
+            """Debug helper: return up to k node IDs visible to NX."""
+            nxG = self._get_or_make_nx(
+                directed=True, hyperedge_mode="skip", layer=None, layers=None, needed_attrs=set(),
+                simple=False, edge_aggs=None
+            )
+            out = []
+            it = iter(nxG.nodes())
+            for _ in range(max(0, int(k))):
+                try:
+                    out.append(next(it))
+                except StopIteration:
+                    break
+            return out
+
+        # ------------------------- dynamic dispatch -----------------------------
+                # Public helper: obtain the cached/backend NX graph directly
+        # Usage in tests: nxG = G.nx.backend(directed=False, simple=True)
+        def backend(
+            self,
+            *,
+            directed: bool = True,
+            hyperedge_mode: str = "skip",
+            layer=None,
+            layers=None,
+            needed_attrs=None,
+            simple: bool = False,
+            edge_aggs: dict | None = None,
+        ):
+            """
+            Return the underlying NetworkX graph built with the same lazy/cached
+            machinery as normal calls.
+
+            Args:
+              directed: build DiGraph (True) or Graph (False) view
+              hyperedge_mode: "skip" | "expand"
+              layer/layers: layer selection if your Graph is multilayered
+              needed_attrs: set of edge attribute names to keep (default empty)
+              simple: if True, collapse Multi* -> simple (Di)Graph
+              edge_aggs: how to aggregate parallel edge attrs when simple=True,
+                         e.g. {"capacity": "sum", "weight": "min"} or callables
+            """
+            if needed_attrs is None:
+                needed_attrs = set()
+            return self._get_or_make_nx(
+                directed=directed,
+                hyperedge_mode=hyperedge_mode,
+                layer=layer,
+                layers=layers,
+                needed_attrs=needed_attrs,
+                simple=simple,
+                edge_aggs=edge_aggs,
+            )
+
+        def __getattr__(self, name: str):
+            nx_callable = self._resolve_nx_callable(name)
+
+            def wrapper(*args, **kwargs):
+                import inspect
+                import networkx as _nx
+
+                # Proxy-only knobs (consumed here; not forwarded to NX)
+                directed = bool(kwargs.pop("_nx_directed", True))
+                hyperedge_mode = kwargs.pop("_nx_hyperedge", "skip")  # "skip" | "expand"
+                layer = kwargs.pop("_nx_layer", None)
+                layers = kwargs.pop("_nx_layers", None)
+                label_field = kwargs.pop("_nx_label_field", None)      # explicit label column
+                guess_labels = kwargs.pop("_nx_guess_labels", True)    # try auto-infer when not provided
+
+                # NEW: force simple Graph/DiGraph and aggregation policy for parallel edges
+                simple = bool(kwargs.pop("_nx_simple", False))
+                edge_aggs = kwargs.pop("_nx_edge_aggs", None)  # e.g. {"weight":"min","capacity":"sum"} or callables
+
+                # Determine required edge attributes (keep graph skinny)
+                needed_edge_attrs = self._needed_edge_attrs(nx_callable, kwargs)
+
+                # Acquire (or build) backend NX graph for this config
+                nxG = self._get_or_make_nx(
+                    directed=directed,
+                    hyperedge_mode=hyperedge_mode,
+                    layer=layer,
+                    layers=layers,
+                    needed_attrs=needed_edge_attrs,
+                    simple=simple,
+                    edge_aggs=edge_aggs,
+                )
+
+                # Replace any Graph instance with nxG
+                args = list(args)
+                for i, v in enumerate(args):
+                    if v is self._G:
+                        args[i] = nxG
+                for k, v in list(kwargs.items()):
+                    if v is self._G:
+                        kwargs[k] = nxG
+
+                # Bind to NX signature so we can coerce node args reliably
+                try:
+                    sig = inspect.signature(nx_callable)
+                    bound = sig.bind_partial(*args, **kwargs)
+                except Exception:
+                    bound = None
+
+                # Coerce node args (labels/indices -> vertex IDs)
+                try:
+                    # Determine default label field if not given
+                    if label_field is None and guess_labels:
+                        label_field = self._infer_label_field()
+
+                    if bound is not None:
+                        self._coerce_nodes_in_bound(bound, nxG, label_field)
+                        # Reconstruct call
+                        bound.apply_defaults()
+                        pargs = bound.args
+                        pkwargs = bound.kwargs
+                    else:
+                        # Fallback: best-effort coercion on kwargs only
+                        self._coerce_nodes_in_kwargs(kwargs, nxG, label_field)
+                        pargs, pkwargs = tuple(args), kwargs
+                except Exception:
+                    pargs, pkwargs = tuple(args), kwargs  # best effort; let NX raise if needed
+
+                try:
+                    return nx_callable(*pargs, **pkwargs)
+                except _nx.NodeNotFound as e:
+                    # Add actionable tip that actually tells how to fix it now.
+                    sample = self.peek_nodes(5)
+                    tip = (
+                        f"{e}. Nodes must be your graph's vertex IDs.\n"
+                        f"- If you passed labels, specify _nx_label_field=<vertex label column> "
+                        f"or rely on auto-guess (columns like 'name'/'label'/'title').\n"
+                        f"- Example: G.nx.shortest_path_length(G, source='a', target='z', weight='weight', _nx_label_field='name')\n"
+                        f"- A few node IDs NX sees: {sample}"
+                    )
+                    raise _nx.NodeNotFound(tip) from e
+
+            return wrapper
+
+        # ------------------------------ internals -------------------------------
+        def _resolve_nx_callable(self, name: str):
+            import networkx as _nx
+            candidates = [
+                _nx,
+                getattr(_nx, "algorithms", None),
+                getattr(_nx.algorithms, "community", None) if hasattr(_nx, "algorithms") else None,
+                getattr(_nx.algorithms, "approximation", None) if hasattr(_nx, "algorithms") else None,
+                getattr(_nx.algorithms, "centrality", None) if hasattr(_nx, "algorithms") else None,
+                getattr(_nx.algorithms, "shortest_paths", None) if hasattr(_nx, "algorithms") else None,
+                getattr(_nx.algorithms, "flow", None) if hasattr(_nx, "algorithms") else None,
+                getattr(_nx.algorithms, "components", None) if hasattr(_nx, "algorithms") else None,
+                getattr(_nx.algorithms, "traversal", None) if hasattr(_nx, "algorithms") else None,
+                getattr(_nx.algorithms, "bipartite", None) if hasattr(_nx, "algorithms") else None,
+                getattr(_nx.algorithms, "link_analysis", None) if hasattr(_nx, "algorithms") else None,
+                getattr(_nx, "classes", None),
+                getattr(_nx.classes, "function", None) if hasattr(_nx, "classes") else None,
+            ]
+            for mod in (m for m in candidates if m is not None):
+                attr = getattr(mod, name, None)
+                if callable(attr):
+                    return attr
+            raise AttributeError(f"networkx has no callable '{name}'")
+
+        def _needed_edge_attrs(self, target, kwargs) -> set:
+            import inspect
+            needed = set()
+            # weight
+            w_name = kwargs.get("weight", "weight")
+            try:
+                sig = inspect.signature(target)
+                if "weight" in sig.parameters and w_name is not None:
+                    needed.add(str(w_name))
+            except Exception:
+                if "weight" in kwargs and w_name is not None:
+                    needed.add(str(w_name))
+            # capacity (flows)
+            c_name = kwargs.get("capacity", "capacity")
+            try:
+                sig = inspect.signature(target)
+                if "capacity" in sig.parameters and c_name is not None:
+                    needed.add(str(c_name))
+            except Exception:
+                if "capacity" in kwargs and c_name is not None:
+                    needed.add(str(c_name))
+            return needed
+
+        def _convert_to_nx(self, *, directed: bool, hyperedge_mode: str, layer, layers,
+                           needed_attrs: set, simple: bool, edge_aggs: dict | None):
+            from ..adapters import networkx as _gg_nx  # graphglue.adapters.networkx
+            import networkx as _nx
+
+            nxG, manifest = _gg_nx.to_nx(
+                self._G,
+                directed=directed,
+                hyperedge_mode=hyperedge_mode,
+                layer=layer,
+                layers=layers,
+                public_only=True,
+            )
+            # Keep only needed edge attrs
+            if needed_attrs:
+                for _, _, _, d in nxG.edges(keys=True, data=True):
+                    for k in list(d.keys()):
+                        if k not in needed_attrs:
+                            d.pop(k, None)
+            else:
+                for _, _, _, d in nxG.edges(keys=True, data=True):
+                    d.clear()
+
+            # Collapse Multi* → simple Graph/DiGraph if requested
+            if simple and nxG.is_multigraph():
+                nxG = self._collapse_multiedges(nxG, directed=directed,
+                                                aggregations=edge_aggs, needed_attrs=needed_attrs)
+
+            self._warn_on_loss(hyperedge_mode=hyperedge_mode, layer=layer, layers=layers, manifest=manifest)
+            return nxG
+
+        def _get_or_make_nx(self, *, directed: bool, hyperedge_mode: str, layer, layers,
+                            needed_attrs: set, simple: bool, edge_aggs: dict | None):
+            key = (
+                bool(directed),
+                str(hyperedge_mode),
+                tuple(sorted(layers)) if layers else None,
+                str(layer) if layer is not None else None,
+                tuple(sorted(needed_attrs)) if needed_attrs else (),
+                bool(simple),
+                tuple(sorted(edge_aggs.items())) if isinstance(edge_aggs, dict) else None,
+            )
+            version = getattr(self._G, "_version", None)
+            entry = self._cache.get(key)
+            if (not self.cache_enabled) or (entry is None) or (version is not None and entry.get("version") != version):
+                nxG = self._convert_to_nx(
+                    directed=directed,
+                    hyperedge_mode=hyperedge_mode,
+                    layer=layer,
+                    layers=layers,
+                    needed_attrs=needed_attrs,
+                    simple=simple,
+                    edge_aggs=edge_aggs,
+                )
+                if self.cache_enabled:
+                    self._cache[key] = {"nxG": nxG, "version": version}
+                return nxG
+            return entry["nxG"]
+
+        def _warn_on_loss(self, *, hyperedge_mode, layer, layers, manifest):
+            import warnings
+            has_hyper = False
+            try:
+                ek = getattr(self._G, "edge_kind", {})  # dict[eid] -> "hyper"/"binary"
+                if hasattr(ek, "values"):
+                    has_hyper = any(str(v).lower() == "hyper" for v in ek.values())
+            except Exception:
+                pass
+            msgs = []
+            if has_hyper and hyperedge_mode != "expand":
+                msgs.append("hyperedges dropped (hyperedge_mode='skip')")
+            try:
+                layers_dict = getattr(self._G, "_layers", None)
+                if isinstance(layers_dict, dict) and len(layers_dict) > 1 and (layer is None and not layers):
+                    msgs.append("multiple layers flattened into single NX graph")
+            except Exception:
+                pass
+            if manifest is None:
+                msgs.append("no manifest provided; round-trip fidelity not guaranteed")
+            if msgs:
+                warnings.warn(
+                    "Graph→NX conversion is lossy: " + "; ".join(msgs) + ".",
+                    category=RuntimeWarning,
+                    stacklevel=3,
+                )
+
+        # ---------------------- label/ID mapping helpers ------------------------
+        def _infer_label_field(self) -> str | None:
+            """
+            Heuristic label column if user didn't specify:
+              1) Graph.default_label_field if present
+              2) first present in ["name","label","title","slug","external_id","string_id"]
+            """
+            try:
+                if hasattr(self._G, "default_label_field") and self._G.default_label_field:
+                    return self._G.default_label_field
+                va = getattr(self._G, "vertex_attributes", None)
+                cols = list(va.columns) if va is not None and hasattr(va, "columns") else []
+                for c in ("name", "label", "title", "slug", "external_id", "string_id"):
+                    if c in cols:
+                        return c
+            except Exception:
+                pass
+            return None
+
+        def _vertex_id_col(self) -> str:
+            """Best-effort to determine the vertex ID column name in vertex_attributes."""
+            try:
+                va = self._G.vertex_attributes
+                cols = list(va.columns)
+                for k in ("vertex_id", "id", "vid"):
+                    if k in cols:
+                        return k
+            except Exception:
+                pass
+            return "vertex_id"
+
+        def _lookup_vertex_id_by_label(self, label_field: str, val):
+            """Return vertex_id where vertex_attributes[label_field] == val, else None."""
+            try:
+                va = self._G.vertex_attributes
+                if va is None or not hasattr(va, "columns") or label_field not in va.columns:
+                    return None
+                id_col = self._vertex_id_col()
+                # Prefer polars path
+                try:
+                    import polars as pl  # type: ignore
+                    matches = va.filter(pl.col(label_field) == val)
+                    if matches.height == 0:
+                        return None
+                    try:
+                        return matches.select(id_col).to_series().to_list()[0]
+                    except Exception:
+                        return matches.select(id_col).item(0, 0)
+                except Exception:
+                    # Fallback: convert to dicts (slower; fine for ad-hoc lookups)
+                    for row in va.to_dicts():
+                        if row.get(label_field) == val:
+                            return row.get(id_col)
+            except Exception:
+                return None
+            return None
+
+        def _coerce_node_id(self, x, nxG, label_field: str | None):
+            # If already a node ID present in the backend, keep it.
+            if x in nxG:
+                return x
+            # Internal index → vertex_id (if your Graph exposes idx_to_entity)
+            try:
+                if isinstance(x, int) and x in getattr(self._G, "idx_to_entity", {}):
+                    cand = self._G.idx_to_entity[x]
+                    if getattr(self._G, "entity_types", {}).get(cand) == "vertex":
+                        return cand
+            except Exception:
+                pass
+            # Label mapping
+            if label_field:
+                cand = self._lookup_vertex_id_by_label(label_field, x)
+                if cand is not None:
+                    return cand
+            return x  # let NX decide (will raise NodeNotFound if still absent)
+
+        def _coerce_node_or_iter(self, obj, nxG, label_field: str | None):
+            if isinstance(obj, (list, tuple, set)):
+                coerced = [self._coerce_node_id(v, nxG, label_field) for v in obj]
+                return type(obj)(coerced) if not isinstance(obj, set) else set(coerced)
+            return self._coerce_node_id(obj, nxG, label_field)
+
+        def _coerce_nodes_in_kwargs(self, kwargs: dict, nxG, label_field: str | None):
+            node_keys = {"source", "target", "u", "v", "node", "nodes", "nbunch", "center", "path"}
+            for key in list(kwargs.keys()):
+                if key in node_keys:
+                    kwargs[key] = self._coerce_node_or_iter(kwargs[key], nxG, label_field)
+
+        def _coerce_nodes_in_bound(self, bound, nxG, label_field: str | None):
+            """Coerce nodes in a BoundArguments object using common node parameter names."""
+            node_keys = {"source", "target", "u", "v", "node", "nodes", "nbunch", "center", "path"}
+            for key in list(bound.arguments.keys()):
+                if key in node_keys:
+                    bound.arguments[key] = self._coerce_node_or_iter(bound.arguments[key], nxG, label_field)
+
+        # ---------------------- Multi* collapse helpers -------------------------
+        def _collapse_multiedges(self, nxG, *, directed: bool,
+                                 aggregations: dict | None, needed_attrs: set):
+            """
+            Collapse parallel edges into a single edge with aggregated attributes.
+            Defaults: weight -> min (good for shortest paths), capacity -> sum (good for max-flow).
+            """
+            import networkx as _nx
+            H = _nx.DiGraph() if directed else _nx.Graph()
+            H.add_nodes_from(nxG.nodes(data=True))
+
+            aggregations = aggregations or {}
+
+            def _agg_for(key):
+                agg = aggregations.get(key)
+                if callable(agg):
+                    return agg
+                if agg == "sum":
+                    return sum
+                if agg == "min":
+                    return min
+                if agg == "max":
+                    return max
+                # sensible defaults:
+                if key == "capacity":
+                    return sum
+                if key == "weight":
+                    return min
+                # fallback: first value
+                return lambda vals: next(iter(vals))
+
+            # Bucket parallel edges
+            bucket = {}  # (u,v) or sorted(u,v) -> {attr: [values]}
+            for u, v, _, d in nxG.edges(keys=True, data=True):
+                key = (u, v) if directed else tuple(sorted((u, v)))
+                entry = bucket.setdefault(key, {})
+                for k, val in d.items():
+                    if needed_attrs and k not in needed_attrs:
+                        continue
+                    entry.setdefault(k, []).append(val)
+
+            # Aggregate per (u,v)
+            for (u, v), attrs in bucket.items():
+                out = {k: _agg_for(k)(vals) for k, vals in attrs.items()}
+                H.add_edge(u, v, **out)
+
+            return H
