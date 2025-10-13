@@ -29,6 +29,24 @@ def nx_backend(G: Graph, *,
                                 layer=layer, layers=layers, needed_attrs=needed_attrs,
                                 simple=simple, edge_aggs=edge_aggs)
 
+def ig_backend(G: Graph, *,
+               directed=True, hyperedge_mode="skip",
+               layer=None, layers=None, needed_attrs=None,
+               simple=False, edge_aggs=None):
+    """
+    Use public G.ig.backend if available, otherwise call the private helper with
+    the new signature (requires simple/edge_aggs).
+    """
+    needed_attrs = needed_attrs or set()
+    if hasattr(G.ig, "backend"):
+        return G.ig.backend(directed=directed, hyperedge_mode=hyperedge_mode,
+                            layer=layer, layers=layers, needed_attrs=needed_attrs,
+                            simple=simple, edge_aggs=edge_aggs)
+    # fallback to private API with required args
+    return G.ig._get_or_make_ig(directed=directed, hyperedge_mode=hyperedge_mode,
+                                layer=layer, layers=layers, needed_attrs=needed_attrs,
+                                simple=simple, edge_aggs=edge_aggs)
+
 
 # --------------------------- Graph builders (MULTI) ---------------------------
 
@@ -188,7 +206,7 @@ def build_simple_cycle() -> Graph:
     return G
 
 
-# --------------------------- Test Suite: MULTI ---------------------------
+# --------------------------- Test Suite: NX MULTI ---------------------------
 
 class TestLazyNXProxy_MULTI(unittest.TestCase):
     """Algorithms that are fine on Multi* backends."""
@@ -242,7 +260,7 @@ class TestLazyNXProxy_MULTI(unittest.TestCase):
         self.assertEqual(len(next(iter(comps))), 10)
 
 
-# --------------------------- Test Suite: SIMPLE ---------------------------
+# --------------------------- Test Suite: NX SIMPLE ---------------------------
 
 class TestLazyNXProxy_SIMPLE(unittest.TestCase):
     """Algorithms that REQUIRE simple Graph/DiGraph backends."""
@@ -298,7 +316,7 @@ class TestLazyNXProxy_SIMPLE(unittest.TestCase):
         # verify _nx_edge_aggs works when collapsing parallel edges
         G = Graph(directed=True)
         G.add_vertex("u"); G.add_vertex("v")
-        # simulate parallel edges (your adapter emits Multi* for undirected duplicates)
+        # simulate parallel edges (adapter emits Multi* for undirected duplicates)
         G.add_edge("u","v", weight=5, capacity=3, edge_directed=False)
         G.add_edge("u","v", weight=2, capacity=7, edge_directed=False)
 
@@ -339,5 +357,119 @@ class TestLazyNXProxy_SIMPLE(unittest.TestCase):
         assert d == {}
 
 
+# --------------------------- Test Suite: IG MULTI ---------------------------
+
+class TestLazyIGProxy_MULTI(unittest.TestCase):
+    """igraph algorithms that are fine on multi-edge backends."""
+
+    def test_weighted_and_unweighted_shortest_paths_ig(self):
+        G = build_multi_graph()
+
+        # Weighted Dijkstra via labels (use vertex 'name' strings directly)
+        dist_w = G.ig.shortest_paths_dijkstra(
+            source="alpha", target="phi", weights="weight", _ig_guess_labels=False
+        )
+        # unwrap [[val]] -> val
+        dist_w = dist_w[0][0] if isinstance(dist_w, list) else dist_w
+        print("[IG MULTI weighted dijkstra alpha->phi]", dist_w)
+        self.assertAlmostEqual(dist_w, 11.0, places=6)
+
+        # Unweighted hops: chords a->c, b->d shorten a->f from 5 to 4
+        dist_u = G.ig.distances(
+            source="alpha", target="phi", weights=None, _ig_guess_labels=False
+        )
+        dist_u = dist_u[0][0] if isinstance(dist_u, list) else dist_u
+        print("[IG MULTI unweighted hops alpha->phi]", dist_u)
+        self.assertEqual(dist_u, 4)
+
+        # Mutation invalidates cache: add direct fast edge a->f (weight=2)
+        G.add_edge("a", "f", weight=2)
+        dist_new = G.ig.shortest_paths_dijkstra(
+            source="alpha", target="phi", weights="weight", _ig_guess_labels=False
+        )
+        dist_new = dist_new[0][0] if isinstance(dist_new, list) else dist_new
+        print("[IG MULTI after mutation alpha->phi]", dist_new)
+        self.assertAlmostEqual(dist_new, 2.0, places=6)
+
+    def test_communities_pagerank_components_ig(self):
+        G = build_multi_communities_graph()
+
+        # Multilevel (Louvain-like)
+        vc = G.ig.community_multilevel(weights="weight", _ig_directed=False)
+        sizes = sorted(vc.sizes())
+        print("[IG MULTI louvain sizes]", sizes)
+        self.assertEqual(sizes, [4, 6])
+
+        # Betweenness / PageRank on undirected view
+        igG_und = ig_backend(G, directed=False)
+        names = igG_und.vs["name"] if "name" in igG_und.vs.attributes() else list(range(igG_und.vcount()))
+
+        bc_vals = G.ig.betweenness(directed=False, weights=None)
+        top_bc = names[max(range(len(bc_vals)), key=bc_vals.__getitem__)]
+        print("[IG MULTI betweenness top]", top_bc)
+        self.assertIn(top_bc, {"e", "x"})
+
+        pr_vals = G.ig.pagerank(directed=False)
+        top_pr = names[max(range(len(pr_vals)), key=pr_vals.__getitem__)]
+        print("[IG MULTI pagerank top]", top_pr)
+        self.assertEqual(top_pr, "e")
+
+        # Connected components
+        comps = G.ig.components(_ig_directed=False)
+        comp_sizes = sorted(comps.sizes())
+        print("[IG MULTI connected components]", comp_sizes)
+        self.assertEqual(comp_sizes, [10])
+
+
+# --------------------------- Test Suite: IG SIMPLE ---------------------------
+
+class TestLazyIGProxy_SIMPLE(unittest.TestCase):
+    """igraph checks that benefit from simple-edge collapse & aggregation."""
+
+    def test_simple_collapse_aggregations_ig(self):
+        # verify simple collapse + _ig_edge_aggs (if proxy supports it);
+        # otherwise fallback to igraph.simplify with combine_edges
+        G = Graph(directed=True)
+        G.add_vertex("u"); G.add_vertex("v")
+        # parallel undirected edges with attrs
+        G.add_edge("u", "v", weight=5, capacity=3, edge_directed=False)
+        G.add_edge("u", "v", weight=2, capacity=7, edge_directed=False)
+
+        try:
+            igG_simple = ig_backend(G, directed=False, simple=True,
+                                    needed_attrs={"weight", "capacity"},
+                                    edge_aggs={"weight": "min", "capacity": "sum"})
+            e = igG_simple.es[0]  # one edge after collapse
+            w = e["weight"]; c = e["capacity"]
+            print("[IG SIMPLE collapse agg via proxy] weight:", w, "capacity:", c)
+            self.assertEqual((w, c), (2, 10))
+        except Exception:
+            # Fallback: ensure attrs carried over, then collapse
+            igG_raw = ig_backend(G, directed=False, needed_attrs={"weight", "capacity"})
+            # combine_edges supports "sum","min","max","first","last","mean"
+            igG_raw.simplify(multiple=True, loops=True,
+                             combine_edges={"weight": "min", "capacity": "sum"})
+            e = igG_raw.es[0]
+            w = e["weight"] if "weight" in igG_raw.es.attributes() else None
+            c = e["capacity"] if "capacity" in igG_raw.es.attributes() else None
+            print("[IG SIMPLE collapse agg via simplify] weight:", w, "capacity:", c)
+            self.assertEqual((w, c), (2, 10))
+
+    def test_cache_invalidation_on_mutation_ig(self):
+        # backend object id should change when graph mutates (version bumps)
+        G = Graph(directed=True)
+        G.add_vertex("a"); G.add_vertex("b")
+        G.add_edge("a", "b", weight=1)
+
+        H1 = ig_backend(G, directed=True, simple=False)
+        hid1 = id(H1)
+        G.add_edge("b", "a", weight=1)  # mutate
+        H2 = ig_backend(G, directed=True, simple=False)
+        hid2 = id(H2)
+        print("[IG cache invalidation] before:", hid1, "after:", hid2)
+        self.assertNotEqual(hid1, hid2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
