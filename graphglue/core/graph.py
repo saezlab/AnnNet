@@ -46,7 +46,7 @@ class Graph:
 
     # Construction
 
-    def __init__(self, directed=True):
+    def __init__(self, directed=True, n: int = 0, e: int = 0, **kwargs):
         """
         Initialize an empty incidence-matrix graph.
 
@@ -112,6 +112,33 @@ class Graph:
         }
         self._current_layer = self._default_layer
 
+        # counts stay logical (start empty)
+        self._num_entities = 0
+        self._num_edges = 0
+
+        # pre-size the incidence matrix to capacity (no zeros allocated in DOK)
+        n = int(n) if n and n > 0 else 0
+        e = int(e) if e and e > 0 else 0
+        self._matrix = sp.dok_matrix((n, e), dtype=np.float32)
+
+        # grow-only helpers to avoid per-insert exact resizes
+        def _grow_rows_to(target: int):
+            rows, cols = self._matrix.shape
+            if target > rows:
+                # geometric bump; keeps behavior, reduces churn
+                new_rows = max(target, rows + max(8, rows >> 1))
+                self._matrix.resize((new_rows, cols))
+
+        def _grow_cols_to(target: int):
+            rows, cols = self._matrix.shape
+            if target > cols:
+                new_cols = max(target, cols + max(8, cols >> 1))
+                self._matrix.resize((rows, new_cols))
+
+        # bind as privates
+        self._grow_rows_to = _grow_rows_to
+        self._grow_cols_to = _grow_cols_to
+
         # History and Timeline
         self._history_enabled = True
         self._history = []           # list[dict]
@@ -142,7 +169,7 @@ class Graph:
         ValueError
             If the layer already exists.
         """
-        if layer_id in self._layers:
+        if layer_id in self._layers and layer_id != "default":
             raise ValueError(f"Layer {layer_id} already exists")
         
         self._layers[layer_id] = {
@@ -296,27 +323,80 @@ class Graph:
         """
         INTERNAL: Ensure a row for ``vertex_id`` exists in the vertex attribute DF.
 
-        Parameters
-        ----------
-        vertex_id : str
-
         Notes
         -----
         - Appends a new row with ``vertex_id`` and ``None`` for other columns if absent.
         - Preserves existing schema and columns.
-        """    
+        """
+        # Intern for cheaper dict ops
+        try:
+            import sys as _sys
+            if isinstance(vertex_id, str):
+                vertex_id = _sys.intern(vertex_id)
+        except Exception:
+            pass
+
         df = self.vertex_attributes
-        # if row already exists, nothing to do
-        if df.height and df.filter(pl.col("vertex_id") == vertex_id).height > 0:
+
+        # Build/refresh a cached id-set if needed (auto-invalidates on DF object change)
+        try:
+            cached_ids = getattr(self, "_vertex_attr_ids", None)
+            cached_df_id = getattr(self, "_vertex_attr_df_id", None)
+            if cached_ids is None or cached_df_id != id(df):
+                ids = set()
+                if isinstance(df, pl.DataFrame) and df.height > 0 and "vertex_id" in df.columns:
+                    # One-time scan to seed cache
+                    try:
+                        ids = set(df.get_column("vertex_id").to_list())
+                    except Exception:
+                        # Fallback if column access path changes
+                        ids = set(df.select("vertex_id").to_series().to_list())
+                self._vertex_attr_ids = ids
+                self._vertex_attr_df_id = id(df)
+        except Exception:
+            # If anything about caching fails, proceed without it
+            self._vertex_attr_ids = None
+            self._vertex_attr_df_id = None
+
+        # membership check via cache when available
+        ids = getattr(self, "_vertex_attr_ids", None)
+        if ids is not None and vertex_id in ids:
             return
+
+        # If DF is empty, create the first row with the canonical schema
         if df.is_empty():
-            # Create first row with the canonical vertex schema
             self.vertex_attributes = pl.DataFrame({"vertex_id": [vertex_id]}, schema={"vertex_id": pl.Utf8})
+            # keep cache in sync
+            try:
+                if isinstance(self._vertex_attr_ids, set):
+                    self._vertex_attr_ids.add(vertex_id)
+                else:
+                    self._vertex_attr_ids = {vertex_id}
+                self._vertex_attr_df_id = id(self.vertex_attributes)
+            except Exception:
+                pass
             return
+
         # Align columns: create a single dict with all columns present
         row = {c: None for c in df.columns}
         row["vertex_id"] = vertex_id
-        self.vertex_attributes = pl.concat([df, pl.DataFrame([row])], how="vertical")
+
+        # Append one row efficiently
+        try:
+            new_df = df.vstack(pl.DataFrame([row]))
+        except Exception:
+            new_df = pl.concat([df, pl.DataFrame([row])], how="vertical")
+        self.vertex_attributes = new_df
+
+        # Update cache after mutation
+        try:
+            if isinstance(self._vertex_attr_ids, set):
+                self._vertex_attr_ids.add(vertex_id)
+            else:
+                self._vertex_attr_ids = {vertex_id}
+            self._vertex_attr_df_id = id(self.vertex_attributes)
+        except Exception:
+            pass
 
     # Build graph
 
@@ -343,22 +423,42 @@ class Graph:
         - Ensures a row exists in the Polars DF [DataFrame] for attributes.
         - Resizes the incidence matrix if needed.
         """
-        layer = layer or self._current_layer
+        # Fast normalize to cut hashing/dup costs in dicts.
+        try:
+            import sys as _sys
+            if isinstance(vertex_id, str):
+                vertex_id = _sys.intern(vertex_id)
+            if layer is None:
+                layer = self._current_layer
+            elif isinstance(layer, str):
+                layer = _sys.intern(layer)
+        except Exception:
+            layer = layer or self._current_layer
+
+        entity_to_idx = self.entity_to_idx
+        idx_to_entity = self.idx_to_entity
+        entity_types = self.entity_types
+        M = self._matrix  # DOK
 
         # Add to global superset if new
-        if vertex_id not in self.entity_to_idx:
+        if vertex_id not in entity_to_idx:
             idx = self._num_entities
-            self.entity_to_idx[vertex_id] = idx
-            self.idx_to_entity[idx] = vertex_id
-            self.entity_types[vertex_id] = "vertex"
-            self._num_entities += 1
-            # Resize incidence matrix
-            self._matrix.resize((self._num_entities, self._num_edges))
+            entity_to_idx[vertex_id] = idx
+            idx_to_entity[idx] = vertex_id
+            entity_types[vertex_id] = "vertex"
+            self._num_entities = idx + 1
 
-        # Add to specified layer
-        if layer not in self._layers:
-            self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-        self._layers[layer]["vertices"].add(vertex_id)
+            rows, cols = M.shape
+            if self._num_entities > rows:
+                # geometric growth (≈1.5x), minimum step 8 to avoid frequent resizes
+                new_rows = max(self._num_entities, rows + max(8, rows >> 1))
+                M.resize((new_rows, cols))
+
+        # Add to specified layer (create if needed)
+        layers = self._layers
+        if layer not in layers:
+            layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
+        layers[layer]["vertices"].add(vertex_id)
 
         # Ensure vertex_attributes has a row for this vertex (even with no attrs)
         self._ensure_vertex_table()
@@ -371,47 +471,17 @@ class Graph:
         return vertex_id
 
     def add_vertices(self, vertices, layer=None, **attributes):
-        """
-        Add (or upsert) multiple vertices and optionally attach them to a layer.
-
-        Parameters
-        ----------
-        vertices : Iterable[str] | Mapping[str, dict] | Iterable[tuple[str, dict]]
-            - Iterable of vertex IDs -> the same `attributes` apply to each.
-            - Mapping vertex_id -> per-vertex attributes dict (merged with `attributes`).
-            - Iterable of (vertex_id, per_vertex_attributes) tuples.
-        layer : str, optional
-            Target layer for all vertices. Defaults to the active layer.
-        **attributes
-            Attributes applied to every vertex (overridden by per-vertex attributes when provided).
-
-        Returns
-        -------
-        list[str]
-            The list of vertex IDs (echoed in insertion order).
-        """
-        # Normalize input into an iterator of (vertex_id, per_vertex_attrs)
-        if vertices is None:
-            return []
-
-        if isinstance(vertices, dict):
-            iterator = vertices.items()
-        else:
-            iterator = []
-            for item in vertices:
-                # Allow (vertex_id, {attr: ...}) tuples
-                if isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], dict):
-                    vertex_id, per_attrs = item
-                    iterator.append((vertex_id, per_attrs))
-                else:
-                    # Treat plain values as vertex IDs with no per-vertex attrs
-                    iterator.append((item, {}))
-
-        added = []
-        for vertex_id, per_attrs in iterator:
-            merged_attrs = {**attributes, **per_attrs} if attributes or per_attrs else {}
-            added.append(self.add_vertex(vertex_id, layer=layer, **merged_attrs))
-        return added
+        # normalize to [(vertex_id, per_attrs), ...]
+        it = []
+        for item in vertices:
+            if isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], dict):
+                it.append({"vertex_id": item[0], **item[1], **attributes})
+            elif isinstance(item, dict):
+                d = dict(item); d.update(attributes); it.append(d)
+            else:
+                it.append({"vertex_id": item, **attributes})
+        self.add_vertices_bulk([(d["vertex_id"], {k:v for k,v in d.items() if k!="vertex_id"}) for d in it], layer=layer)
+        return [d["vertex_id"] for d in it]
 
     def add_edge_entity(self, edge_entity_id, layer=None, **attributes):
         """
@@ -431,24 +501,35 @@ class Graph:
         str
             The edge-entity ID.
         """
+        # Resolve layer default and intern hot strings
         layer = layer or self._current_layer
-        
-        # Add to global superset if new
-        if edge_entity_id not in self.entity_to_idx:
+        try:
+            import sys as _sys
+            if isinstance(edge_entity_id, str):
+                edge_entity_id = _sys.intern(edge_entity_id)
+            if isinstance(layer, str):
+                layer = _sys.intern(layer)
+        except Exception:
+            pass
+
+        entity_to_idx = self.entity_to_idx
+        layers = self._layers
+
+        # Add to global superset if new (delegate to existing helper)
+        if edge_entity_id not in entity_to_idx:
             self._add_edge_entity(edge_entity_id)
-        
+
         # Add to specified layer
-        if layer not in self._layers:
-            self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-        
-        self._layers[layer]["vertices"].add(edge_entity_id)
-        
+        if layer not in layers:
+            layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
+        layers[layer]["vertices"].add(edge_entity_id)
+
         # Add attributes (treat edge entities like vertices for attributes)
         if attributes:
             self.set_vertex_attrs(edge_entity_id, **attributes)
 
         return edge_entity_id
-  
+
     def _add_edge_entity(self, edge_id):
         """
         INTERNAL: Register an **edge-entity** so edges can attach to it (vertex-edge mode).
@@ -462,16 +543,28 @@ class Graph:
         -----
         - Adds a new entity row and resizes the DOK incidence matrix accordingly.
         """
+        try:
+            import sys as _sys
+            if isinstance(edge_id, str):
+                edge_id = _sys.intern(edge_id)
+        except Exception:
+            pass
+
         if edge_id not in self.entity_to_idx:
             idx = self._num_entities
             self.entity_to_idx[edge_id] = idx
             self.idx_to_entity[idx] = edge_id
             self.entity_types[edge_id] = 'edge'
-            self._num_entities += 1
-            
-            # Resize matrix
-            self._matrix.resize((self._num_entities, self._num_edges))
- 
+            self._num_entities = idx + 1
+
+            # Grow-only resize (behavior: matrix >= (num_entities, num_edges))
+            M = self._matrix  # DOK
+            rows, cols = M.shape
+            if self._num_entities > rows:
+                # geometric growth to reduce repeated resizes; minimum bump of 8 rows
+                new_rows = max(self._num_entities, rows + max(8, rows >> 1))
+                M.resize((new_rows, cols))
+
     def add_edge(
         self,
         source,
@@ -485,188 +578,222 @@ class Graph:
         edge_directed=None,
         **attributes,
     ):
-            """
-            Add or update a binary edge between two entities.
+        """
+        Add or update a binary edge between two entities.
 
-            Parameters
-            ----------
-            source : str
-                Source entity ID (vertex or edge-entity for vertex-edge mode).
-            target : str
-                Target entity ID.
-            layer : str, optional
-                Layer to place the edge into. Defaults to the active layer.
-            weight : float, optional
-                Global edge weight stored in the incidence column (default 1.0).
-            edge_id : str, optional
-                Explicit edge ID. If omitted, a fresh ID is generated.
-            edge_type : {'regular', 'vertex_edge'}, optional
-                Edge kind. ``'vertex_edge'`` allows connecting to an edge-entity.
-            propagate : {'none', 'shared', 'all'}, optional
-                Layer propagation:
-                - ``'none'`` : only the specified layer
-                - ``'shared'`` : all layers that already contain **both** endpoints
-                - ``'all'`` : all layers that contain **either** endpoint (and add the other)
-            layer_weight : float, optional
-                Per-layer weight override for this edge (stored in edge-layer DF).
-            edge_directed : bool, optional
-                Override default directedness for this edge. If None, uses graph default.
-            **attributes
-                Pure edge attributes to upsert.
+        Parameters
+        ----------
+        source : str
+            Source entity ID (vertex or edge-entity for vertex-edge mode).
+        target : str
+            Target entity ID.
+        layer : str, optional
+            Layer to place the edge into. Defaults to the active layer.
+        weight : float, optional
+            Global edge weight stored in the incidence column (default 1.0).
+        edge_id : str, optional
+            Explicit edge ID. If omitted, a fresh ID is generated.
+        edge_type : {'regular', 'vertex_edge'}, optional
+            Edge kind. ``'vertex_edge'`` allows connecting to an edge-entity.
+        propagate : {'none', 'shared', 'all'}, optional
+            Layer propagation:
+            - ``'none'`` : only the specified layer
+            - ``'shared'`` : all layers that already contain **both** endpoints
+            - ``'all'`` : all layers that contain **either** endpoint (and add the other)
+        layer_weight : float, optional
+            Per-layer weight override for this edge (stored in edge-layer DF).
+        edge_directed : bool, optional
+            Override default directedness for this edge. If None, uses graph default.
+        **attributes
+            Pure edge attributes to upsert.
 
-            Returns
-            -------
-            str
-                The edge ID (new or updated).
+        Returns
+        -------
+        str
+            The edge ID (new or updated).
 
-            Raises
-            ------
-            ValueError
-                If ``propagate`` or ``edge_type`` is invalid.
-            TypeError
-                If ``weight`` is not numeric.
+        Raises
+        ------
+        ValueError
+            If ``propagate`` or ``edge_type`` is invalid.
+        TypeError
+            If ``weight`` is not numeric.
 
-            Notes
-            -----
-            - Directed edges write ``+weight`` at source row and ``-weight`` at target row.
-            - Undirected edges write ``+weight`` at both endpoints.
-            - Updating an existing edge ID overwrites its matrix column and metadata.
-            """
-            if edge_type is None:
-                edge_type = "regular"
-            # ---- normalize endpoints: accept str OR iterable; route hyperedges ----
-            def _to_tuple(x):
-                # str/bytes -> (x,), not iterable of chars
-                if isinstance(x, (str, bytes)):
-                    return (x,), False
-                try:
-                    xs = tuple(x)
-                except TypeError:
-                    # non-iterable -> treat as single vertex id
-                    return (x,), False
-                return xs, (len(xs) != 1)  # (sequence, is_multi)
+        Notes
+        -----
+        - Directed edges write ``+weight`` at source row and ``-weight`` at target row.
+        - Undirected edges write ``+weight`` at both endpoints.
+        - Updating an existing edge ID overwrites its matrix column and metadata.
+        """
+        if edge_type is None:
+            edge_type = "regular"
 
-            S, src_multi = _to_tuple(source)
-            T, tgt_multi = _to_tuple(target)
+        # normalize endpoints: accept str OR iterable; route hyperedges
+        def _to_tuple(x):
+            if isinstance(x, (str, bytes)):
+                return (x,), False
+            try:
+                xs = tuple(x)
+            except TypeError:
+                return (x,), False
+            return xs, (len(xs) != 1)
 
-            # If any endpoint has >1 members, this is a hyperedge
-            if src_multi or tgt_multi:
-                if edge_directed:
-                    return self.add_hyperedge(
-                        head=S, tail=T, edge_directed=True,
-                        layer=layer, weight=weight, edge_id=edge_id, **attributes
-                    )
-                else:
-                    members = tuple(set(S) | set(T))
-                    return self.add_hyperedge(
-                        members=members, edge_directed=False,
-                        layer=layer, weight=weight, edge_id=edge_id, **attributes
-                    )
+        S, src_multi = _to_tuple(source)
+        T, tgt_multi = _to_tuple(target)
 
-            # Binary case: unwrap singletons to plain vertex IDs (str)
-            source, target = S[0], T[0]
-            # validate inputs
-            if propagate not in {"none", "shared", "all"}:
-                raise ValueError(f"propagate must be one of 'none'|'shared'|'all', got {propagate!r}")
-            if not isinstance(weight, (int, float)):
-                raise TypeError(f"weight must be numeric, got {type(weight).__name__}")
-            if edge_type not in {"regular", "vertex_edge"}:
-                raise ValueError(f"edge_type must be 'regular' or 'vertex_edge', got {edge_type!r}")
-
-            # resolve layer + whether to touch layering at all
-            layer = self._current_layer if layer is None else layer
-            touch_layer = layer is not None
-
-            # ensure vertices exist (global)
-            def _ensure_vertex_or_edge_entity(x):
-                if x in self.entity_to_idx:
-                    return
-                if edge_type == "vertex_edge" and isinstance(x, str) and x.startswith("edge_"):
-                    self.add_edge_entity(x, layer=layer)
-                else:
-                    self.add_vertex(x, layer=layer)
-
-            _ensure_vertex_or_edge_entity(source)
-            _ensure_vertex_or_edge_entity(target)
-
-            # indices (after potential vertex creation)
-            source_idx = self.entity_to_idx[source]
-            target_idx = self.entity_to_idx[target]
-
-            # edge id
-            if edge_id is None:
-                edge_id = self._get_next_edge_id()
-
-            # determine direction
-            is_dir = self.directed if edge_directed is None else bool(edge_directed)
-
-            # create or update bookkeeping
-            if edge_id in self.edge_to_idx:
-                # update
-                col_idx = self.edge_to_idx[edge_id]
-
-                # allow explicit direction change; otherwise keep existing
-                if edge_directed is None:
-                    is_dir = self.edge_directed.get(edge_id, is_dir)
-                self.edge_directed[edge_id] = is_dir
-                self.set_edge_attrs(edge_id, edge_type=(EdgeType.DIRECTED if is_dir else EdgeType.UNDIRECTED))
-
-
-                # if source/target changed, update definition
-                old_src, old_tgt, old_type = self.edge_definitions[edge_id]
-                self.edge_definitions[edge_id] = (source, target, old_type)  # keep old_type by default
-
-                # ensure matrix has enough rows (in case vertices were added since creation)
-                if self._matrix.shape[0] < self._num_entities:
-                    self._matrix.resize((self._num_entities, self._matrix.shape[1]))
-
-                # rewrite column
-                self._matrix[:, col_idx] = 0
-                self._matrix[source_idx, col_idx] = weight
-                if source != target:
-                    self._matrix[target_idx, col_idx] = -weight if is_dir else weight
-
-                self.edge_weights[edge_id] = weight
-
+        # Hyperedge delegation
+        if src_multi or tgt_multi:
+            if edge_directed:
+                return self.add_hyperedge(
+                    head=S, tail=T, edge_directed=True,
+                    layer=layer, weight=weight, edge_id=edge_id, **attributes
+                )
             else:
-                # create
-                col_idx = self._num_edges
-                self.edge_to_idx[edge_id] = col_idx
-                self.idx_to_edge[col_idx] = edge_id
-                self.edge_definitions[edge_id] = (source, target, edge_type)
-                self.edge_weights[edge_id] = weight
-                self.edge_directed[edge_id] = is_dir
-                self._num_edges += 1
+                members = tuple(set(S) | set(T))
+                return self.add_hyperedge(
+                    members=members, edge_directed=False,
+                    layer=layer, weight=weight, edge_id=edge_id, **attributes
+                )
 
-                # grow matrix to fit
-                self._matrix.resize((self._num_entities, self._num_edges))
-                self._matrix[source_idx, col_idx] = weight
-                if source != target:
-                    self._matrix[target_idx, col_idx] = -weight if is_dir else weight
+        # Binary case: unwrap singletons to plain IDs
+        source, target = S[0], T[0]
 
-            # layer handling
-            if touch_layer:
-                if layer not in self._layers:
-                    self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-                self._layers[layer]["edges"].add(edge_id)
-                self._layers[layer]["vertices"].update((source, target))
+        # validate inputs
+        if propagate not in {"none", "shared", "all"}:
+            raise ValueError(f"propagate must be one of 'none'|'shared'|'all', got {propagate!r}")
+        if not isinstance(weight, (int, float)):
+            raise TypeError(f"weight must be numeric, got {type(weight).__name__}")
+        if edge_type not in {"regular", "vertex_edge"}:
+            raise ValueError(f"edge_type must be 'regular' or 'vertex_edge', got {edge_type!r}")
 
-                if layer_weight is not None:
-                    w = float(layer_weight)
-                    self.set_edge_layer_attrs(layer, edge_id, weight=w)
-                    self.layer_edge_weights.setdefault(layer, {})[edge_id] = w
+        # resolve layer + whether to touch layering at all
+        layer = self._current_layer if layer is None else layer
+        touch_layer = layer is not None
 
-            # propagation
-            if propagate == "shared":
-                self._propagate_to_shared_layers(edge_id, source, target)
-            elif propagate == "all":
-                self._propagate_to_all_layers(edge_id, source, target)
+        # Intern common strings to speed up dict lookups
+        try:
+            import sys as _sys
+            if isinstance(source, str): source = _sys.intern(source)
+            if isinstance(target, str): target = _sys.intern(target)
+            if isinstance(layer, str):  layer  = _sys.intern(layer)
+            if isinstance(edge_id, str): edge_id = _sys.intern(edge_id)
+        except Exception:
+            pass
 
-            # attributes
-            if attributes:
-                self.set_edge_attrs(edge_id, **attributes)
+        entity_to_idx = self.entity_to_idx
+        idx_to_edge = self.idx_to_edge
+        edge_to_idx = self.edge_to_idx
+        edge_defs = self.edge_definitions
+        edge_w = self.edge_weights
+        edge_dir = self.edge_directed
+        layers = self._layers
+        M = self._matrix  # DOK
 
-            return edge_id
+        # ensure vertices exist (global)
+        def _ensure_vertex_or_edge_entity(x):
+            if x in entity_to_idx:
+                return
+            if edge_type == "vertex_edge" and isinstance(x, str) and x.startswith("edge_"):
+                self.add_edge_entity(x, layer=layer)
+            else:
+                self.add_vertex(x, layer=layer)
+
+        _ensure_vertex_or_edge_entity(source)
+        _ensure_vertex_or_edge_entity(target)
+
+        # indices (after potential vertex creation)
+        source_idx = entity_to_idx[source]
+        target_idx = entity_to_idx[target]
+
+        # edge id
+        if edge_id is None:
+            edge_id = self._get_next_edge_id()
+
+        # determine direction
+        is_dir = self.directed if edge_directed is None else bool(edge_directed)
+
+        if edge_id in edge_to_idx:
+            # UPDATE existing column
+
+            col_idx = edge_to_idx[edge_id]
+
+            # allow explicit direction change; otherwise keep existing
+            if edge_directed is None:
+                is_dir = edge_dir.get(edge_id, is_dir)
+            edge_dir[edge_id] = is_dir
+
+            # keep edge_type attr write
+            self.set_edge_attrs(edge_id, edge_type=(EdgeType.DIRECTED if is_dir else EdgeType.UNDIRECTED))
+
+            # if source/target changed, update definition
+            old_src, old_tgt, old_type = edge_defs[edge_id]
+            edge_defs[edge_id] = (source, target, old_type)  # keep old_type by default
+
+            # ensure matrix has enough rows (in case vertices were added since creation)
+            self._grow_rows_to(self._num_entities)
+
+
+            # clear only the cells that were previously set, not the whole column
+            try:
+                old_src_idx = entity_to_idx[old_src]
+                M[old_src_idx, col_idx] = 0
+            except KeyError:
+                pass
+            if old_src != old_tgt:
+                try:
+                    old_tgt_idx = entity_to_idx[old_tgt]
+                    M[old_tgt_idx, col_idx] = 0
+                except KeyError:
+                    pass
+
+            # write new endpoints
+            M[source_idx, col_idx] = weight
+            if source != target:
+                M[target_idx, col_idx] = (-weight if is_dir else weight)
+
+            edge_w[edge_id] = weight
+
+        else:
+            # CREATE new column
+
+            col_idx = self._num_edges
+            edge_to_idx[edge_id] = col_idx
+            idx_to_edge[col_idx] = edge_id
+            edge_defs[edge_id] = (source, target, edge_type)
+            edge_w[edge_id] = weight
+            edge_dir[edge_id] = is_dir
+            self._num_edges = col_idx + 1
+
+            # grow-only to current logical capacity
+            self._grow_rows_to(self._num_entities)
+            self._grow_cols_to(self._num_edges)
+            M[source_idx, col_idx] = weight
+            if source != target:
+                M[target_idx, col_idx] = (-weight if is_dir else weight)
+
+        # layer handling
+        if touch_layer:
+            if layer not in layers:
+                layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
+            layers[layer]["edges"].add(edge_id)
+            layers[layer]["vertices"].update((source, target))
+
+            if layer_weight is not None:
+                w = float(layer_weight)
+                self.set_edge_layer_attrs(layer, edge_id, weight=w)
+                self.layer_edge_weights.setdefault(layer, {})[edge_id] = w
+
+        # propagation
+        if propagate == "shared":
+            self._propagate_to_shared_layers(edge_id, source, target)
+        elif propagate == "all":
+            self._propagate_to_all_layers(edge_id, source, target)
+
+        # attributes
+        if attributes:
+            self.set_edge_attrs(edge_id, **attributes)
+
+        return edge_id
 
     def add_parallel_edge(self, source, target, weight=1.0, **attributes):
         """
@@ -685,8 +812,16 @@ class Graph:
         str
             The new edge ID.
         """
-        return self.add_edge(source, target, weight=weight, edge_id=None, **attributes)
-   
+        try:
+            import sys as _sys
+            if isinstance(source, str): source = _sys.intern(source)
+            if isinstance(target, str): target = _sys.intern(target)
+        except Exception:
+            pass
+
+        _add_edge = self.add_edge
+        return _add_edge(source, target, weight=weight, edge_id=None, **attributes)
+
     def add_hyperedge(
         self,
         *,
@@ -707,37 +842,8 @@ class Graph:
         - **Undirected**: pass ``members`` (>=2). Each member gets ``+weight``.
         - **Directed**: pass ``head`` and ``tail`` (both non-empty, disjoint).
         Head gets ``+weight``; tail gets ``-weight``.
-
-        Parameters
-        ----------
-        members : Iterable[str], optional
-            Undirected member set (size ≥ 2).
-        head : Iterable[str], optional
-            Directed head set (non-empty).
-        tail : Iterable[str], optional
-            Directed tail set (non-empty, disjoint from head).
-        layer : str, optional
-            Layer to place the hyperedge into. Defaults to the active layer.
-        weight : float, optional
-            Global weight stored in the column.
-        edge_id : str, optional
-            Explicit ID; generated if omitted.
-        edge_directed : bool, optional
-            Force directed/undirected; inferred from parameters if None.
-        **attributes
-            Pure edge attributes.
-
-        Returns
-        -------
-        str
-            The hyperedge ID.
-
-        Raises
-        ------
-        ValueError
-            For invalid argument combinations or empty/disjointness violations.
         """
-        # ---- validate form ----
+        # validate form
         if members is None and (head is None or tail is None):
             raise ValueError("Provide members (undirected) OR head+tail (directed).")
         if members is not None and (head is not None or tail is not None):
@@ -764,55 +870,104 @@ class Graph:
         # set layer
         layer = self._current_layer if layer is None else layer
 
-        # ensure participants exist globally (vertices or edge-entities already supported)
+        # Intern frequently-used strings for cheaper dict ops
+        try:
+            import sys as _sys
+            if isinstance(layer, str): layer = _sys.intern(layer)
+            if isinstance(edge_id, str): edge_id = _sys.intern(edge_id)
+            if members is not None:
+                members = [ _sys.intern(u) if isinstance(u, str) else u for u in members ]
+            else:
+                head  = [ _sys.intern(u) if isinstance(u, str) else u for u in head ]
+                tail  = [ _sys.intern(v) if isinstance(v, str) else v for v in tail ]
+        except Exception:
+            pass
+
+        # locals for hot paths
+        entity_to_idx = self.entity_to_idx
+        layers = self._layers
+        M = self._matrix  # DOK
+
+        # ensure participants exist globally
         def _ensure_entity(x):
-            if x in self.entity_to_idx:
+            if x in entity_to_idx:
                 return
-            # hyperedges connect to vertices/edge-entities similarly to binary edges
             if isinstance(x, str) and x.startswith("edge_") and x in self.entity_types and self.entity_types[x] == "edge":
-                # already an edge-entity
                 return
-            # default: treat as vertex
             self.add_vertex(x, layer=layer)
 
         if members is not None:
             for u in members:
                 _ensure_entity(u)
         else:
-            for u in head + tail:
+            for u in head:
                 _ensure_entity(u)
+            for v in tail:
+                _ensure_entity(v)
 
         # allocate edge id + column
         if edge_id is None:
             edge_id = self._get_next_edge_id()
+
         is_new = edge_id not in self.edge_to_idx
         if is_new:
             col_idx = self._num_edges
             self.edge_to_idx[edge_id] = col_idx
             self.idx_to_edge[col_idx] = edge_id
             self._num_edges += 1
-            # grow matrix for new column
-            self._matrix.resize((self._num_entities, self._num_edges))
+            self._grow_rows_to(self._num_entities)
+            self._grow_cols_to(self._num_edges)
         else:
             col_idx = self.edge_to_idx[edge_id]
-            # zero out old column if reusing id
-            self._matrix[:, col_idx] = 0
+            # clear: delete only previously set cells instead of zeroing whole column
+            # handle prior hyperedge or binary edge reuse
+            prev_h = self.hyperedge_definitions.get(edge_id)
+            if prev_h is not None:
+                if prev_h.get("directed", False):
+                    rows_to_clear = prev_h["head"] | prev_h["tail"]
+                else:
+                    rows_to_clear = prev_h["members"]
+                for vid in rows_to_clear:
+                    try:
+                        M[entity_to_idx[vid], col_idx] = 0
+                    except KeyError:
+                        # vertex may not exist anymore; ignore
+                        pass
+            else:
+                # maybe it was a binary edge before
+                prev = self.edge_definitions.get(edge_id)
+                if prev is not None:
+                    src, tgt, _ = prev
+                    if src is not None:
+                        try:
+                            M[entity_to_idx[src], col_idx] = 0
+                        except KeyError:
+                            pass
+                    if tgt is not None and tgt != src:
+                        try:
+                            M[entity_to_idx[tgt], col_idx] = 0
+                        except KeyError:
+                            pass
+
+        self._grow_rows_to(self._num_entities)
 
         # write column entries
+        w = float(weight)
         if members is not None:
-            # undirected: put +weight at each member
+            # undirected: +w at each member
             for u in members:
-                self._matrix[self.entity_to_idx[u], col_idx] = float(weight)
+                M[entity_to_idx[u], col_idx] = w
             self.hyperedge_definitions[edge_id] = {
                 "directed": False,
                 "members": set(members),
             }
         else:
-            # directed: +weight on head, -weight on tail (orientation)
+            # directed: +w on head, -w on tail
             for u in head:
-                self._matrix[self.entity_to_idx[u], col_idx] = float(weight)
+                M[entity_to_idx[u], col_idx] = w
+            mw = -w
             for v in tail:
-                self._matrix[self.entity_to_idx[v], col_idx] = -float(weight)
+                M[entity_to_idx[v], col_idx] = mw
             self.hyperedge_definitions[edge_id] = {
                 "directed": True,
                 "head": set(head),
@@ -820,23 +975,22 @@ class Graph:
             }
 
         # bookkeeping shared with binary edges
-        self.edge_weights[edge_id] = float(weight)
+        self.edge_weights[edge_id] = w
         self.edge_directed[edge_id] = bool(directed)
         self.edge_kind[edge_id] = "hyper"
-
         # keep a sentinel in edge_definitions so old code won't crash
         self.edge_definitions[edge_id] = (None, None, "hyper")
 
-        # layer membership + per-layer weights
+        # layer membership + per-layer vertices
         if layer is not None:
-            if layer not in self._layers:
-                self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-            self._layers[layer]["edges"].add(edge_id)
+            if layer not in layers:
+                layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
+            layers[layer]["edges"].add(edge_id)
             if members is not None:
-                self._layers[layer]["vertices"].update(members)
+                layers[layer]["vertices"].update(members)
             else:
-                self._layers[layer]["vertices"].update(self.hyperedge_definitions[edge_id]["head"])
-                self._layers[layer]["vertices"].update(self.hyperedge_definitions[edge_id]["tail"])
+                layers[layer]["vertices"].update(self.hyperedge_definitions[edge_id]["head"])
+                layers[layer]["vertices"].update(self.hyperedge_definitions[edge_id]["tail"])
 
         # attributes
         if attributes:
@@ -934,6 +1088,643 @@ class Graph:
         except TypeError:
             return {vertices}
 
+    # Bulk build graph
+
+    def add_vertices_bulk(self, vertices, layer=None):
+        """
+        Bulk add vertices (and edge-entities if prefixed externally).
+        Accepts: iterable of str  OR  iterable of (vertex_id, attrs_dict)  OR iterable of dicts with keys {'vertex_id', ...attrs}
+        Behavior: identical to calling add_vertex() for each, but resizes once and batches attribute inserts.
+        """
+        import polars as pl
+
+        layer = layer or self._current_layer
+
+        # Normalize items -> [(vid, attrs_dict), ...]
+        norm = []
+        for it in vertices:
+            if isinstance(it, dict):
+                vid = it.get("vertex_id") or it.get("id") or it.get("name")
+                if vid is None:
+                    continue
+                a = {k: v for k, v in it.items() if k not in ("vertex_id", "id", "name")}
+                norm.append((vid, a))
+            elif isinstance(it, (tuple, list)) and it:
+                vid = it[0]
+                a = (it[1] if len(it) > 1 and isinstance(it[1], dict) else {})
+                norm.append((vid, a))
+            else:
+                norm.append((it, {}))
+
+        if not norm:
+            return
+
+        # Intern hot strings
+        try:
+            import sys as _sys
+            norm = [(_sys.intern(vid) if isinstance(vid, str) else vid, attrs) for vid, attrs in norm]
+            if isinstance(layer, str):
+                layer = _sys.intern(layer)
+        except Exception:
+            pass
+
+        # Create missing vertices without per-item resize thrash
+        new_rows = 0
+        for vid, _ in norm:
+            if vid not in self.entity_to_idx:
+                idx = self._num_entities
+                self.entity_to_idx[vid] = idx
+                self.idx_to_entity[idx] = vid
+                self.entity_types[vid] = "vertex"
+                self._num_entities = idx + 1
+                new_rows += 1
+
+        # Grow rows once if needed
+        if new_rows:
+            self._grow_rows_to(self._num_entities)
+
+        # Layer membership (same semantics as add_vertex)
+        if layer not in self._layers:
+            self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
+        self._layers[layer]["vertices"].update(vid for vid, _ in norm)
+
+        # Vertex attributes (batch insert for new ones, upsert for existing with attrs)
+        self._ensure_vertex_table()
+        df = self.vertex_attributes
+
+        # Collect existing ids (if any)
+        existing_ids = set()
+        try:
+            if isinstance(df, pl.DataFrame) and df.height and "vertex_id" in df.columns:
+                existing_ids = set(df.get_column("vertex_id").to_list())
+        except Exception:
+            pass
+
+        # Rows to append for ids missing in DF
+        to_append = []
+        for vid, attrs in norm:
+            if df.is_empty() or vid not in existing_ids:
+                row = {c: None for c in df.columns} if not df.is_empty() else {"vertex_id": None}
+                row["vertex_id"] = vid
+                for k, v in attrs.items():
+                    row[k] = v
+                to_append.append(row)
+
+        if to_append:
+            # Ensure df has any new columns first
+            need_cols = {k for row in to_append for k in row.keys() if k != "vertex_id"}
+            if need_cols:
+                df = self._ensure_attr_columns(df, {k: None for k in need_cols})
+
+            # Build add_df with full inference over the whole batch to avoid ComputeError
+            add_df = pl.DataFrame(
+                to_append,
+                infer_schema_length=len(to_append),
+                nan_to_null=True,
+                strict=False,
+            )
+
+            # Make sure all df columns exist on add_df
+            for c in df.columns:
+                if c not in add_df.columns:
+                    add_df = add_df.with_columns(pl.lit(None).cast(df.schema[c]).alias(c))
+
+            # Dtype reconciliation (mirror _upsert_row semantics)
+            for c in df.columns:
+                lc, rc = df.schema[c], add_df.schema[c]
+                if lc == pl.Null and rc != pl.Null:
+                    df = df.with_columns(pl.col(c).cast(rc))
+                elif rc == pl.Null and lc != pl.Null:
+                    add_df = add_df.with_columns(pl.col(c).cast(lc).alias(c))
+                elif lc != rc:
+                    # resolve mismatches by upcasting both to Utf8 (UTF-8 string)
+                    df = df.with_columns(pl.col(c).cast(pl.Utf8))
+                    add_df = add_df.with_columns(pl.col(c).cast(pl.Utf8).alias(c))
+
+            # Reorder columns EXACTLY to match df before vstack
+            add_df = add_df.select(df.columns)
+
+            df = df.vstack(add_df)
+
+        # Upsert attrs for existing ids (vector of updates via helper)
+        for vid, attrs in norm:
+            if attrs and (df.is_empty() or (vid in existing_ids)):
+                df = self._upsert_row(df, vid, attrs)
+
+        self.vertex_attributes = df
+
+    def add_edges_bulk(
+        self,
+        edges,
+        *,
+        layer=None,
+        default_weight=1.0,
+        default_edge_type="regular",
+        default_propagate="none",
+        default_layer_weight=None,
+        default_edge_directed=None,
+    ):
+        """
+        Bulk add/update *binary* (and vertex-edge) edges.
+        Accepts each item as:
+        - (src, tgt)
+        - (src, tgt, weight)
+        - dict with keys: source, target, [weight, edge_id, edge_type, propagate, layer_weight, edge_directed, attributes]
+        Behavior: identical to calling add_edge() per item (same propagation/layer/attrs), but grows columns once and avoids full-column wipes.
+        """
+        layer = self._current_layer if layer is None else layer
+
+        # Normalize into dicts
+        norm = []
+        for it in edges:
+            if isinstance(it, dict):
+                d = dict(it)
+            elif isinstance(it, (tuple, list)):
+                if len(it) == 2:
+                    d = {"source": it[0], "target": it[1], "weight": default_weight}
+                else:
+                    d = {"source": it[0], "target": it[1], "weight": it[2]}
+            else:
+                continue
+            d.setdefault("weight", default_weight)
+            d.setdefault("edge_type", default_edge_type)
+            d.setdefault("propagate", default_propagate)
+            if "layer" not in d:
+                d["layer"] = layer
+            if "edge_directed" not in d:
+                d["edge_directed"] = default_edge_directed
+            norm.append(d)
+
+        if not norm:
+            return []
+
+        # Intern hot strings & coerce weights
+        try:
+            import sys as _sys
+            for d in norm:
+                s, t = d["source"], d["target"]
+                if isinstance(s, str): d["source"] = _sys.intern(s)
+                if isinstance(t, str): d["target"] = _sys.intern(t)
+                lid = d.get("layer")
+                if isinstance(lid, str): d["layer"] = _sys.intern(lid)
+                eid = d.get("edge_id")
+                if isinstance(eid, str): d["edge_id"] = _sys.intern(eid)
+                try:
+                    d["weight"] = float(d["weight"])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        entity_to_idx = self.entity_to_idx
+        M = self._matrix
+        # 1) Ensure endpoints exist (global); we’ll rely on layer handling below to add membership.
+        for d in norm:
+            s, t = d["source"], d["target"]
+            et = d.get("edge_type", "regular")
+            if s not in entity_to_idx:
+                # vertex or edge-entity depending on mode?
+                if et == "vertex_edge" and isinstance(s, str) and s.startswith("edge_"):
+                    self._add_edge_entity(s)
+                else:
+                    # bare global insert (no layer side-effects; membership handled later)
+                    idx = self._num_entities
+                    self.entity_to_idx[s] = idx
+                    self.idx_to_entity[idx] = s
+                    self.entity_types[s] = "vertex"
+                    self._num_entities = idx + 1
+            if t not in entity_to_idx:
+                if et == "vertex_edge" and isinstance(t, str) and t.startswith("edge_"):
+                    self._add_edge_entity(t)
+                else:
+                    idx = self._num_entities
+                    self.entity_to_idx[t] = idx
+                    self.idx_to_entity[idx] = t
+                    self.entity_types[t] = "vertex"
+                    self._num_entities = idx + 1
+
+        # Grow rows once if needed
+        self._grow_rows_to(self._num_entities)
+
+        # 2) Pre-size columns for new edges
+        new_count = sum(1 for d in norm if d.get("edge_id") not in self.edge_to_idx)
+        if new_count:
+            self._grow_cols_to(self._num_edges + new_count)
+
+        # 3) Create/update columns
+        out_ids = []
+        for d in norm:
+            s, t = d["source"], d["target"]
+            w = d["weight"]
+            etype = d.get("edge_type", "regular")
+            prop = d.get("propagate", default_propagate)
+            layer_local = d.get("layer", layer)
+            layer_w = d.get("layer_weight", default_layer_weight)
+            e_dir = d.get("edge_directed", default_edge_directed)
+            edge_id = d.get("edge_id")
+
+            is_dir = self.directed if e_dir is None else bool(e_dir)
+            s_idx = self.entity_to_idx[s]; t_idx = self.entity_to_idx[t]
+
+            if edge_id is None:
+                edge_id = self._get_next_edge_id()
+
+            # update vs create
+            if edge_id in self.edge_to_idx:
+                col = self.edge_to_idx[edge_id]
+                # keep old_type on update (mimic add_edge)
+                old_s, old_t, old_type = self.edge_definitions[edge_id]
+                # clear only previous cells (no full column wipe)
+                try:
+                    M[self.entity_to_idx[old_s], col] = 0
+                except Exception:
+                    pass
+                if old_t is not None and old_t != old_s:
+                    try:
+                        M[self.entity_to_idx[old_t], col] = 0
+                    except Exception:
+                        pass
+                # write new
+                M[s_idx, col] = w
+                if s != t:
+                    M[t_idx, col] = (-w if is_dir else w)
+                self.edge_definitions[edge_id] = (s, t, old_type)
+                self.edge_weights[edge_id] = w
+                self.edge_directed[edge_id] = is_dir
+                # keep attribute side-effect for directedness flag
+                self.set_edge_attrs(edge_id, edge_type=(EdgeType.DIRECTED if is_dir else EdgeType.UNDIRECTED))
+            else:
+                col = self._num_edges
+                self.edge_to_idx[edge_id] = col
+                self.idx_to_edge[col] = edge_id
+                self.edge_definitions[edge_id] = (s, t, etype)
+                self.edge_weights[edge_id] = w
+                self.edge_directed[edge_id] = is_dir
+                self._num_edges = col + 1
+                # write cells
+                M[s_idx, col] = w
+                if s != t:
+                    M[t_idx, col] = (-w if is_dir else w)
+
+            # layer membership + optional per-layer weight
+            if layer_local is not None:
+                if layer_local not in self._layers:
+                    self._layers[layer_local] = {"vertices": set(), "edges": set(), "attributes": {}}
+                self._layers[layer_local]["edges"].add(edge_id)
+                self._layers[layer_local]["vertices"].update((s, t))
+                if layer_w is not None:
+                    self.set_edge_layer_attrs(layer_local, edge_id, weight=float(layer_w))
+                    self.layer_edge_weights.setdefault(layer_local, {})[edge_id] = float(layer_w)
+
+            # propagation
+            if prop == "shared":
+                self._propagate_to_shared_layers(edge_id, s, t)
+            elif prop == "all":
+                self._propagate_to_all_layers(edge_id, s, t)
+
+            # per-edge extra attributes
+            attrs = d.get("attributes") or d.get("attrs") or {}
+            if attrs:
+                self.set_edge_attrs(edge_id, **attrs)
+
+            out_ids.append(edge_id)
+
+        return out_ids
+
+    def add_hyperedges_bulk(
+        self,
+        hyperedges,
+        *,
+        layer=None,
+        default_weight=1.0,
+        default_edge_directed=None,
+    ):
+        """
+        Bulk add/update hyperedges.
+        Each item can be:
+        - {'members': [...], 'edge_id': ..., 'weight': ..., 'layer': ..., 'attributes': {...}}
+        - {'head': [...], 'tail': [...], ...}
+        Behavior: identical to calling add_hyperedge() per item, but grows columns once and avoids full-column wipes.
+        """
+        layer = self._current_layer if layer is None else layer
+
+        items = []
+        for it in hyperedges:
+            if not isinstance(it, dict):
+                continue
+            d = dict(it)
+            d.setdefault("weight", default_weight)
+            if "layer" not in d:
+                d["layer"] = layer
+            if "edge_directed" not in d:
+                d["edge_directed"] = default_edge_directed
+            items.append(d)
+
+        if not items:
+            return []
+
+        # Intern + coerce
+        try:
+            import sys as _sys
+            for d in items:
+                if "members" in d and d["members"] is not None:
+                    d["members"] = [ _sys.intern(x) if isinstance(x, str) else x for x in d["members"] ]
+                else:
+                    d["head"] = [ _sys.intern(x) if isinstance(x, str) else x for x in d.get("head", []) ]
+                    d["tail"] = [ _sys.intern(x) if isinstance(x, str) else x for x in d.get("tail", []) ]
+                lid = d.get("layer")
+                if isinstance(lid, str): d["layer"] = _sys.intern(lid)
+                eid = d.get("edge_id")
+                if isinstance(eid, str): d["edge_id"] = _sys.intern(eid)
+                try:
+                    d["weight"] = float(d["weight"])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Ensure participants exist (global)
+        for d in items:
+            if "members" in d and d["members"] is not None:
+                for u in d["members"]:
+                    if u not in self.entity_to_idx:
+                        idx = self._num_entities
+                        self.entity_to_idx[u] = idx
+                        self.idx_to_entity[idx] = u
+                        self.entity_types[u] = "vertex"
+                        self._num_entities = idx + 1
+            else:
+                for u in d.get("head", []):
+                    if u not in self.entity_to_idx:
+                        idx = self._num_entities
+                        self.entity_to_idx[u] = idx
+                        self.idx_to_entity[idx] = u
+                        self.entity_types[u] = "vertex"
+                        self._num_entities = idx + 1
+                for v in d.get("tail", []):
+                    if v not in self.entity_to_idx:
+                        idx = self._num_entities
+                        self.entity_to_idx[v] = idx
+                        self.entity_types[v] = "vertex"
+                        self.idx_to_entity[idx] = v
+                        self._num_entities = idx + 1
+
+        # Grow rows once
+        self._grow_rows_to(self._num_entities)
+
+        # Pre-size columns
+        new_count = sum(1 for d in items if d.get("edge_id") not in self.edge_to_idx)
+        if new_count:
+            self._grow_cols_to(self._num_edges + new_count)
+
+        M = self._matrix
+        out_ids = []
+
+        for d in items:
+            members = d.get("members")
+            head = d.get("head")
+            tail = d.get("tail")
+            layer_local = d.get("layer", layer)
+            w = float(d.get("weight", default_weight))
+            e_id = d.get("edge_id")
+
+            # Decide directedness from form unless forced
+            directed = d.get("edge_directed")
+            if directed is None:
+                directed = (members is None)
+
+            # allocate/update column
+            if e_id is None:
+                e_id = self._get_next_edge_id()
+
+            if e_id in self.edge_to_idx:
+                col = self.edge_to_idx[e_id]
+                # clear old cells (binary or hyper)
+                if e_id in self.hyperedge_definitions:
+                    h = self.hyperedge_definitions[e_id]
+                    if h.get("members"):
+                        rows = h["members"]
+                    else:
+                        rows = set(h.get("head", ())) | set(h.get("tail", ()))
+                    for vid in rows:
+                        try:
+                            M[self.entity_to_idx[vid], col] = 0
+                        except Exception:
+                            pass
+                else:
+                    old = self.edge_definitions.get(e_id)
+                    if old is not None:
+                        os, ot, _ = old
+                        try:
+                            M[self.entity_to_idx[os], col] = 0
+                        except Exception:
+                            pass
+                        if ot is not None and ot != os:
+                            try:
+                                M[self.entity_to_idx[ot], col] = 0
+                            except Exception:
+                                pass
+            else:
+                col = self._num_edges
+                self.edge_to_idx[e_id] = col
+                self.idx_to_edge[col] = e_id
+                self._num_edges = col + 1
+
+            # write new column values + metadata
+            if members is not None:
+                for u in members:
+                    M[self.entity_to_idx[u], col] = w
+                self.hyperedge_definitions[e_id] = {"directed": False, "members": set(members)}
+                self.edge_directed[e_id] = False
+                self.edge_kind[e_id] = "hyper"
+                self.edge_definitions[e_id] = (None, None, "hyper")
+            else:
+                for u in head:
+                    M[self.entity_to_idx[u], col] = w
+                for v in tail:
+                    M[self.entity_to_idx[v], col] = -w
+                self.hyperedge_definitions[e_id] = {"directed": True, "head": set(head), "tail": set(tail)}
+                self.edge_directed[e_id] = True
+                self.edge_kind[e_id] = "hyper"
+                self.edge_definitions[e_id] = (None, None, "hyper")
+
+            self.edge_weights[e_id] = w
+
+            # layer membership
+            if layer_local is not None:
+                if layer_local not in self._layers:
+                    self._layers[layer_local] = {"vertices": set(), "edges": set(), "attributes": {}}
+                self._layers[layer_local]["edges"].add(e_id)
+                if members is not None:
+                    self._layers[layer_local]["vertices"].update(members)
+                else:
+                    self._layers[layer_local]["vertices"].update(head)
+                    self._layers[layer_local]["vertices"].update(tail)
+
+            # per-edge attributes (optional)
+            attrs = d.get("attributes") or d.get("attrs") or {}
+            if attrs:
+                self.set_edge_attrs(e_id, **attrs)
+
+            out_ids.append(e_id)
+
+        return out_ids
+
+    def add_edges_to_layer_bulk(self, layer_id, edge_ids):
+        """
+        Bulk version of add_edge_to_layer: add many edges to a layer and attach
+        all incident vertices. No weights are changed here.
+        """
+        layer = layer_id if layer_id is not None else self._current_layer
+        if layer not in self._layers:
+            self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
+        L = self._layers[layer]
+
+        add_edges = {eid for eid in edge_ids if eid in self.edge_to_idx}
+        if not add_edges:
+            return
+
+        L["edges"].update(add_edges)
+
+        verts = set()
+        for eid in add_edges:
+            kind = self.edge_kind.get(eid, "binary")
+            if kind == "hyper":
+                h = self.hyperedge_definitions[eid]
+                if h.get("members") is not None:
+                    verts.update(h["members"])
+                else:
+                    verts.update(h.get("head", ()))
+                    verts.update(h.get("tail", ()))
+            else:
+                s, t, _ = self.edge_definitions[eid]
+                verts.add(s); verts.add(t)
+
+        L["vertices"].update(verts)
+
+    def add_edge_entities_bulk(self, items, layer=None):
+        """
+        Bulk add edge-entities (vertex-edge hybrids). Accepts:
+        - iterable of str IDs
+        - iterable of (edge_entity_id, attrs_dict)
+        - iterable of dicts with key 'edge_entity_id' (or 'id')
+        Behavior: identical to calling add_edge_entity() for each, but grows rows once
+        and batches attribute inserts.
+        """
+        layer = layer or self._current_layer
+
+        # normalize -> [(eid, attrs)]
+        norm = []
+        for it in items:
+            if isinstance(it, dict):
+                eid = it.get("edge_entity_id") or it.get("id")
+                if eid is None: continue
+                a = {k: v for k, v in it.items() if k not in ("edge_entity_id","id")}
+                norm.append((eid, a))
+            elif isinstance(it, (tuple, list)) and it:
+                eid = it[0]; a = (it[1] if len(it) > 1 and isinstance(it[1], dict) else {})
+                norm.append((eid, a))
+            else:
+                norm.append((it, {}))
+        if not norm:
+            return
+
+        # intern hot strings
+        try:
+            import sys as _sys
+            norm = [(_sys.intern(eid) if isinstance(eid, str) else eid, attrs) for eid, attrs in norm]
+            if isinstance(layer, str): layer = _sys.intern(layer)
+        except Exception:
+            pass
+
+        # create missing rows as type 'edge'
+        new_rows = 0
+        for eid, _ in norm:
+            if eid not in self.entity_to_idx:
+                idx = self._num_entities
+                self.entity_to_idx[eid] = idx
+                self.idx_to_entity[idx] = eid
+                self.entity_types[eid] = "edge"
+                self._num_entities = idx + 1
+                new_rows += 1
+
+        if new_rows:
+            self._grow_rows_to(self._num_entities)
+
+        # layer membership
+        if layer not in self._layers:
+            self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
+        self._layers[layer]["vertices"].update(eid for eid, _ in norm)
+
+        # attributes (edge-entities share vertex_attributes table)
+        self._ensure_vertex_table()
+        df = self.vertex_attributes
+        to_append, existing_ids = [], set()
+        try:
+            if df.height and "vertex_id" in df.columns:
+                existing_ids = set(df.get_column("vertex_id").to_list())
+        except Exception:
+            pass
+
+        for eid, attrs in norm:
+            if df.is_empty() or eid not in existing_ids:
+                row = {c: None for c in df.columns} if not df.is_empty() else {"vertex_id": None}
+                row["vertex_id"] = eid
+                for k, v in attrs.items():
+                    row[k] = v
+                to_append.append(row)
+
+        if to_append:
+            need_cols = {k for r in to_append for k in r if k != "vertex_id"}
+            if need_cols:
+                df = self._ensure_attr_columns(df, {k: None for k in need_cols})
+            add_df = pl.DataFrame(to_append)
+            for c in df.columns:
+                if c not in add_df.columns:
+                    add_df = add_df.with_columns(pl.lit(None).cast(df.schema[c]).alias(c))
+            for c in df.columns:
+                lc, rc = df.schema[c], add_df.schema[c]
+                if lc == pl.Null and rc != pl.Null:
+                    df = df.with_columns(pl.col(c).cast(rc))
+                elif rc == pl.Null and lc != pl.Null:
+                    add_df = add_df.with_columns(pl.col(c).cast(lc).alias(c))
+                elif lc != rc:
+                    df = df.with_columns(pl.col(c).cast(pl.Utf8))
+                    add_df = add_df.with_columns(pl.col(c).cast(pl.Utf8).alias(c))
+                if to_append:
+                    need_cols = {k for r in to_append for k in r if k != "vertex_id"}
+                    if need_cols:
+                        df = self._ensure_attr_columns(df, {k: None for k in need_cols})
+
+                    add_df = pl.DataFrame(to_append)
+
+                    # ensure all df columns exist on add_df
+                    for c in df.columns:
+                        if c not in add_df.columns:
+                            add_df = add_df.with_columns(pl.lit(None).cast(df.schema[c]).alias(c))
+
+                    # dtype reconciliation (same as before)
+                    for c in df.columns:
+                        lc, rc = df.schema[c], add_df.schema[c]
+                        if lc == pl.Null and rc != pl.Null:
+                            df = df.with_columns(pl.col(c).cast(rc))
+                        elif rc == pl.Null and lc != pl.Null:
+                            add_df = add_df.with_columns(pl.col(c).cast(lc).alias(c))
+                        elif lc != rc:
+                            df = df.with_columns(pl.col(c).cast(pl.Utf8))
+                            add_df = add_df.with_columns(pl.col(c).cast(pl.Utf8).alias(c))
+
+                    # reorder add_df columns to match df exactly
+                    add_df = add_df.select(df.columns)
+
+                    df = df.vstack(add_df)
+
+
+        for eid, attrs in norm:
+            if attrs and (df.is_empty() or (eid in existing_ids)):
+                df = self._upsert_row(df, eid, attrs)
+        self.vertex_attributes = df
+
     # Remove / mutate down
 
     def remove_edge(self, edge_id):
@@ -951,7 +1742,7 @@ class Graph:
 
         Notes
         -----
-        - Physically removes the incidence column (CSR [Compressed Sparse Row] slice).
+        - Physically removes the incidence column (no CSR round-trip).
         - Cleans edge attributes, layer memberships, and per-layer entries.
         """
         if edge_id not in self.edge_to_idx:
@@ -959,44 +1750,46 @@ class Graph:
 
         col_idx = self.edge_to_idx[edge_id]
 
-        # Convert to CSR for efficient column removal
-        csr_matrix = self._matrix.tocsr()
+        # column removal without CSR (single pass over nonzeros)
+        M_old = self._matrix
+        rows, cols = M_old.shape
+        new_cols = cols - 1
+        # Rebuild DOK with columns > col_idx shifted left by 1
+        M_new = sp.dok_matrix((rows, new_cols), dtype=M_old.dtype)
+        for (r, c), v in M_old.items():
+            if c == col_idx:
+                continue  # drop this column
+            elif c > col_idx:
+                M_new[r, c - 1] = v
+            else:
+                M_new[r, c] = v
+        self._matrix = M_new
 
-        # Create mask to remove column
-        mask = np.ones(self._num_edges, dtype=bool)
-        mask[col_idx] = False
-
-        # Remove column
-        csr_matrix = csr_matrix[:, mask]
-        self._matrix = csr_matrix.todok()
-
-        # Update mappings
+        # mappings (preserve relative order of remaining edges)
+        # Remove the deleted edge id
         del self.edge_to_idx[edge_id]
-        del self.edge_definitions[edge_id]
-        del self.edge_weights[edge_id]
-
-        # Update directionality metadata
-        if edge_id in self.edge_directed:
-            del self.edge_directed[edge_id]
-
-        # Reindex remaining edges
-        new_edge_to_idx = {}
-        new_idx_to_edge = {}
-
-        new_idx = 0
-        for old_idx in range(self._num_edges):
-            if old_idx != col_idx:
-                edge_id_old = self.idx_to_edge[old_idx]
-                new_edge_to_idx[edge_id_old] = new_idx
-                new_idx_to_edge[new_idx] = edge_id_old
-                new_idx += 1
-
-        self.edge_to_idx = new_edge_to_idx
-        self.idx_to_edge = new_idx_to_edge
+        # Shift indices for edges after the removed column
+        for old_idx in range(col_idx + 1, self._num_edges):
+            eid = self.idx_to_edge.pop(old_idx)
+            self.idx_to_edge[old_idx - 1] = eid
+            self.edge_to_idx[eid] = old_idx - 1
+        # Drop the last stale entry (now shifted)
+        self.idx_to_edge.pop(self._num_edges - 1, None)
         self._num_edges -= 1
 
+        # Metadata cleanup
+        # Edge definitions / weights / directedness
+        self.edge_definitions.pop(edge_id, None)
+        self.edge_weights.pop(edge_id, None)
+        if edge_id in self.edge_directed:
+            self.edge_directed.pop(edge_id, None)
+
         # Remove from edge attributes
-        if isinstance(self.edge_attributes, pl.DataFrame) and self.edge_attributes.height > 0 and "edge_id" in self.edge_attributes.columns:
+        if (
+            isinstance(self.edge_attributes, pl.DataFrame)
+            and self.edge_attributes.height > 0
+            and "edge_id" in self.edge_attributes.columns
+        ):
             self.edge_attributes = self.edge_attributes.filter(pl.col("edge_id") != edge_id)
 
         # Remove from per-layer membership
@@ -1004,10 +1797,14 @@ class Graph:
             layer_data["edges"].discard(edge_id)
 
         # Remove from edge-layer attributes
-        if isinstance(self.edge_layer_attributes, pl.DataFrame) and self.edge_layer_attributes.height > 0 and "edge_id" in self.edge_layer_attributes.columns:
+        if (
+            isinstance(self.edge_layer_attributes, pl.DataFrame)
+            and self.edge_layer_attributes.height > 0
+            and "edge_id" in self.edge_layer_attributes.columns
+        ):
             self.edge_layer_attributes = self.edge_layer_attributes.filter(pl.col("edge_id") != edge_id)
 
-        # also clear in legacy dict
+        # Legacy / auxiliary dicts
         for d in self.layer_edge_weights.values():
             d.pop(edge_id, None)
 
@@ -1031,7 +1828,6 @@ class Graph:
         -----
         - Rebuilds entity indexing and shrinks the incidence matrix accordingly.
         """
-
         if vertex_id not in self.entity_to_idx:
             raise KeyError(f"vertex {vertex_id} not found")
 
@@ -1072,32 +1868,31 @@ class Graph:
         for eid in edges_to_remove:
             self.remove_edge(eid)
 
-        # Convert to CSR for efficient row removal
-        csr_matrix = self._matrix.tocsr()
-
-        # Remove entity row from matrix
-        mask = np.ones(self._num_entities, dtype=bool)
-        mask[entity_idx] = False
-        csr_matrix = csr_matrix[mask, :]
-        self._matrix = csr_matrix.todok()
+        # row removal without CSR: rebuild DOK with rows-1 and shift indices
+        M_old = self._matrix
+        rows, cols = M_old.shape
+        new_rows = rows - 1
+        M_new = sp.dok_matrix((new_rows, cols), dtype=M_old.dtype)
+        for (r, c), v in M_old.items():
+            if r == entity_idx:
+                continue  # drop this row
+            elif r > entity_idx:
+                M_new[r - 1, c] = v
+            else:
+                M_new[r, c] = v
+        self._matrix = M_new
 
         # Update entity mappings
         del self.entity_to_idx[vertex_id]
         del self.entity_types[vertex_id]
 
-        # Reindex remaining entities
-        new_entity_to_idx = {}
-        new_idx_to_entity = {}
-        new_idx = 0
-        for old_idx in range(self._num_entities):
-            if old_idx != entity_idx:
-                entity_id = self.idx_to_entity[old_idx]
-                new_entity_to_idx[entity_id] = new_idx
-                new_idx_to_entity[new_idx] = entity_id
-                new_idx += 1
-
-        self.entity_to_idx = new_entity_to_idx
-        self.idx_to_entity = new_idx_to_entity
+        # Shift indices for entities after the removed row; preserve relative order
+        for old_idx in range(entity_idx + 1, self._num_entities):
+            ent_id = self.idx_to_entity.pop(old_idx)
+            self.idx_to_entity[old_idx - 1] = ent_id
+            self.entity_to_idx[ent_id] = old_idx - 1
+        # Drop last stale entry and shrink count
+        self.idx_to_entity.pop(self._num_entities - 1, None)
         self._num_entities -= 1
 
         # Remove from vertex attributes
@@ -1148,6 +1943,134 @@ class Graph:
         if self._current_layer == layer_id:
             self._current_layer = self._default_layer
 
+    # Bulk remove / mutate down
+
+    def remove_edges(self, edge_ids):
+        """Remove many edges in one pass (much faster than looping)."""
+        to_drop = [eid for eid in edge_ids if eid in self.edge_to_idx]
+        if not to_drop:
+            return
+        self._remove_edges_bulk(to_drop)
+
+    def remove_vertices(self, vertex_ids):
+        """Remove many vertices (and all their incident edges) in one pass."""
+        to_drop = [vid for vid in vertex_ids if vid in self.entity_to_idx]
+        if not to_drop:
+            return
+        self._remove_vertices_bulk(to_drop)
+
+    def _remove_edges_bulk(self, edge_ids):
+        drop = set(edge_ids)
+        if not drop:
+            return
+
+        # Columns to keep, old->new remap
+        keep_pairs = sorted(((idx, eid) for eid, idx in self.edge_to_idx.items() if eid not in drop))
+        old_to_new = {old: new for new, (old, _eid) in enumerate(((old, eid) for old, eid in keep_pairs))}
+        new_cols = len(keep_pairs)
+
+        # Rebuild matrix once
+        M_old = self._matrix  # DOK
+        rows, _cols = M_old.shape
+        M_new = sp.dok_matrix((rows, new_cols), dtype=M_old.dtype)
+        for (r, c), v in M_old.items():
+            if c in old_to_new:
+                M_new[r, old_to_new[c]] = v
+        self._matrix = M_new
+
+        # Rebuild edge mappings
+        self.idx_to_edge.clear()
+        self.edge_to_idx.clear()
+        for new_idx, (old_idx, eid) in enumerate(keep_pairs):
+            self.idx_to_edge[new_idx] = eid
+            self.edge_to_idx[eid] = new_idx
+        self._num_edges = new_cols
+
+        # Metadata cleanup (vectorized)
+        # Dicts
+        for eid in drop:
+            self.edge_definitions.pop(eid, None)
+            self.edge_weights.pop(eid, None)
+            self.edge_directed.pop(eid, None)
+            self.edge_kind.pop(eid, None)
+            self.hyperedge_definitions.pop(eid, None)
+        for layer_data in self._layers.values():
+            layer_data["edges"].difference_update(drop)
+        for d in self.layer_edge_weights.values():
+            for eid in drop:
+                d.pop(eid, None)
+
+        # DataFrames
+        if isinstance(self.edge_attributes, pl.DataFrame) and self.edge_attributes.height:
+            if "edge_id" in self.edge_attributes.columns:
+                self.edge_attributes = self.edge_attributes.filter(~pl.col("edge_id").is_in(list(drop)))
+        if isinstance(self.edge_layer_attributes, pl.DataFrame) and self.edge_layer_attributes.height:
+            cols = set(self.edge_layer_attributes.columns)
+            if {"edge_id"}.issubset(cols):
+                self.edge_layer_attributes = self.edge_layer_attributes.filter(~pl.col("edge_id").is_in(list(drop)))
+
+    def _remove_vertices_bulk(self, vertex_ids):
+        drop_vs = set(vertex_ids)
+        if not drop_vs:
+            return
+
+        # 1) Collect incident edges (binary + hyper)
+        drop_es = set()
+        for eid, (s, t, _typ) in list(self.edge_definitions.items()):
+            if s in drop_vs or t in drop_vs:
+                drop_es.add(eid)
+        for eid, hdef in list(self.hyperedge_definitions.items()):
+            if hdef.get("members"):
+                if drop_vs & set(hdef["members"]):
+                    drop_es.add(eid)
+            else:
+                if (drop_vs & set(hdef.get("head", ()))) or (drop_vs & set(hdef.get("tail", ()))):  # directed
+                    drop_es.add(eid)
+
+        # 2) Drop all those edges in one pass
+        if drop_es:
+            self._remove_edges_bulk(drop_es)
+
+        # 3) Build row keep list and old->new map
+        keep_idx = []
+        for idx in range(self._num_entities):
+            ent = self.idx_to_entity[idx]
+            if ent not in drop_vs:
+                keep_idx.append(idx)
+        old_to_new = {old: new for new, old in enumerate(keep_idx)}
+        new_rows = len(keep_idx)
+
+        # 4) Rebuild matrix rows once
+        M_old = self._matrix  # DOK
+        _rows, cols = M_old.shape
+        M_new = sp.dok_matrix((new_rows, cols), dtype=M_old.dtype)
+        for (r, c), v in M_old.items():
+            if r in old_to_new:
+                M_new[old_to_new[r], c] = v
+        self._matrix = M_new
+
+        # 5) Rebuild entity mappings
+        new_entity_to_idx = {}
+        new_idx_to_entity = {}
+        for new_i, old_i in enumerate(keep_idx):
+            ent = self.idx_to_entity[old_i]
+            new_entity_to_idx[ent] = new_i
+            new_idx_to_entity[new_i] = ent
+        self.entity_to_idx = new_entity_to_idx
+        self.idx_to_entity = new_idx_to_entity
+        # types: drop removed
+        for vid in drop_vs:
+            self.entity_types.pop(vid, None)
+        self._num_entities = new_rows
+
+        # 6) Clean vertex attributes and layer memberships
+        if isinstance(self.vertex_attributes, pl.DataFrame) and self.vertex_attributes.height:
+            if "vertex_id" in self.vertex_attributes.columns:
+                self.vertex_attributes = self.vertex_attributes.filter(~pl.col("vertex_id").is_in(list(drop_vs)))
+        for layer_data in self._layers.values():
+            layer_data["vertices"].difference_update(drop_vs)
+
+    
     # Attributes & weights
 
     def set_graph_attribute(self, key, value):
@@ -1358,7 +2281,7 @@ class Graph:
             return default
         val = rows.select(pl.col(key)).to_series()[0]
         return default if val is None else val
- 
+
     def set_edge_layer_attrs(self, layer_id, edge_id, **attrs):
         """
         Upsert per-layer attributes for a specific edge.
@@ -1375,19 +2298,35 @@ class Graph:
         if not clean:
             return
 
-        # Ensure edge_layer_attributes compares strings to strings (defensive against prior bad writes)
-        if isinstance(self.edge_layer_attributes, pl.DataFrame) and self.edge_layer_attributes.height > 0:
-            # Cast only if columns exist to avoid raising in early init states
+        # Normalize hot keys (intern) and avoid float dtype surprises for 'weight'
+        try:
+            import sys as _sys
+            if isinstance(layer_id, str): layer_id = _sys.intern(layer_id)
+            if isinstance(edge_id, str):  edge_id  = _sys.intern(edge_id)
+        except Exception:
+            pass
+        if "weight" in clean:
+            try:
+                # cast once to float to reduce dtype mismatch churn inside _upsert_row
+                clean["weight"] = float(clean["weight"])
+            except Exception:
+                # leave as-is if not coercible; behavior stays identical
+                pass
+
+        # Ensure edge_layer_attributes compares strings to strings (defensive against prior bad writes),
+        # but only cast when actually needed (skip no-op with_columns).
+        df = self.edge_layer_attributes
+        if isinstance(df, pl.DataFrame) and df.height > 0:
             to_cast = []
-            if "layer_id" in self.edge_layer_attributes.columns:
+            if "layer_id" in df.columns and df.schema["layer_id"] != pl.Utf8:
                 to_cast.append(pl.col("layer_id").cast(pl.Utf8))
-            if "edge_id" in self.edge_layer_attributes.columns:
+            if "edge_id" in df.columns and df.schema["edge_id"] != pl.Utf8:
                 to_cast.append(pl.col("edge_id").cast(pl.Utf8))
             if to_cast:
-                self.edge_layer_attributes = self.edge_layer_attributes.with_columns(*to_cast)
+                df = df.with_columns(*to_cast)
+                self.edge_layer_attributes = df  # reassign only when changed
 
-        # edge_layer_attributes is a pl.DataFrame with columns: layer_id, edge_id, ...
-
+        # Upsert via central helper (keeps exact behavior, schema handling, and caching)
         self.edge_layer_attributes = self._upsert_row(
             self.edge_layer_attributes, (layer_id, edge_id), clean
         )
@@ -1606,111 +2545,161 @@ class Graph:
         Keys
         ----
         - ``vertex_attributes``           → key: ``["vertex_id"]``
-        - ``edge_attributes``           → key: ``["edge_id"]``
-        - ``layer_attributes``          → key: ``["layer_id"]``
-        - ``edge_layer_attributes``     → key: ``["layer_id", "edge_id"]``
-
-        Parameters
-        ----------
-        df : polars.DataFrame
-            Target attribute table.
-        idx : str | tuple[str, str]
-            Key value(s). For edge-layer, pass ``(layer_id, edge_id)``.
-        attrs : dict
-            Columns to insert/update.
-
-        Returns
-        -------
-        polars.DataFrame
-            A **new** DataFrame with the row inserted/updated (caller must reassign).
-
-        Raises
-        ------
-        ValueError
-            If key columns cannot be inferred from ``df`` schema or a composite key is malformed.
-
-        Notes
-        -----
-        - Ensures necessary columns/dtypes first (via ``_ensure_attr_columns``).
-        - Updates cast literals to existing column dtypes; inserts align schemas before ``vstack``.
-        - Resolves dtype mismatches by upcasting both sides to ``Utf8``.
+        - ``edge_attributes``             → key: ``["edge_id"]``
+        - ``layer_attributes``            → key: ``["layer_id"]``
+        - ``edge_layer_attributes``       → key: ``["layer_id", "edge_id"]``
         """
         if not isinstance(attrs, dict) or not attrs:
             return df
 
         cols = set(df.columns)
 
-        # determine key columns + values
+        # Determine key columns + values
         if {"layer_id", "edge_id"} <= cols:
             if not (isinstance(idx, tuple) and len(idx) == 2):
                 raise ValueError("idx must be a (layer_id, edge_id) tuple")
+            key_cols = ("layer_id", "edge_id")
             key_vals = {"layer_id": idx[0], "edge_id": idx[1]}
-            key_cols = ["layer_id", "edge_id"]
+            cache_name = "_edge_layer_attr_keys"   # set of (layer_id, edge_id)
+            df_id_name = "_edge_layer_attr_df_id"
         elif "vertex_id" in cols:
+            key_cols = ("vertex_id",)
             key_vals = {"vertex_id": idx}
-            key_cols = ["vertex_id"]
+            cache_name = "_vertex_attr_ids"        # set of vertex_id
+            df_id_name = "_vertex_attr_df_id"
         elif "edge_id" in cols:
+            key_cols = ("edge_id",)
             key_vals = {"edge_id": idx}
-            key_cols = ["edge_id"]
+            cache_name = "_edge_attr_ids"          # set of edge_id
+            df_id_name = "_edge_attr_df_id"
         elif "layer_id" in cols:
+            key_cols = ("layer_id",)
             key_vals = {"layer_id": idx}
-            key_cols = ["layer_id"]
+            cache_name = "_layer_attr_ids"         # set of layer_id
+            df_id_name = "_layer_attr_df_id"
         else:
             raise ValueError("Cannot infer key columns from DataFrame schema")
 
-        # ensure attribute columns exist/cast appropriately
+        # Ensure attribute columns exist / are cast appropriately
         df = self._ensure_attr_columns(df, attrs)
 
-        # match condition
+        # Build the match condition (used later for updates)
         cond = None
-        for k, v in key_vals.items():
+        for k in key_cols:
+            v = key_vals[k]
             c = (pl.col(k) == pl.lit(v))
             cond = c if cond is None else (cond & c)
 
-        exists = df.filter(cond).height > 0
+        # existence check via small per-table caches (no DF scan)
+        try:
+            key_cache = getattr(self, cache_name, None)
+            cached_df_id = getattr(self, df_id_name, None)
+            if key_cache is None or cached_df_id != id(df):
+                # Rebuild cache lazily for the current df object
+                if "vertex_id" in cols and key_cols == ("vertex_id",):
+                    series = df.get_column("vertex_id") if df.height else pl.Series([])
+                    key_cache = set(series.to_list()) if df.height else set()
+                elif "edge_id" in cols and "layer_id" in cols and key_cols == ("layer_id", "edge_id"):
+                    if df.height:
+                        key_cache = set(zip(df.get_column("layer_id").to_list(),
+                                            df.get_column("edge_id").to_list()))
+                    else:
+                        key_cache = set()
+                elif "edge_id" in cols and key_cols == ("edge_id",):
+                    series = df.get_column("edge_id") if df.height else pl.Series([])
+                    key_cache = set(series.to_list()) if df.height else set()
+                elif "layer_id" in cols and key_cols == ("layer_id",):
+                    series = df.get_column("layer_id") if df.height else pl.Series([])
+                    key_cache = set(series.to_list()) if df.height else set()
+                else:
+                    key_cache = set()
+                setattr(self, cache_name, key_cache)
+                setattr(self, df_id_name, id(df))
+            # Decide existence from cache
+            cache_key = key_vals[key_cols[0]] if len(key_cols) == 1 else (key_vals["layer_id"], key_vals["edge_id"])
+            exists = cache_key in key_cache
+        except Exception:
+            # Fallback to original behavior if caching fails
+            exists = df.filter(cond).height > 0
+            key_cache = None
 
         if exists:
-            # cast literal to column dtype to avoid type conflicts
+            # cast literals to column dtypes; keep exact semantics
+            schema = df.schema
             upds = []
             for k, v in attrs.items():
-                col_dtype = df.schema[k]
+                tgt_dtype = schema[k]
                 upds.append(
                     pl.when(cond)
-                    .then(pl.lit(v).cast(col_dtype))
+                    .then(pl.lit(v).cast(tgt_dtype))
                     .otherwise(pl.col(k))
                     .alias(k)
                 )
-            return df.with_columns(upds)
+            new_df = df.with_columns(upds)
 
-        # INSERT
+            # Keep cache pointers in sync with the new df object
+            try:
+                setattr(self, df_id_name, id(new_df))
+                # cache contents unchanged for updates
+            except Exception:
+                pass
+
+            return new_df
+
+        # build a single row aligned to df schema
+        schema = df.schema
+
+        # Start with None for all columns, fill keys and attrs
         new_row = {c: None for c in df.columns}
         new_row.update(key_vals)
         new_row.update(attrs)
 
         to_append = pl.DataFrame([new_row])
 
-        # align schemas before vstack
-        # 1) ensure to_append has all df columns
+        # 1) Ensure to_append has all df columns
         for c in df.columns:
             if c not in to_append.columns:
-                to_append = to_append.with_columns(pl.lit(None).cast(df.schema[c]).alias(c))
+                to_append = to_append.with_columns(pl.lit(None).cast(schema[c]).alias(c))
 
-        # 2) cast Null columns in df to incoming dtypes and resolve mismatches by upcasting to Utf8
+        # 2) Resolve dtype mismatches:
+        #    - df Null + to_append non-Null -> cast df to right
+        #    - to_append Null + df non-Null -> cast to_append to left
+        #    - left != right -> upcast both to Utf8
+        left_schema = schema
+        right_schema = to_append.schema
+        df_casts = []
+        app_casts = []
         for c in df.columns:
-            if c not in to_append.columns:
-                continue
-            left = df.schema[c]
-            right = to_append.schema[c]
+            left = left_schema[c]
+            right = right_schema[c]
             if left == pl.Null and right != pl.Null:
-                df = df.with_columns(pl.col(c).cast(right))
+                df_casts.append(pl.col(c).cast(right))
             elif right == pl.Null and left != pl.Null:
-                to_append = to_append.with_columns(pl.col(c).cast(left))
+                app_casts.append(pl.col(c).cast(left).alias(c))
             elif left != right:
-                # upcast both to Utf8 to avoid SchemaError from mixed types
-                df = df.with_columns(pl.col(c).cast(pl.Utf8))
-                to_append = to_append.with_columns(pl.col(c).cast(pl.Utf8))
+                df_casts.append(pl.col(c).cast(pl.Utf8))
+                app_casts.append(pl.col(c).cast(pl.Utf8).alias(c))
 
-        return df.vstack(to_append)
+        if df_casts:
+            df = df.with_columns(df_casts)
+            left_schema = df.schema  # refresh for correctness
+        if app_casts:
+            to_append = to_append.with_columns(app_casts)
+
+        new_df = df.vstack(to_append)
+
+        # Update caches after insertion
+        try:
+            if key_cache is not None:
+                if len(key_cols) == 1:
+                    key_cache.add(cache_key)
+                else:
+                    key_cache.add(cache_key)
+            setattr(self, df_id_name, id(new_df))
+        except Exception:
+            pass
+
+        return new_df
 
     ## Full attribute dict for a single entity
     
@@ -1909,6 +2898,81 @@ class Graph:
         verices or edges (e.g., versioning info, provenance, global labels).
         """
         return dict(self.graph_attributes)
+
+    def set_edge_layer_attrs_bulk(self, layer_id, items):
+        """
+        items: iterable of (edge_id, attrs_dict) or dict{edge_id: attrs_dict}
+        Upserts rows in edge_layer_attributes for one layer in bulk.
+        """
+        import polars as pl
+
+        # normalize
+        rows = []
+        if isinstance(items, dict):
+            it = items.items()
+        else:
+            it = items
+        for eid, attrs in it:
+            if not isinstance(attrs, dict) or not attrs:
+                continue
+            r = {"layer_id": layer_id, "edge_id": eid}
+            r.update(attrs)
+            if "weight" in r:
+                try: r["weight"] = float(r["weight"])
+                except Exception: pass
+            rows.append(r)
+        if not rows:
+            return
+
+        # start from current DF
+        df = self.edge_layer_attributes
+        add_df = pl.DataFrame(rows)
+
+        # ensure required key cols exist/correct dtype on existing df
+        if not isinstance(df, pl.DataFrame) or df.is_empty():
+            # create from scratch with canonical dtypes
+            self.edge_layer_attributes = add_df
+            # legacy mirror
+            if "weight" in add_df.columns:
+                self.layer_edge_weights.setdefault(layer_id, {})
+                for r in add_df.iter_rows(named=True):
+                    w = r.get("weight")
+                    if w is not None:
+                        self.layer_edge_weights[layer_id][r["edge_id"]] = float(w)
+            return
+
+        # schema alignment using your _ensure_attr_columns + Utf8 upcast rule
+        need_cols = {c: None for c in add_df.columns if c not in df.columns}
+        if need_cols:
+            df = self._ensure_attr_columns(df, need_cols)  # adds missing columns to df
+        # add missing columns to add_df
+        for c in df.columns:
+            if c not in add_df.columns:
+                add_df = add_df.with_columns(pl.lit(None).cast(df.schema[c]).alias(c))
+        # reconcile dtype mismatches (Null/Null, mixed -> Utf8), same policy as _upsert_row
+        for c in df.columns:
+            lc, rc = df.schema[c], add_df.schema[c]
+            if lc == pl.Null and rc != pl.Null:
+                df = df.with_columns(pl.col(c).cast(rc))
+            elif rc == pl.Null and lc != pl.Null:
+                add_df = add_df.with_columns(pl.col(c).cast(lc).alias(c))
+            elif lc != rc:
+                df = df.with_columns(pl.col(c).cast(pl.Utf8))
+                add_df = add_df.with_columns(pl.col(c).cast(pl.Utf8).alias(c))
+
+        # drop existing keys for (layer_id, edge_id) we are about to write; then vstack new rows
+        mask_keep = ~((pl.col("layer_id") == layer_id) & pl.col("edge_id").is_in(add_df.get_column("edge_id")))
+        df = df.filter(mask_keep)
+        df = df.vstack(add_df)
+        self.edge_layer_attributes = df
+
+        # legacy mirror
+        if "weight" in add_df.columns:
+            self.layer_edge_weights.setdefault(layer_id, {})
+            for r in add_df.iter_rows(named=True):
+                w = r.get("weight")
+                if w is not None:
+                    self.layer_edge_weights[layer_id][r["edge_id"]] = float(w)
 
     # Basic queries & metrics
 
@@ -2350,75 +3414,92 @@ class Graph:
 
     def edges_view(self, layer=None, include_directed=True, include_weight=True, resolved_weight=True, copy=True):
         """
-        Build a Polars DF view of edges with optional layer join.
+        Build a Polars DF [DataFrame] view of edges with optional layer join.
+        Same columns/semantics as before, but vectorized (no per-edge DF scans).
+        """
+        # Fast path: no edges
+        if not self.edge_to_idx:
+            return pl.DataFrame(schema={"edge_id": pl.Utf8, "kind": pl.Utf8})
 
-        Parameters
-        ----------
-        layer : str, optional
-            If provided, join per-layer edge attributes (prefixed with ``layer_``).
-        include_directed : bool, optional
-            Include a ``directed`` column.
-        include_weight : bool, optional
-            Include a ``global_weight`` column.
-        resolved_weight : bool, optional
-            Include an ``effective_weight`` column.
-        copy : bool, optional
-            Return a cloned DF to keep it read-only.
+        eids = list(self.edge_to_idx.keys())
+        kinds = [self.edge_kind.get(eid, "binary") for eid in eids]
 
-        Returns
-        -------
-        polars.DataFrame
-            Columns include: ``edge_id``, ``kind`` ('binary'/'hyper'), endpoint metadata,
-            and optional weight/directedness and attribute columns.
-        """    
-        # build base rows from in-memory graph state
-        rows = []
-        for eid in self.edge_to_idx.keys():
-            kind = self.edge_kind.get(eid, None)
-            row = {"edge_id": eid, "kind": kind or "binary"}
-            if include_directed:
-                row["directed"] = self.edge_directed.get(eid, self.directed)
-            if include_weight:
-                row["global_weight"] = self.edge_weights.get(eid, None)
-            if resolved_weight:
-                row["effective_weight"] = self.get_effective_edge_weight(eid, layer=layer)
+        # columns we might need
+        need_global = include_weight or resolved_weight
+        global_w = [self.edge_weights.get(eid, None) for eid in eids] if need_global else None
+        dirs = [self.edge_directed.get(eid, self.directed) for eid in eids] if include_directed else None
 
-            if kind == "hyper":
-                meta = self.hyperedge_definitions[eid]
-                if meta["directed"]:
-                    row["head"] = tuple(sorted(meta["head"]))
-                    row["tail"] = tuple(sorted(meta["tail"]))
+        # endpoints / hyper metadata (one pass; no weight lookups)
+        src, tgt, etype = [], [], []
+        head, tail, members = [], [], []
+        for eid, k in zip(eids, kinds):
+            if k == "hyper":
+                # hyperedge: store sets in canonical sorted tuples
+                h = self.hyperedge_definitions[eid]
+                if h.get("directed", False):
+                    head.append(tuple(sorted(h.get("head", ()))))
+                    tail.append(tuple(sorted(h.get("tail", ()))))
+                    members.append(None)
                 else:
-                    row["members"] = tuple(sorted(meta["members"]))
+                    head.append(None)
+                    tail.append(None)
+                    members.append(tuple(sorted(h.get("members", ()))))
+                src.append(None); tgt.append(None); etype.append(None)
             else:
-                s, t, etype = self.edge_definitions[eid]
-                row["source"] = s
-                row["target"] = t
-                row["edge_type"] = etype  # 'regular' | 'vertex_edge' | None
+                s, t, et = self.edge_definitions[eid]
+                src.append(s); tgt.append(t); etype.append(et)
+                head.append(None); tail.append(None); members.append(None)
 
-            rows.append(row)
+        # base frame
+        cols = {"edge_id": eids, "kind": kinds}
+        if include_directed: cols["directed"] = dirs
+        if include_weight:   cols["global_weight"] = global_w
+        # we still need global weight transiently to compute effective weight even if not displayed
+        if resolved_weight and not include_weight: cols["_gw_tmp"] = global_w
 
-        base = pl.DataFrame(rows) if rows else pl.DataFrame(schema={"edge_id": pl.Utf8, "kind": pl.Utf8})
+        base = pl.DataFrame(cols).with_columns(
+            pl.Series("source", src, dtype=pl.Utf8),
+            pl.Series("target", tgt, dtype=pl.Utf8),
+            pl.Series("edge_type", etype, dtype=pl.Utf8),
+            pl.Series("head", head, dtype=pl.List(pl.Utf8)),
+            pl.Series("tail", tail, dtype=pl.List(pl.Utf8)),
+            pl.Series("members", members, dtype=pl.List(pl.Utf8)),
+        )
 
-        # join with pure edge attributes (on explicit key column)
-        if hasattr(self, "edge_attributes") and isinstance(self.edge_attributes, pl.DataFrame) and self.edge_attributes.height > 0:
+        # join pure edge attributes (left)
+        if isinstance(self.edge_attributes, pl.DataFrame) and self.edge_attributes.height > 0:
             out = base.join(self.edge_attributes, on="edge_id", how="left")
         else:
             out = base
 
-        # add layer-specific attributes (prefixed), if requested layer exists
-        if layer is not None and hasattr(self, "edge_layer_attributes") and isinstance(self.edge_layer_attributes, pl.DataFrame) and self.edge_layer_attributes.height > 0:
+        # join layer-specific attributes once, then compute resolved weight vectorized
+        if layer is not None and isinstance(self.edge_layer_attributes, pl.DataFrame) and self.edge_layer_attributes.height > 0:
             layer_slice = (
                 self.edge_layer_attributes
                 .filter(pl.col("layer_id") == layer)
                 .drop("layer_id")
             )
             if layer_slice.height > 0:
-                # prefix non-key columns
+                # prefix non-key columns -> layer_*
                 rename_map = {c: f"layer_{c}" for c in layer_slice.columns if c not in {"edge_id"}}
                 if rename_map:
                     layer_slice = layer_slice.rename(rename_map)
                 out = out.join(layer_slice, on="edge_id", how="left")
+
+        # add effective_weight without per-edge function calls
+        if resolved_weight:
+            gw_col = "global_weight" if include_weight else "_gw_tmp"
+            lw_col = "layer_weight" if ("layer_weight" in out.columns) else None
+            if lw_col:
+                out = out.with_columns(
+                    pl.coalesce([pl.col(lw_col), pl.col(gw_col)]).alias("effective_weight")
+                )
+            else:
+                out = out.with_columns(pl.col(gw_col).alias("effective_weight"))
+
+            # drop temp global if it wasn't requested explicitly
+            if not include_weight and "_gw_tmp" in out.columns:
+                out = out.drop("_gw_tmp")
 
         return out.clone() if copy else out
 
@@ -3111,6 +4192,7 @@ class Graph:
 
     # Slicing / copying / accounting
 
+
     def edge_subgraph(self, edges) -> "Graph":
         """
         Create a new graph containing only a specified subset of edges.
@@ -3140,23 +4222,55 @@ class Graph:
         its members are retained.
         - If `edges` is empty, the resulting graph will be empty except for
         any isolated vertices that remain.
-        """
-        g = self.copy()
-        # Normalize edge IDs
+        """        
+        # normalize to edge_id set
         if all(isinstance(e, int) for e in edges):
-            edges = {self.idx_to_edge[e] for e in edges}
+            E = {self.idx_to_edge[e] for e in edges}
         else:
-            edges = set(edges)
+            E = set(edges)
 
-        # Drop edges not in selection
-        for eid in list(g.edge_definitions.keys()):
-            if eid not in edges:
-                g.remove_edge(eid)
+        # collect incident vertices and partition edges
+        V = set()
+        bin_payload, hyper_payload = [], []
+        for eid in E:
+            kind = self.edge_kind.get(eid, "binary")
+            if kind == "hyper":
+                h = self.hyperedge_definitions[eid]
+                if h.get("members"):
+                    V.update(h["members"])
+                    hyper_payload.append({"members": list(h["members"]), "edge_id": eid,
+                                        "weight": self.edge_weights.get(eid, 1.0)})
+                else:
+                    V.update(h.get("head", ())); V.update(h.get("tail", ()))
+                    hyper_payload.append({"head": list(h.get("head", ())),
+                                        "tail": list(h.get("tail", ())),
+                                        "edge_id": eid, "weight": self.edge_weights.get(eid, 1.0)})
+            else:
+                s, t, etype = self.edge_definitions[eid]
+                V.add(s); V.add(t)
+                bin_payload.append({"source": s, "target": t, "edge_id": eid,
+                                    "edge_type": etype,
+                                    "edge_directed": self.edge_directed.get(eid, self.directed),
+                                    "weight": self.edge_weights.get(eid, 1.0)})
 
-        # Optional: prune isolated vertices
-        to_remove = [v for v in g.vertices() if not g.incident_edges(v)]
-        for v in to_remove:
-            g.remove_vertex(v)
+        # new graph prealloc
+        g = Graph(directed=self.directed, n=len(V), e=len(E))
+        # vertices with attrs
+        v_rows = [{"vertex_id": v, **(self._row_attrs(self.vertex_attributes, "vertex_id", v) or {})} for v in V]
+        g.add_vertices_bulk(v_rows, layer=g._default_layer)
+
+        # edges
+        if bin_payload:
+            g.add_edges_bulk(bin_payload, layer=g._default_layer)
+        if hyper_payload:
+            g.add_hyperedges_bulk(hyper_payload, layer=g._default_layer)
+
+        # copy layer memberships for retained edges & incident vertices
+        for lid, meta in self._layers.items():
+            g.add_layer(lid, **meta["attributes"])
+            kept_edges = set(meta["edges"]) & E
+            if kept_edges:
+                g.add_edges_to_layer_bulk(lid, kept_edges)
 
         return g
 
@@ -3187,24 +4301,76 @@ class Graph:
         - For hyperedges, **all** member verices must be included to retain the edge.
         - Attributes for retained verices and edges are preserved.
         """
-        g = self.copy()
         V = set(vertices)
 
-        # Drop edges that touch any vertex outside the set
-        for j in range(g.number_of_edges()):
-            S, T = g.get_edge(j)
-            if not (S | T).issubset(V):
-                eid = g.idx_to_edge[j]
-                g.remove_edge(eid)
+        # collect edges fully inside V
+        E_bin, E_hyper_members, E_hyper_dir = [], [], []
+        for eid, (s, t, et) in self.edge_definitions.items():
+            if et == "hyper":
+                continue
+            if s in V and t in V:
+                E_bin.append(eid)
+        for eid, h in self.hyperedge_definitions.items():
+            if h.get("members"):
+                if set(h["members"]).issubset(V):
+                    E_hyper_members.append(eid)
+            else:
+                if set(h.get("head", ())).issubset(V) and set(h.get("tail", ())).issubset(V):
+                    E_hyper_dir.append(eid)
 
-        # Drop all vertices not in the set
-        for v in list(g.vertices()):
-            if v not in V:
-                g.remove_vertex(v)
+        # payloads
+        v_rows = [{"vertex_id": v, **(self._row_attrs(self.vertex_attributes, "vertex_id", v) or {})} for v in V]
+
+        bin_payload = []
+        for eid in E_bin:
+            s, t, etype = self.edge_definitions[eid]
+            bin_payload.append({"source": s, "target": t, "edge_id": eid,
+                                "edge_type": etype,
+                                "edge_directed": self.edge_directed.get(eid, self.directed),
+                                "weight": self.edge_weights.get(eid, 1.0)})
+
+        hyper_payload = []
+        for eid in E_hyper_members:
+            m = self.hyperedge_definitions[eid]["members"]
+            hyper_payload.append({"members": list(m), "edge_id": eid,
+                                "weight": self.edge_weights.get(eid, 1.0)})
+        for eid in E_hyper_dir:
+            h = self.hyperedge_definitions[eid]
+            hyper_payload.append({"head": list(h.get("head", ())),
+                                "tail": list(h.get("tail", ())),
+                                "edge_id": eid, "weight": self.edge_weights.get(eid, 1.0)})
+
+        # build new graph
+        g = Graph(directed=self.directed, n=len(V), e=len(E_bin)+len(E_hyper_members)+len(E_hyper_dir))
+        g.add_vertices_bulk(v_rows, layer=g._default_layer)
+        if bin_payload:
+            g.add_edges_bulk(bin_payload, layer=g._default_layer)
+        if hyper_payload:
+            g.add_hyperedges_bulk(hyper_payload, layer=g._default_layer)
+
+        # layer memberships restricted to V
+        for lid, meta in self._layers.items():
+            g.add_layer(lid, **meta["attributes"])
+            keep = set()
+            for eid in meta["edges"]:
+                kind = self.edge_kind.get(eid, "binary")
+                if kind == "hyper":
+                    h = self.hyperedge_definitions[eid]
+                    if h.get("members"):
+                        if set(h["members"]).issubset(V): keep.add(eid)
+                    else:
+                        if set(h.get("head",())).issubset(V) and set(h.get("tail",())).issubset(V): keep.add(eid)
+                else:
+                    s, t, _ = self.edge_definitions[eid]
+                    if s in V and t in V:
+                        keep.add(eid)
+            if keep:
+                g.add_edges_to_layer_bulk(lid, keep)
 
         return g
 
     def extract_subgraph(self, vertices=None, edges=None) -> "Graph":
+
         """
         Create a subgraph based on a combination of vertex and/or edge filters.
 
@@ -3235,13 +4401,45 @@ class Graph:
         -----
         - This is a convenience method; it delegates to `subgraph()` and
         `edge_subgraph()` internally.
-        """
-        g = self.copy()
-        if vertices is not None:
-            g = g.subgraph(vertices)
+        """    
+        if vertices is None and edges is None:
+            return self.copy()
+
         if edges is not None:
-            g = g.edge_subgraph(edges)
-        return g
+            if all(isinstance(e, int) for e in edges):
+                E = {self.idx_to_edge[e] for e in edges}
+            else:
+                E = set(edges)
+        else:
+            E = None
+
+        V = set(vertices) if vertices is not None else None
+
+        # If only one filter, delegate to optimized path
+        if V is not None and E is None:
+            return self.subgraph(V)
+        if V is None and E is not None:
+            return self.edge_subgraph(E)
+
+        # Both filters: keep only edges in E whose endpoints (or members) lie in V
+        kept_edges = set()
+        kept_vertices = set(V)
+        for eid in E:
+            kind = self.edge_kind.get(eid, "binary")
+            if kind == "hyper":
+                h = self.hyperedge_definitions[eid]
+                if h.get("members"):
+                    if set(h["members"]).issubset(V):
+                        kept_edges.add(eid)
+                else:
+                    if set(h.get("head", ())).issubset(V) and set(h.get("tail", ())).issubset(V):
+                        kept_edges.add(eid)
+            else:
+                s, t, _ = self.edge_definitions[eid]
+                if s in V and t in V:
+                    kept_edges.add(eid)
+
+        return self.edge_subgraph(kept_edges).subgraph(kept_vertices)
 
     def reverse(self) -> "Graph":
         """
@@ -3285,218 +4483,194 @@ class Graph:
         return g
 
     def subgraph_from_layer(self, layer_id, *, resolve_layer_weights=True):
-        """
-        Build a new graph restricted to a single layer.
-
-        Parameters
-        ----------
-        layer_id : str
-        resolve_layer_weights : bool, optional
-            If True, materialize each edge with its effective per-layer weight.
-
-        Returns
-        -------
-        Graph
-            New graph containing only entities/edges of the layer.
-
-        Raises
-        ------
-        KeyError
-            If the layer does not exist.
-        """
         if layer_id not in self._layers:
             raise KeyError(f"Layer {layer_id} not found")
 
-        lg = Graph(directed=self.directed)
-        # Create the destination layer and make it active
-        lg.add_layer(layer_id, **self.get_layer_info(layer_id)["attributes"])
-        lg.set_active_layer(layer_id)
+        import polars as pl
+        layer_meta = self._layers[layer_id]
+        V = set(layer_meta["vertices"])
+        E = set(layer_meta["edges"])
 
-        layer_vertices = self._layers[layer_id]["vertices"]
-        layer_edges = self._layers[layer_id]["edges"]
+        g = Graph(directed=self.directed, n=len(V), e=len(E))
+        g.add_layer(layer_id, **layer_meta["attributes"])
+        g.set_active_layer(layer_id)
 
-        def _row_attrs(df: pl.DataFrame, key_col: str, key_val, drop_key: str):
-            if not isinstance(df, pl.DataFrame) or df.height == 0 or key_col not in df.columns:
-                return {}
-            rows = df.filter(pl.col(key_col) == key_val)
-            if rows.height == 0:
-                return {}
-            d = rows.to_dicts()[0]
-            d.pop(drop_key, None)
-            return d
+        # vertices with attrs (edge-entities share same table)
+        v_rows = [{"vertex_id": v, **(self._row_attrs(self.vertex_attributes, "vertex_id", v) or {})} for v in V]
+        g.add_vertices_bulk(v_rows, layer=layer_id)
 
-        # 1) bring over entities (vertices + edge-entities) that participate in this layer
-        for ent_id in layer_vertices:
-            if self.entity_types.get(ent_id) == "vertex":
-                attrs = _row_attrs(self.vertex_attributes, "vertex_id", ent_id, "vertex_id")
-                lg.add_vertex(ent_id, layer=layer_id, **attrs)
-            else:
-                # edge-entity (attributes stored in vertex_attributes as well)
-                attrs = _row_attrs(self.vertex_attributes, "vertex_id", ent_id, "vertex_id")
-                lg.add_edge_entity(ent_id, layer=layer_id, **attrs)
+        # edge attrs
+        e_attrs = {}
+        if isinstance(self.edge_attributes, pl.DataFrame) and self.edge_attributes.height and "edge_id" in self.edge_attributes.columns:
+            for row in self.edge_attributes.filter(pl.col("edge_id").is_in(list(E))).to_dicts():
+                d = dict(row); eid = d.pop("edge_id", None)
+                if eid is not None: e_attrs[eid] = d
 
-        # 2) bring over edges in this layer (preserve directedness + attrs + effective weight)
-        for eid in list(layer_edges):
-            # resolve weight for this layer, or fallback to global
-            w = (
-                self.get_effective_edge_weight(eid, layer=layer_id)
-                if resolve_layer_weights
-                else self.edge_weights.get(eid, 1.0)
-            )
-            ed_attrs = _row_attrs(self.edge_attributes, "edge_id", eid, "edge_id")
+        # weights
+        eff_w = {}
+        if resolve_layer_weights:
+            df = self.edge_layer_attributes
+            if isinstance(df, pl.DataFrame) and df.height and {"layer_id","edge_id","weight"}.issubset(df.columns):
+                for r in df.filter((pl.col("layer_id")==layer_id) & (pl.col("edge_id").is_in(list(E)))).iter_rows(named=True):
+                    if r.get("weight") is not None:
+                        eff_w[r["edge_id"]] = float(r["weight"])
 
+        # partition edges
+        bin_payload, hyper_payload = [], []
+        for eid in E:
+            w = eff_w.get(eid, self.edge_weights.get(eid, 1.0)) if resolve_layer_weights else self.edge_weights.get(eid, 1.0)
             kind = self.edge_kind.get(eid, "binary")
+            attrs = e_attrs.get(eid, {})
             if kind == "hyper":
-                hdef = self.hyperedge_definitions[eid]
-                # undirected hyperedge uses 'members'; directed uses 'head'/'tail'
-                if hdef.get("members"):
-                    lg.add_hyperedge(
-                        members=set(hdef["members"]),
-                        layer=layer_id,
-                        weight=float(w),
-                        edge_id=eid,
-                        **ed_attrs
-                    )
+                h = self.hyperedge_definitions[eid]
+                if h.get("members"):
+                    hyper_payload.append({"members": list(h["members"]), "edge_id": eid, "weight": w, "attributes": attrs})
                 else:
-                    head = set(hdef.get("head", []))
-                    tail = set(hdef.get("tail", []))
-                    lg.add_hyperedge(
-                        head=head,
-                        tail=tail,
-                        layer=layer_id,
-                        weight=float(w),
-                        edge_id=eid,
-                        **ed_attrs
-                    )
-                continue
+                    hyper_payload.append({"head": list(h.get("head", ())), "tail": list(h.get("tail", ())),
+                                        "edge_id": eid, "weight": w, "attributes": attrs})
+            else:
+                s, t, et = self.edge_definitions[eid]
+                bin_payload.append({"source": s, "target": t, "edge_id": eid,
+                                    "edge_type": et,
+                                    "edge_directed": self.edge_directed.get(eid, self.directed),
+                                    "weight": w, "attributes": attrs})
 
-            # binary or vertex-edge
-            src, tgt, etype = self.edge_definitions[eid]  # etype in {'regular','vertex_edge'}
-            edir = self.edge_directed.get(eid, self.directed)
-            lg.add_edge(
-                src,
-                tgt,
-                weight=float(w),
-                edge_id=eid,         # preserve original id
-                edge_type=etype,     # 'regular' or 'vertex_edge'
-                edge_directed=edir,
-                layer=layer_id,
-                **ed_attrs
-            )
+        if bin_payload:
+            g.add_edges_bulk(bin_payload, layer=layer_id)
+        if hyper_payload:
+            g.add_hyperedges_bulk(hyper_payload, layer=layer_id)
 
-        # 3) the layer's attributes were set on creation above
-        return lg
+        return g
+
+    def _row_attrs(self, df, key_col: str, key):
+        """
+        INTERNAL: return a dict of attributes for the row in `df` where `key_col == key`,
+        excluding the key column itself. If not found or df empty, return {}.
+        Caches per (id(df), key_col) for speed; cache auto-refreshes when the df object changes.
+        """
+        try:
+            import polars as pl
+        except Exception:
+            # If Polars isn't available for some reason, best-effort fallback
+            return {}
+
+        # Basic guards
+        if not isinstance(df, pl.DataFrame) or df.height == 0 or key_col not in df.columns:
+            return {}
+
+        # Cache setup
+        cache = getattr(self, "_row_attr_cache", None)
+        if cache is None:
+            cache = {}
+            setattr(self, "_row_attr_cache", cache)
+
+        cache_key = (id(df), key_col)
+        mapping = cache.get(cache_key)
+
+        # Build the mapping once per df object
+        if mapping is None:
+            mapping = {}
+            # Latest write should win if duplicates exist (matches your upsert semantics)
+            for row in df.iter_rows(named=True):
+                kval = row.get(key_col)
+                if kval is None:
+                    continue
+                d = dict(row)
+                d.pop(key_col, None)
+                mapping[kval] = d
+            cache[cache_key] = mapping
+
+        return mapping.get(key, {})
 
     def copy(self):
         """
         Deep copy the entire graph, including layers, edges, hyperedges, and attributes.
-
-        Returns
-        -------
-        Graph
+        (Behavior preserved; uses preallocation + vectorized attr extraction.)
         """
-        # local helper (do NOT use self._row_attrs here)
-        def _row_attrs(df, key_col: str, key_val, drop_key: str):
-            import polars as pl  # safe even if already imported at module level
-            if not isinstance(df, pl.DataFrame) or df.height == 0 or key_col not in df.columns:
-                return {}
-            rows = df.filter(pl.col(key_col) == key_val)
-            if rows.height == 0:
-                return {}
-            d = rows.to_dicts()[0]
-            d.pop(drop_key, None)
-            return d
+        import polars as pl
 
-        import polars as pl  # ensure available in this scope
+        # Preallocate with current sizes
+        new_graph = Graph(directed=self.directed, n=self._num_entities, e=self._num_edges)
 
-        new_graph = Graph(directed=self.directed)
-
-        # ---- Copy layers and their attributes first ----
-        for lid in self._layers:
-            if lid != new_graph._default_layer:  # 'default' already exists in new_graph
-                new_graph.add_layer(lid)
-            la = self.get_layer_info(lid)["attributes"]
-            if la:
-                new_graph.set_layer_attrs(lid, **la)
-
-        # ---- Copy entities (vertices + edge-entities) ----
-        for ent_id, etype in self.entity_types.items():
-            attrs = _row_attrs(self.vertex_attributes, "vertex_id", ent_id, "vertex_id")
-            if etype == "vertex":
-                new_graph.add_vertex(ent_id, layer=new_graph._default_layer, **attrs)
+        # Copy layers & their pure attributes ----
+        for lid, meta in self._layers.items():
+            if lid != new_graph._default_layer:
+                new_graph.add_layer(lid, **meta["attributes"])
             else:
-                new_graph.add_edge_entity(ent_id, layer=new_graph._default_layer, **attrs)
+                # default layer exists; mirror its attributes too
+                if meta["attributes"]:
+                    new_graph.set_layer_attrs(lid, **meta["attributes"])
 
-        # ---- Copy *binary / vertex-edge* edges (skip hyperedges here) ----
+        # Build attribute rows once (no per-row filters)
+        if isinstance(self.vertex_attributes, pl.DataFrame) and self.vertex_attributes.height and "vertex_id" in self.vertex_attributes.columns:
+            vmap = {d.pop("vertex_id"): d for d in self.vertex_attributes.to_dicts()}
+        else:
+            vmap = {}
+
+        # Split entities by type to preserve typing
+        vertex_rows = []
+        edge_entity_rows = []
+        for ent_id, etype in self.entity_types.items():
+            row = {"vertex_id": ent_id}
+            row.update(vmap.get(ent_id, {}))
+            if etype == "vertex":
+                vertex_rows.append(row)
+            else:
+                # entity_types[...] == "edge" → edge-entity
+                edge_entity_rows.append({"edge_entity_id": ent_id, **vmap.get(ent_id, {})})
+
+        # Add entities with correct type APIs (bulk)
+        if vertex_rows:
+            new_graph.add_vertices_bulk(vertex_rows, layer=new_graph._default_layer)
+        if edge_entity_rows:
+            # attributes for edge-entities live in the same vertex_attributes table
+            new_graph.add_edge_entities_bulk(edge_entity_rows, layer=new_graph._default_layer)
+
+        # Binary / vertex-edge edges
+        bin_payload = []
         for edge_id, (source, target, edge_type) in self.edge_definitions.items():
             if edge_type == "hyper":
-                continue  # will be handled below
+                continue
+            bin_payload.append({
+                "source": source, "target": target, "edge_id": edge_id,
+                "edge_type": edge_type,    # 'regular' or 'vertex_edge'
+                "edge_directed": self.edge_directed.get(edge_id, self.directed),
+                "weight": self.edge_weights.get(edge_id, 1.0),
+                "attributes": (self._row_attrs(self.edge_attributes, "edge_id", edge_id) or {}),
+            })
+        if bin_payload:
+            new_graph.add_edges_bulk(bin_payload, layer=new_graph._default_layer)
 
-            weight = self.edge_weights.get(edge_id, 1.0)
-            edge_attrs = _row_attrs(self.edge_attributes, "edge_id", edge_id, "edge_id")
-            edge_dir = self.edge_directed.get(edge_id, self.directed)
-
-            new_graph.add_edge(
-                source,
-                target,
-                weight=weight,
-                edge_id=edge_id,
-                edge_type=edge_type,    # 'regular' or 'vertex_edge'
-                edge_directed=edge_dir,
-                **edge_attrs,
-            )
-
-        # ---- Copy hyperedges ----
+        # Hyperedges
+        hyper_payload = []
         for eid, hdef in self.hyperedge_definitions.items():
-            weight = self.edge_weights.get(eid, 1.0)
-            edge_attrs = _row_attrs(self.edge_attributes, "edge_id", eid, "edge_id")
+            base = {
+                "edge_id": eid,
+                "weight": self.edge_weights.get(eid, 1.0),
+                "attributes": (self._row_attrs(self.edge_attributes, "edge_id", eid) or {}),
+            }
+            if hdef.get("members"):
+                hyper_payload.append({**base, "members": list(hdef["members"])})
+            else:
+                hyper_payload.append({**base, "head": list(hdef.get("head", ())), "tail": list(hdef.get("tail", ()))})
+        if hyper_payload:
+            new_graph.add_hyperedges_bulk(hyper_payload, layer=new_graph._default_layer)
 
-            if hdef.get("members"):  # undirected hyperedge
-                new_graph.add_hyperedge(
-                    members=set(hdef["members"]),
-                    weight=weight,
-                    edge_id=eid,
-                    **edge_attrs,
-                )
-            else:  # directed hyperedge
-                head = set(hdef.get("head", []))
-                tail = set(hdef.get("tail", []))
-                new_graph.add_hyperedge(
-                    head=head,
-                    tail=tail,
-                    weight=weight,
-                    edge_id=eid,
-                    **edge_attrs,
-                )
-
-        # ---- Copy layer memberships (vertices & edges) EXACTLY ----
+        # Copy layer memberships
         for lid, meta in self._layers.items():
-            # ensure layer exists
             if lid not in new_graph._layers:
                 new_graph.add_layer(lid)
-
-            # overwrite (not update) to match exactly
             new_graph._layers[lid]["vertices"] = set(meta["vertices"])
             new_graph._layers[lid]["edges"] = set(meta["edges"])
 
+        # Copy edge-layer attributes + legacy weight dict
+        if isinstance(self.edge_layer_attributes, pl.DataFrame):
+            new_graph.edge_layer_attributes = self.edge_layer_attributes.clone()
+        else:
+            new_graph.edge_layer_attributes = self.edge_layer_attributes
 
-        # ---- Copy per-layer edge attributes (DF) and legacy dict overrides ----
-        if isinstance(self.edge_layer_attributes, pl.DataFrame) and self.edge_layer_attributes.height > 0:
-            for row in self.edge_layer_attributes.to_dicts():
-                lid = row.get("layer_id")
-                eid = row.get("edge_id")
-                if lid is not None and eid is not None:
-                    r = dict(row)
-                    r.pop("layer_id", None); r.pop("edge_id", None)
-                    if r:
-                        new_graph.set_edge_layer_attrs(lid, eid, **r)
-
-        for lid, m in self.layer_edge_weights.items():
-            for eid, w in m.items():
-                new_graph.set_layer_edge_weight(lid, eid, w)
-
-        # ---- Directness flags ----
-        new_graph.edge_directed.update(self.edge_directed)
+        from collections import defaultdict
+        new_graph.layer_edge_weights = defaultdict(dict, {lid: dict(m) for lid, m in self.layer_edge_weights.items()})
 
         return new_graph
 
@@ -4065,7 +5239,7 @@ class Graph:
 
         def _convert_to_nx(self, *, directed: bool, hyperedge_mode: str, layer, layers,
                            needed_attrs: set, simple: bool, edge_aggs: dict | None):
-            from ..adapters import networkx as _gg_nx  # graphglue.adapters.networkx
+            import networkxgg as _gg_nx  # graphglue.adapters.networkx
             import networkx as _nx
 
             nxG, manifest = _gg_nx.to_nx(
@@ -4450,7 +5624,7 @@ class Graph:
         def _convert_to_ig(self, *, directed: bool, hyperedge_mode: str, layer, layers,
                            needed_attrs: set, simple: bool, edge_aggs: dict | None):
             # try both adapter entry points: to_ig / to_igraph
-            from ..adapters import igraph as _gg_ig  # graphglue.adapters.igraph
+            import igraphgg as _gg_ig  # graphglue.adapters.igraph
             import igraph as _ig
 
             conv = None
