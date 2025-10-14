@@ -5239,7 +5239,7 @@ class Graph:
 
         def _convert_to_nx(self, *, directed: bool, hyperedge_mode: str, layer, layers,
                            needed_attrs: set, simple: bool, edge_aggs: dict | None):
-            import networkxgg as _gg_nx  # graphglue.adapters.networkx
+            from ..adapters import networkx_adapter as _gg_nx  # graphglue.adapters.networkx_adapter
             import networkx as _nx
 
             nxG, manifest = _gg_nx.to_nx(
@@ -5624,14 +5624,14 @@ class Graph:
         def _convert_to_ig(self, *, directed: bool, hyperedge_mode: str, layer, layers,
                            needed_attrs: set, simple: bool, edge_aggs: dict | None):
             # try both adapter entry points: to_ig / to_igraph
-            import igraphgg as _gg_ig  # graphglue.adapters.igraph
+            from ..adapters import igraph_adapter as _gg_ig  # graphglue.adapters.igraph_adapter
             import igraph as _ig
 
             conv = None
             for cand in ("to_ig", "to_igraph"):
                 conv = getattr(_gg_ig, cand, None) or conv
             if conv is None:
-                raise RuntimeError("igraph adapter missing: expected adapters.igraph.to_ig(...) or .to_igraph(...).")
+                raise RuntimeError("igraph adapter missing: expected adapters.igraph_adapter.to_ig(...) or .to_igraph(...).")
 
             igG, manifest = conv(
                 self._G,
