@@ -25,7 +25,7 @@ except Exception:
 
 # Try to import the adapter under test
 
-from graphglue.adapters.networkx import to_nx, from_nx  # type: ignore
+from graphglue.adapters.networkx_adapter import to_nx, from_nx  # type: ignore
 
 
 # Reuse the same graph builder as igraph tests

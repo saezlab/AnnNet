@@ -53,7 +53,7 @@ def _build_graph() -> Graph:
 class TestIgraphAdapter(unittest.TestCase):
     @unittest.skipUnless(HAS_IG, "python-igraph not installed")
     def test_to_igraph_export_and_roundtrip(self):
-        from graphglue.adapters.igraph import to_igraph, from_igraph  # adapter under test
+        from graphglue.adapters.igraph_adapter import to_igraph, from_igraph  # adapter under test
 
         g = _build_graph()
 
@@ -83,7 +83,7 @@ class TestIgraphAdapter(unittest.TestCase):
 
     @unittest.skipUnless(HAS_IG, "python-igraph not installed")
     def test_to_igraph_labels_and_attrs(self):
-        from graphglue.adapters.igraph import to_igraph
+        from graphglue.adapters.igraph_adapter import to_igraph
 
         g = _build_graph()
         igG, manifest = to_igraph(g, directed=True, hyperedge_mode="skip", public_only=True)
