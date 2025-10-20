@@ -147,7 +147,6 @@ def _export_legacy(graph: "Graph", *, directed: bool = True,
                         G.add_edge(mem[a], mem[b], key=eid, **e_attr)
 
     return G
-    return G
 
 
 def _coeff_from_obj(obj) -> float:
@@ -425,6 +424,8 @@ def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
         "vertex_attrs": vertex_attrs,
         "edge_attrs": edge_attrs,
         "layer_weights": layer_weights,  # always present (may be {})
+        "edge_directed": {eid: bool(_is_directed_eid(graph, eid)) for eid in all_eids},
+        "manifest_version": 1,    
     }
 
     return nxG, manifest
@@ -533,7 +534,8 @@ def from_nx(nxG, manifest) -> "Graph":
                 pass
             # add edge
             try:
-                H.add_edge(u, v, edge_id=eid, edge_directed=True)
+                is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
+                H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
             except Exception:
                 pass
 
@@ -555,7 +557,8 @@ def from_nx(nxG, manifest) -> "Graph":
                         pass
                 # add hyperedge
                 try:
-                    H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=True)
+                    is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
+                    H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=is_dir)
                 except Exception:
                     # last-resort: degrade to binary if backend lacks hyperedge support
                     if len(head) == 1 and len(tail) == 1:
@@ -564,28 +567,36 @@ def from_nx(nxG, manifest) -> "Graph":
                         except Exception:
                             pass
                 # restore endpoint coefficients if possible
-                for u, coeff in (head_map or {}).items():
-                    try:
-                        H.set_edge_endpoint_attr(eid, u, "__source_attr", {"__value": float(coeff)})
-                    except Exception:
-                        pass
-                for v, coeff in (tail_map or {}).items():
-                    try:
-                        H.set_edge_endpoint_attr(eid, v, "__target_attr", {"__value": float(coeff)})
-                    except Exception:
-                        pass
+                try:
+                    existing_src = H.get_edge_attribute(eid, "__source_attr") or {}
+                except Exception:
+                    existing_src = {}
+                try:
+                    existing_tgt = H.get_edge_attribute(eid, "__target_attr") or {}
+                except Exception:
+                    existing_tgt = {}
+
+                src_map = {u: {"__value": float(c)} for u, c in (head_map or {}).items()}
+                tgt_map = {v: {"__value": float(c)} for v, c in (tail_map or {}).items()}
+
+                # merge and write in one go
+                merged_src = {**existing_src, **src_map}
+                merged_tgt = {**existing_tgt, **tgt_map}
+                H.set_edge_attrs(eid, __source_attr=merged_src, __target_attr=merged_tgt)
             else:
                 # malformed hyper spec → try to treat as regular
                 try:
                     u, v = defn[0], defn[1]
-                    H.add_edge(u, v, edge_id=eid, edge_directed=True)
+                    is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
+                    H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
                 except Exception:
                     pass
         else:
             # unknown kind → attempt regular edge
             try:
                 u, v = defn[0], defn[1]
-                H.add_edge(u, v, edge_id=eid, edge_directed=True)
+                is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
+                H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
             except Exception:
                 pass
 

@@ -3,7 +3,7 @@ try:
 except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
         "Optional dependency 'python-igraph' is not installed. "
-        "Install with: ppip install graphglue[igraph]"
+        "Install with: pip install graphglue[igraph]"
     ) from e
 
 from typing import Any
@@ -643,13 +643,16 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
                 if w is not None:
                     layer_weights.setdefault(lid, {})[eid] = float(w)
     # ---------- END robust layer discovery + weights ----------
+    base_weights = dict(graph.edge_weights)  # baseline/global weights
     manifest = {
-        "edges": manifest_edges,
-        "weights": layer_weights,
-        "layers": layers_section,
-        "vertex_attrs": vertex_attrs,
-        "edge_attrs": edge_attrs,
-        "layer_weights": layer_weights
+         "edges": manifest_edges,
+         "weights": base_weights,
+         "layers": layers_section,
+         "vertex_attrs": vertex_attrs,
+         "edge_attrs": edge_attrs,
+         "layer_weights": layer_weights,
+         "edge_directed": {eid: bool(_is_directed_eid(graph, eid)) for eid in all_eids},
+         "manifest_version": 1,
     }
 
     return igG, manifest
@@ -758,23 +761,46 @@ def from_igraph(igG: ig.Graph, manifest: dict) -> "Graph":
         kind = defn[-1]
         if kind == "regular":
             u, v = defn[0], defn[1]
-            H.add_edge(u, v, edge_id=eid, edge_directed=True)
+            is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
+            H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
         elif kind == "hyper":
             head_map, tail_map = defn[0], defn[1]
             if isinstance(head_map, dict) and isinstance(tail_map, dict):
                 head = list(head_map.keys())
                 tail = list(tail_map.keys())
-                H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=True)
+                is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
+                is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
+                H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=is_dir)
+                try:
+                    existing_src = H.get_edge_attribute(eid, "__source_attr") or {}
+                except Exception:
+                    existing_src = {}
+                try:
+                    existing_tgt = H.get_edge_attribute(eid, "__target_attr") or {}
+                except Exception:
+                    existing_tgt = {}
+
+                src_map = {u: {"__value": float(c)} for u, c in (head_map or {}).items()}
+                tgt_map = {v: {"__value": float(c)} for v, c in (tail_map or {}).items()}
+
+                # merge and write in one go
+                merged_src = {**existing_src, **src_map}
+                merged_tgt = {**existing_tgt, **tgt_map}
+                H.set_edge_attrs(eid, __source_attr=merged_src, __target_attr=merged_tgt)
+
+
             else:
                 try:
                     u, v = defn[0], defn[1]
-                    H.add_edge(u, v, edge_id=eid, edge_directed=True)
+                    is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
+                    H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
                 except Exception:
                     pass
         else:
             try:
                 u, v = defn[0], defn[1]
-                H.add_edge(u, v, edge_id=eid, edge_directed=True)
+                is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
+                H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
             except Exception:
                 pass
 

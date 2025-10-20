@@ -88,5 +88,8 @@ def load_excel_to_graph(
         default_weight=default_weight,
         **kwargs,
     )
-
+    try:
+        tmp_path.unlink(missing_ok=True)  # Python 3.8+: wrap in try/except if needed
+    except Exception:
+        pass
     return G
