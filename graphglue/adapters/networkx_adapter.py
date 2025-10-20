@@ -704,6 +704,76 @@ def to_backend(graph, **kwargs):
     """
     return _export_legacy(graph, **kwargs)
 
+def from_nx_only(nxG):
+    """
+    Build a Graph from a *plain* NetworkX graph object (no manifest).
+    Preserves everything present in nxG: nodes, multiedges, self-loops, and all attributes.
+    Does NOT invent hyperedges/layers unless they were encoded as attributes by the producer.
+    """
+    from ..core.graph import Graph
+
+    H = Graph()
+
+    # 1) Nodes + node attributes (verbatim)
+    for v, d in nxG.nodes(data=True):
+        vid = v  # keep original id (str/int)
+        try:
+            H.add_vertex(vid)
+        except Exception:
+            pass
+        if d:
+            try:
+                H.set_vertex_attrs(vid, **dict(d))  # no filtering
+            except Exception:
+                pass
+
+    # 2) Edges (MultiGraph aware) + edge attributes (verbatim)
+    is_multi = nxG.is_multigraph()
+    is_dir   = nxG.is_directed()
+
+    if is_multi:
+        iterator = nxG.edges(keys=True, data=True)
+    else:
+        iterator = ((u, v, None, d) for u, v, d in nxG.edges(data=True))
+
+    seen_auto = 0
+    for u, v, key, d in iterator:
+        # Edge ID preference: attribute 'eid' > MultiGraph key > auto
+        eid = (d.get("eid") if isinstance(d, dict) else None) or (key if key is not None else None)
+        if eid is None:
+            seen_auto += 1
+            eid = f"nx::e#{seen_auto}"
+
+        # Directedness: graph type unless explicitly overridden per edge
+        e_directed = bool(d.get("directed", is_dir))
+
+        # Weight: keep both the *weight attribute* and the core weight
+        w = d.get("weight", d.get("__weight", 1.0))
+        try:
+            H.add_vertex(u); H.add_vertex(v)
+        except Exception:
+            pass
+        try:
+            H.add_edge(u, v, edge_id=eid, edge_directed=e_directed)
+        except Exception:
+            # last-resort: if API wants different kwargs
+            H.add_edge(u, v, edge_id=eid, edge_directed=True)
+
+        # store the numeric weight in the canonical map
+        try:
+            H.edge_weights[eid] = float(w)
+        except Exception:
+            pass
+
+        # Copy *all* edge attributes verbatim (including 'weight', '__*', etc.)
+        if isinstance(d, dict) and d:
+            try:
+                H.set_edge_attrs(eid, **dict(d))
+            except Exception:
+                pass
+
+    return H
+
 
 class NetworkXAdapter:
     def export(self, graph, **kwargs):

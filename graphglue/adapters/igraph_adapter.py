@@ -876,6 +876,75 @@ def to_backend(graph, **kwargs):
     """
     return _export_legacy(graph, **kwargs)
 
+def from_ig_only(igG):
+    """
+    Build a Graph from a *plain* igraph.Graph (no manifest).
+    Uses vertex 'name' when present; otherwise igraph indices (ints).
+    Preserves all vertex/edge attributes.
+    """
+    from ..core.graph import Graph
+    import igraph as ig
+
+    H = Graph()
+
+    # Vertex IDs: prefer 'name'
+    names = igG.vs["name"] if "name" in igG.vs.attributes() else list(range(igG.vcount()))
+    # Copy vertices and their attributes (verbatim)
+    for i, vid in enumerate(names):
+        try:
+            H.add_vertex(vid)
+        except Exception:
+            pass
+        vattrs = {}
+        for k in igG.vs.attributes():
+            if k == "name":  # ID already used; keep as attr too
+                vattrs[k] = names[i]
+            else:
+                vattrs[k] = igG.vs[i][k]
+        try:
+            if vattrs:
+                H.set_vertex_attrs(vid, **vattrs)
+        except Exception:
+            pass
+
+    # Edges: copy everything
+    is_dir = igG.is_directed()
+    seen_auto = 0
+    for e in igG.es:
+        src = names[e.source]
+        dst = names[e.target]
+        d = {k: e[k] for k in igG.es.attributes()}
+
+        eid = d.get("eid")
+        if eid is None:
+            seen_auto += 1
+            eid = f"ig::e#{seen_auto}"
+
+        e_directed = bool(d.get("directed", is_dir))
+        w = d.get("weight", d.get("__weight", 1.0))
+
+        try:
+            H.add_vertex(src); H.add_vertex(dst)
+        except Exception:
+            pass
+        try:
+            H.add_edge(src, dst, edge_id=eid, edge_directed=e_directed)
+        except Exception:
+            H.add_edge(src, dst, edge_id=eid, edge_directed=True)
+
+        try:
+            H.edge_weights[eid] = float(w)
+        except Exception:
+            pass
+
+        try:
+            if d:
+                H.set_edge_attrs(eid, **d)
+        except Exception:
+            pass
+
+    return H
+
 
 class IGraphAdapter:
     """
