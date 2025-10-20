@@ -479,120 +479,138 @@ def load_manifest(path: str) -> dict:
     with open(path) as f:
         return json.load(f)
 
+def _nx_collect_reified(nxG,
+                        he_node_flag="is_hyperedge",
+                        he_id_attr="eid",
+                        role_attr="role",
+                        coeff_attr="coeff",
+                        membership_attr="membership_of"):
+    """
+    Scan nxG for reified hyperedges and return:
+      - hyperdefs: list of (eid, directed:bool, head_map:dict, tail_map:dict, he_node_attrs:dict, he_node_id)
+      - membership_edges: set of (u,v,key) tuples to skip when also importing binary edges
+    """
+    import networkx as nx
 
-def from_nx(nxG, manifest) -> "Graph":
+    if nxG.is_multigraph():
+        edge_iter = nxG.edges(keys=True, data=True)
+        def EK(u, v, k): return (u, v, k)
+    else:
+        edge_iter = ((u, v, None, d) for u, v, d in nxG.edges(data=True))
+        def EK(u, v, k): return (u, v, None)
+
+    # find HE nodes
+    he_nodes = {n for n, d in nxG.nodes(data=True) if (d or {}).get(he_node_flag, False)}
+    if not he_nodes:
+        return [], set()
+
+    hyperdefs = []
+    membership_edges = set()
+
+    for he in he_nodes:
+        nd = dict(nxG.nodes[he])
+        eid = nd.get(he_id_attr, f"he::{he}")
+
+        head_map, tail_map = {}, {}
+        saw_head = False; saw_tail = False; saw_member = False
+
+        # collect all incident edges around the HE node
+        for u, v, key, d in edge_iter:
+            if u != he and v != he:
+                continue
+            membership_edges.add(EK(u, v, key))
+            other = v if u == he else u
+            role = (d or {}).get(role_attr, None)
+            coeff = (d or {}).get(coeff_attr, d.get("__value", 1.0))
+            try:
+                coeff = float(coeff)
+            except Exception:
+                coeff = 1.0
+
+            if role == "head":
+                head_map[other] = coeff; saw_head = True
+            elif role == "tail":
+                tail_map[other] = coeff; saw_tail = True
+            else:
+                # treat as undirected membership
+                head_map[other] = coeff
+                tail_map[other] = coeff
+                saw_member = True
+
+        # decide directedness
+        if saw_head or saw_tail:
+            directed = True
+        else:
+            directed = False  # only 'member' edges
+
+        hyperdefs.append((eid, directed, head_map, tail_map, nd, he))
+
+    return hyperdefs, membership_edges
+
+def from_nx(nxG, manifest, *,
+            hyperedge="none",
+            he_node_flag="is_hyperedge",
+            he_id_attr="eid",
+            role_attr="role",
+            coeff_attr="coeff",
+            membership_attr="membership_of"):
     """
     Reconstruct a Graph from NetworkX graph + manifest.
 
-    Parameters
-    ----------
-    nxG : networkx.Graph | networkx.MultiGraph | networkx.DiGraph | networkx.MultiDiGraph
-        NetworkX graph (not authoritative for structure; manifest is the SSOT).
-    manifest : dict
-        Dictionary produced by to_nx(). Expected keys:
-          - "edges": {edge_id: (u, v, "regular") | (head_map, tail_map, "hyper")}
-          - "weights": {edge_id: float}
-          - "layers": {layer_id: [edge_id, ...]}
-          - "vertex_attrs": {vertex_id: {attr: value}}
-          - "edge_attrs": {edge_id: {attr: value}}
-          - "layer_weights": {layer_id: {edge_id: float}}  (optional)
-
-    Returns
-    -------
-    Graph
-        Fully reconstructed Graph with hyperedges, layers, weights, and attributes.
+    hyperedge: "none" (default) | "reified"
+      When "reified", also detect hyperedge nodes in nxG and rebuild true hyperedges
+      (in addition to those specified in the manifest).
     """
     from ..core.graph import Graph
-
     H = Graph()
 
-    # --- vertices (best-effort from nxG nodes; edges added below will ensure presence too)
+    # --- vertices from nxG (best-effort; edges will ensure presence too)
     try:
         for v in nxG.nodes():
-            try:
-                H.add_vertex(v)
-            except Exception:
-                pass
+            try: H.add_vertex(v)
+            except Exception: pass
     except Exception:
         pass
 
-    # --- edges (use manifest, not nxG — manifest is the SSOT)
-    edges_def = manifest.get("edges", {})
+    # --- edges/hyperedges from manifest (SSOT)
+    edges_def = manifest.get("edges", {}) or {}
     for eid, defn in edges_def.items():
         kind = defn[-1]
-
         if kind == "regular":
             u, v = defn[0], defn[1]
-            # ensure vertices exist
-            try:
-                H.add_vertex(u)
-            except Exception:
-                pass
-            try:
-                H.add_vertex(v)
-            except Exception:
-                pass
-            # add edge
-            try:
-                is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
-                H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
-            except Exception:
-                pass
+            for x in (u, v):
+                try: H.add_vertex(x)
+                except Exception: pass
+            is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
+            try: H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
+            except Exception: pass
 
         elif kind == "hyper":
             head_map, tail_map = defn[0], defn[1]
             if isinstance(head_map, dict) and isinstance(tail_map, dict):
-                head = list(head_map.keys())
-                tail = list(tail_map.keys())
-                # ensure vertices exist
-                for u in head:
-                    try:
-                        H.add_vertex(u)
-                    except Exception:
-                        pass
-                for v in tail:
-                    try:
-                        H.add_vertex(v)
-                    except Exception:
-                        pass
-                # add hyperedge
+                head = list(head_map.keys()); tail = list(tail_map.keys())
+                for x in head + tail:
+                    try: H.add_vertex(x)
+                    except Exception: pass
+                is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
                 try:
-                    is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
                     H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=is_dir)
                 except Exception:
-                    # last-resort: degrade to binary if backend lacks hyperedge support
                     if len(head) == 1 and len(tail) == 1:
-                        try:
-                            H.add_edge(head[0], tail[0], edge_id=eid, edge_directed=True)
-                        except Exception:
-                            pass
-                # restore endpoint coefficients if possible
-                try:
-                    existing_src = H.get_edge_attribute(eid, "__source_attr") or {}
-                except Exception:
-                    existing_src = {}
-                try:
-                    existing_tgt = H.get_edge_attribute(eid, "__target_attr") or {}
-                except Exception:
-                    existing_tgt = {}
-
+                        try: H.add_edge(head[0], tail[0], edge_id=eid, edge_directed=True)
+                        except Exception: pass
+                # restore endpoint coefficients into private maps
+                try: existing_src = H.get_edge_attribute(eid, "__source_attr") or {}
+                except Exception: existing_src = {}
+                try: existing_tgt = H.get_edge_attribute(eid, "__target_attr") or {}
+                except Exception: existing_tgt = {}
                 src_map = {u: {"__value": float(c)} for u, c in (head_map or {}).items()}
                 tgt_map = {v: {"__value": float(c)} for v, c in (tail_map or {}).items()}
-
-                # merge and write in one go
-                merged_src = {**existing_src, **src_map}
-                merged_tgt = {**existing_tgt, **tgt_map}
-                H.set_edge_attrs(eid, __source_attr=merged_src, __target_attr=merged_tgt)
-            else:
-                # malformed hyper spec → try to treat as regular
-                try:
-                    u, v = defn[0], defn[1]
-                    is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
-                    H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
-                except Exception:
-                    pass
+                H.set_edge_attrs(eid,
+                                 __source_attr={**existing_src, **src_map},
+                                 __target_attr={**existing_tgt, **tgt_map})
         else:
-            # unknown kind → attempt regular edge
+            # unknown -> try (u,v)
             try:
                 u, v = defn[0], defn[1]
                 is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
@@ -600,74 +618,88 @@ def from_nx(nxG, manifest) -> "Graph":
             except Exception:
                 pass
 
-    # --- global (baseline) edge weights
+    # --- baseline weights
     for eid, w in (manifest.get("weights", {}) or {}).items():
-        try:
-            H.edge_weights[eid] = float(w)
-        except Exception:
-            pass
+        try: H.edge_weights[eid] = float(w)
+        except Exception: pass
 
-    # --- layer memberships (from manifest["layers"])
+    # --- layers and per-layer overrides
     for lid, eids in (manifest.get("layers", {}) or {}).items():
         try:
-            existing_layers = set(H.list_layers(include_default=True))
-        except Exception:
-            existing_layers = set()
-        if lid not in existing_layers:
-            try:
+            if lid not in set(H.list_layers(include_default=True)):
                 H.add_layer(lid)
-            except Exception:
-                pass
+        except Exception:
+            pass
         for eid in eids or []:
-            try:
-                H.add_edge_to_layer(lid, eid)
-            except Exception:
-                pass
+            try: H.add_edge_to_layer(lid, eid)
+            except Exception: pass
 
-    # --- per-layer weight overrides (from manifest["layer_weights"])
-    lw = manifest.get("layer_weights", {})
-    if isinstance(lw, dict):
-        for lid, per_edge in (lw or {}).items():
-            # ensure the layer exists
-            try:
-                existing_layers = set(H.list_layers(include_default=True))
+    for lid, per_edge in (manifest.get("layer_weights", {}) or {}).items():
+        try:
+            if lid not in set(H.list_layers(include_default=True)):
+                H.add_layer(lid)
+        except Exception:
+            pass
+        for eid, w in (per_edge or {}).items():
+            try: H.add_edge_to_layer(lid, eid)
+            except Exception: pass
+            try: H.set_edge_layer_attrs(lid, eid, weight=float(w))
             except Exception:
-                existing_layers = set()
-            if lid not in existing_layers:
-                try:
-                    H.add_layer(lid)
-                except Exception:
-                    pass
-            for eid, w in (per_edge or {}).items():
-                # ensure membership before setting attrs
-                try:
-                    H.add_edge_to_layer(lid, eid)
-                except Exception:
-                    pass
-                # primary API: bulk setter
-                try:
-                    H.set_edge_layer_attrs(lid, eid, weight=float(w))
-                except Exception:
-                    # fallback API: singular setter
-                    try:
-                        H.set_edge_layer_attr(lid, eid, "weight", float(w))
-                    except Exception:
-                        pass
+                try: H.set_edge_layer_attr(lid, eid, "weight", float(w))
+                except Exception: pass
 
-    # --- restore vertex/edge attributes (public-only filtering was already applied on export)
+    # --- restore vertex/edge attrs
     for vid, attrs in (manifest.get("vertex_attrs", {}) or {}).items():
         if attrs:
-            try:
-                H.set_vertex_attrs(vid, **attrs)
-            except Exception:
-                pass
-
+            try: H.set_vertex_attrs(vid, **attrs)
+            except Exception: pass
     for eid, attrs in (manifest.get("edge_attrs", {}) or {}).items():
         if attrs:
-            try:
-                H.set_edge_attrs(eid, **attrs)
-            except Exception:
-                pass
+            try: H.set_edge_attrs(eid, **attrs)
+            except Exception: pass
+
+    # --- OPTIONAL: also import reified hyperedges present in nxG (not in manifest)
+    if hyperedge == "reified":
+        hyperdefs, membership_edges = _nx_collect_reified(
+            nxG,
+            he_node_flag=he_node_flag,
+            he_id_attr=he_id_attr,
+            role_attr=role_attr,
+            coeff_attr=coeff_attr,
+            membership_attr=membership_attr,
+        )
+        existing_eids = set(H.edges()) if hasattr(H, "edges") else set()
+        for eid, directed, head_map, tail_map, he_attrs, he_node in hyperdefs:
+            if eid in existing_eids:
+                continue
+            # ensure vertices
+            for x in set(head_map) | set(tail_map):
+                try: H.add_vertex(x)
+                except Exception: pass
+            # add hyperedge
+            if directed:
+                try:
+                    H.add_hyperedge(head=list(head_map), tail=list(tail_map), edge_id=eid, edge_directed=True)
+                except Exception:
+                    pass
+                H.set_edge_attrs(eid,
+                                 __source_attr={u: {"__value": c} for u, c in head_map.items()},
+                                 __target_attr={v: {"__value": c} for v, c in tail_map.items()})
+            else:
+                members = list(set(head_map) | set(tail_map))
+                try:
+                    H.add_hyperedge(members=members, edge_id=eid, edge_directed=False)
+                except Exception:
+                    pass
+                # keep symmetric coeffs on both sides for compatibility
+                H.set_edge_attrs(eid,
+                                 __source_attr={u: {"__value": head_map[u]} for u in members if u in head_map},
+                                 __target_attr={v: {"__value": tail_map[v]} for v in members if v in tail_map})
+            # copy HE node attrs (minus reification markers)
+            clean_attrs = {k: v for k, v in (he_attrs or {}).items() if k not in {he_node_flag, he_id_attr}}
+            if clean_attrs:
+                try: H.set_edge_attrs(eid, **clean_attrs)
+                except Exception: pass
 
     return H
 
@@ -704,73 +736,102 @@ def to_backend(graph, **kwargs):
     """
     return _export_legacy(graph, **kwargs)
 
-def from_nx_only(nxG):
+def from_nx_only(nxG, *,
+                 hyperedge="none",
+                 he_node_flag="is_hyperedge",
+                 he_id_attr="eid",
+                 role_attr="role",
+                 coeff_attr="coeff",
+                 membership_attr="membership_of"):
     """
-    Build a Graph from a *plain* NetworkX graph object (no manifest).
-    Preserves everything present in nxG: nodes, multiedges, self-loops, and all attributes.
-    Does NOT invent hyperedges/layers unless they were encoded as attributes by the producer.
+    Best-effort import from a bare NetworkX graph (no manifest).
+    hyperedge: "none" (default) | "reified"
+      When "reified", detect hyperedge nodes + membership edges and rebuild true hyperedges.
     """
     from ..core.graph import Graph
+    import networkx as nx
 
     H = Graph()
 
-    # 1) Nodes + node attributes (verbatim)
+    # 1) Nodes + attrs
     for v, d in nxG.nodes(data=True):
-        vid = v  # keep original id (str/int)
-        try:
-            H.add_vertex(vid)
-        except Exception:
-            pass
+        try: H.add_vertex(v)
+        except Exception: pass
         if d:
-            try:
-                H.set_vertex_attrs(vid, **dict(d))  # no filtering
-            except Exception:
-                pass
+            try: H.set_vertex_attrs(v, **dict(d))
+            except Exception: pass
 
-    # 2) Edges (MultiGraph aware) + edge attributes (verbatim)
+    # 2) Optionally collect reified hyperedges
+    membership_edges = set()
+    if hyperedge == "reified":
+        hyperdefs, membership_edges = _nx_collect_reified(
+            nxG,
+            he_node_flag=he_node_flag,
+            he_id_attr=he_id_attr,
+            role_attr=role_attr,
+            coeff_attr=coeff_attr,
+            membership_attr=membership_attr,
+        )
+        for eid, directed, head_map, tail_map, he_attrs, he_node in hyperdefs:
+            for x in set(head_map) | set(tail_map):
+                try: H.add_vertex(x)
+                except Exception: pass
+            if directed:
+                try:
+                    H.add_hyperedge(head=list(head_map), tail=list(tail_map), edge_id=eid, edge_directed=True)
+                except Exception: pass
+                H.set_edge_attrs(eid,
+                                 __source_attr={u: {"__value": c} for u, c in head_map.items()},
+                                 __target_attr={v: {"__value": c} for v, c in tail_map.items()})
+            else:
+                members = list(set(head_map) | set(tail_map))
+                try:
+                    H.add_hyperedge(members=members, edge_id=eid, edge_directed=False)
+                except Exception: pass
+                H.set_edge_attrs(eid,
+                                 __source_attr={u: {"__value": head_map.get(u, 1.0)} for u in members},
+                                 __target_attr={v: {"__value": tail_map.get(v, 1.0)} for v in members})
+            # copy HE node attrs (minus markers)
+            clean_attrs = {k: v for k, v in (he_attrs or {}).items() if k not in {he_node_flag, he_id_attr}}
+            if clean_attrs:
+                try: H.set_edge_attrs(eid, **clean_attrs)
+                except Exception: pass
+
+    # 3) Binary edges (skip membership edges if we consumed them above)
     is_multi = nxG.is_multigraph()
     is_dir   = nxG.is_directed()
-
     if is_multi:
         iterator = nxG.edges(keys=True, data=True)
+        def EK(u,v,k): return (u,v,k)
     else:
         iterator = ((u, v, None, d) for u, v, d in nxG.edges(data=True))
+        def EK(u,v,k): return (u,v,None)
 
     seen_auto = 0
     for u, v, key, d in iterator:
-        # Edge ID preference: attribute 'eid' > MultiGraph key > auto
+        if hyperedge == "reified" and EK(u, v, key) in membership_edges:
+            continue  # this edge was a membership edge; skip importing as binary
+
         eid = (d.get("eid") if isinstance(d, dict) else None) or (key if key is not None else None)
         if eid is None:
             seen_auto += 1
             eid = f"nx::e#{seen_auto}"
 
-        # Directedness: graph type unless explicitly overridden per edge
         e_directed = bool(d.get("directed", is_dir))
-
-        # Weight: keep both the *weight attribute* and the core weight
         w = d.get("weight", d.get("__weight", 1.0))
-        try:
-            H.add_vertex(u); H.add_vertex(v)
+
+        try: H.add_vertex(u); H.add_vertex(v)
+        except Exception: pass
+        try: H.add_edge(u, v, edge_id=eid, edge_directed=e_directed)
         except Exception:
-            pass
-        try:
-            H.add_edge(u, v, edge_id=eid, edge_directed=e_directed)
-        except Exception:
-            # last-resort: if API wants different kwargs
             H.add_edge(u, v, edge_id=eid, edge_directed=True)
 
-        # store the numeric weight in the canonical map
-        try:
-            H.edge_weights[eid] = float(w)
-        except Exception:
-            pass
+        try: H.edge_weights[eid] = float(w)
+        except Exception: pass
 
-        # Copy *all* edge attributes verbatim (including 'weight', '__*', etc.)
         if isinstance(d, dict) and d:
-            try:
-                H.set_edge_attrs(eid, **dict(d))
-            except Exception:
-                pass
+            try: H.set_edge_attrs(eid, **dict(d))
+            except Exception: pass
 
     return H
 
