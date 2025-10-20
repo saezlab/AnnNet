@@ -173,7 +173,8 @@ def _endpoint_coeff_map(edge_attrs: dict, key: str, vertices: set) -> dict:
 
 
 def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
-          layer=None, layers=None, public_only=False):
+          layer=None, layers=None, public_only=False,
+          reify_prefix="he::"):
     """
     Export Graph → (networkx.Graph, manifest).
     Manifest preserves hyperedges with per-endpoint coefficients, layers,
@@ -183,11 +184,11 @@ def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
     ----------
     graph : Graph
     directed : bool
-    hyperedge_mode : {"skip", "expand"}
+    hyperedge_mode : {"skip", "expand", "reify"}
     layer : str, optional
-        Export single layer only.
+        Export single layer only (affects which hyperedges are reified).
     layers : list[str], optional
-        Export union of specified layers.
+        Export union of specified layers (affects which hyperedges are reified).
     public_only : bool
 
     Returns
@@ -195,14 +196,48 @@ def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
     tuple[networkx.Graph, dict]
         (nxG, manifest)
     """
+    # ----------------- helpers -----------------
+    def _public(d):
+        if not d: return {}
+        return {k: v for k, v in d.items() if not str(k).startswith("__")}
+
+    def _edge_payload(eid):
+        data = _public(edge_attrs.get(eid, {}))
+        w = weights_map.get(eid)
+        if w is not None:
+            # keep the usual 'weight' for NX algorithms
+            data["weight"] = float(w)
+        # stable ID for MultiGraph keys is already EID; keeping attribute too helps debugging
+        data.setdefault("eid", eid)
+        return data
+
+    # Figure out which hyperedges should be included if user filters by layer(s)
+    requested_lids = set()
+    if layer is not None:
+        requested_lids.update([layer] if isinstance(layer, str) else list(layer))
+    if layers is not None:
+        requested_lids.update(list(layers))
+
+    selected_eids = None
+    if requested_lids:
+        selected_eids = set()
+        for lid in requested_lids:
+            try:
+                for eid in graph.get_layer_edges(lid):
+                    selected_eids.add(eid)
+            except Exception:
+                pass
+
+    # ----------------- base NX graph (binary edges only) -----------------
+    # For "reify", we want to add membership edges ourselves, so start with hyperedges skipped.
     nxG = _export_legacy(
         graph,
         directed=directed,
-        skip_hyperedges=(hyperedge_mode == "skip"),
-        public_only=public_only
+        skip_hyperedges=(hyperedge_mode in ("skip", "reify")),
+        public_only=public_only,
     )
 
-    # -------- vertex & edge attributes (respect public_only) ----------
+    # ----------------- vertex & edge attributes for manifest -----------------
     vertex_attrs = {}
     for v in graph.vertices():
         v_rows = graph.vertex_attributes.filter(
@@ -226,10 +261,10 @@ def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
             attrs = {k: v for k, v in attrs.items() if not str(k).startswith("__")}
         edge_attrs[eid] = _attrs_to_dict(attrs)
 
-    # -------- edge topology snapshot (regular vs hyper) ----------
+    # ----------------- edge topology snapshot (regular vs hyper) -----------------
     manifest_edges = {}
     for eidx in range(graph.number_of_edges()):
-        S, T = graph.get_edge(eidx)
+        S, T = graph.get_edge(eidx)  # endpoint sets
         eid = graph.idx_to_edge[eidx]
         is_hyper = (graph.edge_kind.get(eid) == "hyper")
 
@@ -254,57 +289,41 @@ def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
 
     # Baseline (global) edge weights
     try:
-        weights = {eid: float(w) for eid, w in getattr(graph, "edge_weights", {}).items()}
+        weights_map = {eid: float(w) for eid, w in getattr(graph, "edge_weights", {}).items()}
     except Exception:
-        weights = {}
+        weights_map = {}
 
-    # -------- robust LAYER discovery + per-layer weights ----------
+    # ----------------- robust LAYER discovery + per-layer weights -----------------
     def _rows_from_table(t):
-        """Return list[dict] from common table backends: Polars, pandas, Arrow, duckdb, list-of-dicts, dict-of-lists."""
         if t is None:
             return []
-        # Polars-like
         if hasattr(t, "to_dicts"):
-            try:
-                return list(t.to_dicts())
-            except Exception:
-                pass
-        # pandas DataFrame
+            try: return list(t.to_dicts())
+            except Exception: pass
         if hasattr(t, "to_dict"):
             try:
                 recs = t.to_dict(orient="records")
-                if isinstance(recs, list):
-                    return recs
-            except Exception:
-                pass
-        # pyarrow Table
+                if isinstance(recs, list): return recs
+            except Exception: pass
         if hasattr(t, "to_pylist"):
-            try:
-                return list(t.to_pylist())
-            except Exception:
-                pass
-        # duckdb Relation
+            try: return list(t.to_pylist())
+            except Exception: pass
         if hasattr(t, "fetchall") and hasattr(t, "columns"):
             try:
                 cols = list(t.columns)
                 return [dict(zip(cols, row)) for row in t.fetchall()]
-            except Exception:
-                pass
-        # dict-of-lists
+            except Exception: pass
         if isinstance(t, dict):
             keys = list(t.keys())
             if keys and isinstance(t[keys[0]], list):
                 n = len(t[keys[0]])
                 return [{k: t[k][i] for k in keys} for i in range(n)]
-        # list-of-dicts
         if isinstance(t, list) and t and isinstance(t[0], dict):
             return list(t)
         return []
 
-    # All exported edge ids (for probes)
     all_eids = list(manifest_edges.keys())
 
-    # 1) candidate layer IDs from every source
     lids = set()
     try:
         lids.update(list(graph.list_layers(include_default=True)))
@@ -322,20 +341,18 @@ def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
         if lid is not None:
             lids.add(lid)
 
-    le = getattr(graph, "layer_edges", None)  # {layer: [eid,...]}
+    le = getattr(graph, "layer_edges", None)
     if isinstance(le, dict):
         lids.update(le.keys())
 
-    etl = getattr(graph, "edge_to_layers", None)  # {eid: [layer,...]}
+    etl = getattr(graph, "edge_to_layers", None)
     if isinstance(etl, dict):
         for arr in etl.values():
             for lid in (arr or []):
                 lids.add(lid)
 
-    # 2) build layer -> edges from all sources
     layers_section = {lid: [] for lid in lids}
 
-    # native API (best signal)
     for lid in list(lids):
         try:
             eids = list(graph.get_layer_edges(lid))
@@ -347,7 +364,6 @@ def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
                 if e not in seen:
                     layers_section[lid].append(e); seen.add(e)
 
-    # table-backed
     if isinstance(t, dict):
         for lid, mapping in t.items():
             if isinstance(mapping, dict):
@@ -366,7 +382,6 @@ def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
             if eid not in arr:
                 arr.append(eid)
 
-    # internal maps
     if isinstance(le, dict):
         for lid, eids in le.items():
             arr = layers_section.setdefault(lid, [])
@@ -381,7 +396,7 @@ def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
                 if eid not in arr:
                     arr.append(eid)
 
-    # 3) per-edge probe + per-layer weights (also infers membership)
+    #  per-edge probe for layer weights
     layer_weights = {}
     candidate_lids = set(layers_section.keys()) or lids
     if hasattr(graph, "get_edge_layer_attr"):
@@ -405,27 +420,80 @@ def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
     # Drop empties
     layers_section = {lid: eids for lid, eids in layers_section.items() if eids}
 
-    # Respect layer/layers filters strictly
-    if layer is not None or layers is not None:
-        req = set()
-        if layer is not None:
-            req.update([layer] if isinstance(layer, str) else list(layer))
-        if layers is not None:
-            req.update(list(layers))
-        req_norm = {str(x) for x in req}
+    # Respect layer/layers filters for the manifest sections
+    if requested_lids:
+        req_norm = {str(x) for x in requested_lids}
         layers_section = {lid: eids for lid, eids in layers_section.items() if str(lid) in req_norm}
         layer_weights  = {lid: m    for lid, m    in layer_weights.items()    if str(lid) in req_norm}
 
-    # -------- manifest ----------
+    # ----------------- REIFY: add HE nodes + membership edges to nxG -----------------
+    if hyperedge_mode == "reify":
+        import networkx as nx
+        # Build fast lookup of allowed hyperedge IDs if filtering by layers
+        allowed = None
+        if requested_lids:
+            allowed = set()
+            for lid, eids in layers_section.items():
+                for eid in eids:
+                    allowed.add(eid)
+
+        # choose container semantics
+        is_multi_di = isinstance(nxG, nx.MultiDiGraph)
+
+        for eid, spec in manifest_edges.items():
+            if spec[-1] != "hyper":
+                continue
+            if allowed is not None and eid not in allowed:
+                continue
+
+            head_map, tail_map = spec[0], spec[1]
+            he_id = f"{reify_prefix}{eid}"
+            # add HE node with public attrs
+            he_attrs = _public(edge_attrs.get(eid, {}))
+            he_attrs.update({
+                "is_hyperedge": True,
+                "eid": eid,
+                "directed": bool(_is_directed_eid(graph, eid)),
+                "hyper_weight": float(weights_map.get(eid, 1.0)),
+            })
+            if he_id not in nxG:
+                nxG.add_node(he_id, **he_attrs)
+
+            if _is_directed_eid(graph, eid):
+                # tail -> HE
+                for u, coeff in (tail_map or {}).items():
+                    nxG.add_edge(u, he_id, key=f"m::{eid}::{u}::tail",
+                                 role="tail", coeff=float(coeff), membership_of=eid)
+                # HE -> head
+                for v, coeff in (head_map or {}).items():
+                    nxG.add_edge(he_id, v, key=f"m::{eid}::{v}::head",
+                                 role="head", coeff=float(coeff), membership_of=eid)
+            else:
+                members = {}
+                members.update(tail_map or {}); members.update(head_map or {})
+                if is_multi_di:
+                    # add both directions to simulate undirected membership
+                    for u, coeff in members.items():
+                        base = f"m::{eid}::{u}::m"
+                        nxG.add_edge(u, he_id, key=base+"::fwd",
+                                     role="member", coeff=float(coeff), membership_of=eid)
+                        nxG.add_edge(he_id, u, key=base+"::rev",
+                                     role="member", coeff=float(coeff), membership_of=eid)
+                else:
+                    for u, coeff in members.items():
+                        nxG.add_edge(u, he_id, key=f"m::{eid}::{u}::m",
+                                     role="member", coeff=float(coeff), membership_of=eid)
+
+    # ----------------- manifest (unchanged) -----------------
     manifest = {
         "edges": manifest_edges,
-        "weights": weights,
+        "weights": weights_map,
         "layers": layers_section,
         "vertex_attrs": vertex_attrs,
         "edge_attrs": edge_attrs,
         "layer_weights": layer_weights,  # always present (may be {})
         "edge_directed": {eid: bool(_is_directed_eid(graph, eid)) for eid in all_eids},
-        "manifest_version": 1,    
+        "manifest_version": 1,
     }
 
     return nxG, manifest
