@@ -2,10 +2,6 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-# --- local fallbacks for helpers used in JSON export ---
-# ------------------------------------------------------------
-# Robust helpers (handles dict | list | list-of-dicts | JSON)
-# ------------------------------------------------------------
 
 def _is_directed_eid(graph, eid):
     try:
