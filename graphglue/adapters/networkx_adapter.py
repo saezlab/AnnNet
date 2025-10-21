@@ -9,6 +9,7 @@ except ModuleNotFoundError as e:
 from typing import Any
 from enum import Enum
 import json
+from ._utils import _is_directed_eid, _endpoint_coeff_map
 
 
 def _serialize_value(v: Any) -> Any:
@@ -29,13 +30,6 @@ def _attrs_to_dict(attrs_dict: dict) -> dict:
         else:
             out[k] = v
     return out
-
-
-def _is_directed_eid(graph: "Graph", eid: str) -> bool:
-    kind = graph.edge_kind.get(eid)
-    if kind == "hyper":
-        return bool(graph.hyperedge_definitions[eid].get("directed", False))
-    return bool(graph.edge_directed.get(eid, graph.directed))
 
 
 def _export_legacy(graph: "Graph", *, directed: bool = True,
@@ -161,15 +155,6 @@ def _coeff_from_obj(obj) -> float:
         except Exception:
             return 1.0
     return 1.0
-
-
-def _endpoint_coeff_map(edge_attrs: dict, key: str, vertices: set) -> dict:
-    out = {}
-    side = edge_attrs.get(key, {})
-    for v in vertices:
-        val = side.get(v, {})
-        out[v] = _coeff_from_obj(val)
-    return out
 
 
 def to_nx(graph: "Graph", directed=True, hyperedge_mode="skip",
@@ -621,7 +606,8 @@ def from_nx(nxG, manifest, *,
             he_id_attr="eid",
             role_attr="role",
             coeff_attr="coeff",
-            membership_attr="membership_of"):
+            membership_attr="membership_of",
+            reify_prefix="he::") -> "Graph":
     """
     Reconstruct a Graph from NetworkX graph + manifest.
 
@@ -634,9 +620,17 @@ def from_nx(nxG, manifest, *,
 
     # --- vertices from nxG (best-effort; edges will ensure presence too)
     try:
-        for v in nxG.nodes():
-            try: H.add_vertex(v)
-            except Exception: pass
+        for v, d in nxG.nodes(data=True):
+            # When importing a reified file, do NOT add hyperedge nodes as real vertices
+            if hyperedge == "reified":
+                if bool((d or {}).get(he_node_flag, False)):
+                    continue
+                if isinstance(v, str) and v.startswith(reify_prefix):
+                    continue
+            try:
+                H.add_vertex(v)
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -656,27 +650,41 @@ def from_nx(nxG, manifest, *,
         elif kind == "hyper":
             head_map, tail_map = defn[0], defn[1]
             if isinstance(head_map, dict) and isinstance(tail_map, dict):
-                head = list(head_map.keys()); tail = list(tail_map.keys())
-                for x in head + tail:
-                    try: H.add_vertex(x)
-                    except Exception: pass
+                head = list(head_map.keys())
+                tail = list(tail_map.keys())
                 is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
+
                 try:
-                    H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=is_dir)
+                    if is_dir:
+                        H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=True)
+                    else:
+                        members = list(set(head) | set(tail))
+                        H.add_hyperedge(members=members, edge_id=eid, edge_directed=False)
                 except Exception:
+                    # last-resort: degrade to binary only when truly 1→1
                     if len(head) == 1 and len(tail) == 1:
-                        try: H.add_edge(head[0], tail[0], edge_id=eid, edge_directed=True)
-                        except Exception: pass
-                # restore endpoint coefficients into private maps
-                try: existing_src = H.get_edge_attribute(eid, "__source_attr") or {}
-                except Exception: existing_src = {}
-                try: existing_tgt = H.get_edge_attribute(eid, "__target_attr") or {}
-                except Exception: existing_tgt = {}
+                        try:
+                            H.add_edge(head[0], tail[0], edge_id=eid, edge_directed=True)
+                        except Exception:
+                            pass
+                    # otherwise, DO NOT drop the edge silently
+                    # (optional) you can log/stash a note here
+
+                # restore endpoint coefficients (works for both directed & undirected)
+                try:
+                    existing_src = H.get_edge_attribute(eid, "__source_attr") or {}
+                except Exception:
+                    existing_src = {}
+                try:
+                    existing_tgt = H.get_edge_attribute(eid, "__target_attr") or {}
+                except Exception:
+                    existing_tgt = {}
+
                 src_map = {u: {"__value": float(c)} for u, c in (head_map or {}).items()}
                 tgt_map = {v: {"__value": float(c)} for v, c in (tail_map or {}).items()}
-                H.set_edge_attrs(eid,
-                                 __source_attr={**existing_src, **src_map},
-                                 __target_attr={**existing_tgt, **tgt_map})
+                merged_src = {**existing_src, **src_map}
+                merged_tgt = {**existing_tgt, **tgt_map}
+                H.set_edge_attrs(eid, __source_attr=merged_src, __target_attr=merged_tgt)
         else:
             # unknown -> try (u,v)
             try:
@@ -810,7 +818,8 @@ def from_nx_only(nxG, *,
                  he_id_attr="eid",
                  role_attr="role",
                  coeff_attr="coeff",
-                 membership_attr="membership_of"):
+                 membership_attr="membership_of",
+                 reify_prefix="he::"):
     """
     Best-effort import from a bare NetworkX graph (no manifest).
     hyperedge: "none" (default) | "reified"
@@ -821,13 +830,22 @@ def from_nx_only(nxG, *,
 
     H = Graph()
 
-    # 1) Nodes + attrs
+    # 1) Nodes + node attributes (verbatim, but skip HE nodes if reified)
     for v, d in nxG.nodes(data=True):
-        try: H.add_vertex(v)
-        except Exception: pass
+        if hyperedge == "reified":
+            if bool((d or {}).get(he_node_flag, False)):
+                continue
+            if isinstance(v, str) and str(v).startswith(reify_prefix):
+                continue
+        try:
+            H.add_vertex(v)
+        except Exception:
+            pass
         if d:
-            try: H.set_vertex_attrs(v, **dict(d))
-            except Exception: pass
+            try:
+                H.set_vertex_attrs(v, **dict(d))
+            except Exception:
+                pass
 
     # 2) Optionally collect reified hyperedges
     membership_edges = set()

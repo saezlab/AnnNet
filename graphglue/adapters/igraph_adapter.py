@@ -9,6 +9,8 @@ except ModuleNotFoundError as e:
 from typing import Any
 from enum import Enum
 import json
+from ._utils import _is_directed_eid, _endpoint_coeff_map
+
 
 def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
     """
@@ -146,13 +148,6 @@ def _attrs_to_dict(attrs_dict: dict) -> dict:
         else:
             out[k] = v
     return out
-
-
-def _is_directed_eid(graph: "Graph", eid: str) -> bool:
-    kind = graph.edge_kind.get(eid)
-    if kind == "hyper":
-        return bool(graph.hyperedge_definitions[eid].get("directed", False))
-    return bool(graph.edge_directed.get(eid, graph.directed))
 
 
 def _export_legacy(graph: "Graph", *, directed: bool = True,
@@ -396,15 +391,6 @@ def _coeff_from_obj(obj) -> float:
         except Exception:
             return 1.0
     return 1.0
-
-
-def _endpoint_coeff_map(edge_attrs: dict, key: str, vertices: set) -> dict:
-    out = {}
-    side = edge_attrs.get(key, {})
-    for v in vertices:
-        val = side.get(v, {})
-        out[v] = _coeff_from_obj(val)
-    return out
 
 
 def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip", 
@@ -790,12 +776,10 @@ def _ig_collect_reified(igG,
 
 
 def from_igraph(igG, manifest, *,
-                hyperedge="none",
-                he_node_flag="is_hyperedge",
-                he_id_attr="eid",
-                role_attr="role",
-                coeff_attr="coeff",
-                membership_attr="membership_of") -> "Graph":
+                hyperedge: str = "none",
+                he_node_flag: str = "is_hyperedge",
+                he_id_attr: str = "eid",
+                reify_prefix: str = "he::") -> "Graph":
     """
     Reconstruct a Graph from igraph.Graph + manifest.
 
@@ -807,21 +791,144 @@ def from_igraph(igG, manifest, *,
 
     H = Graph()
 
-    # --- vertices from igG (names preferred)
-    names = igG.vs["name"] if "name" in igG.vs.attributes() else list(range(igG.vcount()))
-    for v in names:
-        try: H.add_vertex(v)
-        except Exception: pass
+    # -------- helper: scan reified HE nodes in igG (used only if hyperedge == "reified") --------
+    def _ig_collect_reified(ig):
+        """
+        Return list of tuples:
+          (eid, directed, head_map, tail_map, he_attrs, he_index)
+        where head_map/tail_map are {vertex_id: coeff}.
+        """
+        out = []
+        # names for external vertex IDs
+        names = ig.vs["name"] if "name" in ig.vs.attributes() else list(range(ig.vcount()))
+        name_of = lambda idx: names[idx]
 
-    # --- edges/hyperedges from manifest (SSOT)
+        # identify HE nodes
+        he_indices = []
+        for i in range(ig.vcount()):
+            is_he = False
+            try:
+                is_he = bool(ig.vs[i][he_node_flag])
+            except Exception:
+                is_he = False
+            if not is_he:
+                nm = name_of(i)
+                if isinstance(nm, str) and nm.startswith(reify_prefix):
+                    is_he = True
+            if is_he:
+                he_indices.append(i)
+
+        # membership edge attrs
+        edge_attr_names = set(ig.es.attributes())
+        role_attr = "role"
+        coeff_attr = "coeff"
+        membership_attr = "membership_of"
+
+        for hi in he_indices:
+            # hyperedge id from node attr or fallback from name sans prefix
+            he_name = name_of(hi)
+            eid = None
+            try:
+                eid = ig.vs[hi][he_id_attr]
+            except Exception:
+                eid = None
+            if not eid and isinstance(he_name, str) and he_name.startswith(reify_prefix):
+                eid = he_name[len(reify_prefix):]
+            if not eid:
+                eid = f"he::{hi}"
+
+            head_map, tail_map = {}, {}
+            saw_head = saw_tail = False
+
+            # all incident edges to this HE node
+            try:
+                inc = ig.incident(hi, mode="ALL")
+            except Exception:
+                inc = []
+            for eidx in inc:
+                e = ig.es[eidx]
+                s, t = e.tuple
+                other = t if s == hi else s
+                v = name_of(other)
+
+                # role / coeff
+                role = None
+                if "role" in edge_attr_names:
+                    try:
+                        role = e["role"]
+                    except Exception:
+                        role = None
+                coeff = 1.0
+                if "coeff" in edge_attr_names:
+                    try:
+                        coeff = float(e["coeff"])
+                    except Exception:
+                        coeff = 1.0
+
+                if role == "head":
+                    head_map[v] = coeff; saw_head = True
+                elif role == "tail":
+                    tail_map[v] = coeff; saw_tail = True
+                else:
+                    # undirected membership → symmetric
+                    head_map[v] = head_map.get(v, coeff)
+                    tail_map[v] = tail_map.get(v, coeff)
+
+            directed = bool(saw_head or saw_tail)
+
+            # copy HE-node attrs (minus markers)
+            he_attrs = {}
+            for k in ig.vs.attributes():
+                if k in {he_node_flag, he_id_attr}:
+                    continue
+                try:
+                    he_attrs[k] = ig.vs[hi][k]
+                except Exception:
+                    pass
+
+            out.append((eid, directed, head_map, tail_map, he_attrs, hi))
+
+        return out
+
+    # -------- vertices (from manifest = SSOT) --------
+    # Collect all vertex IDs referenced by manifest (attrs + edges)
+    vertex_ids = set()
+
+    for vid in (manifest.get("vertex_attrs", {}) or {}).keys():
+        vertex_ids.add(vid)
+
     edges_def = manifest.get("edges", {}) or {}
     for eid, defn in edges_def.items():
         kind = defn[-1]
         if kind == "regular":
             u, v = defn[0], defn[1]
+            vertex_ids.add(u); vertex_ids.add(v)
+        elif kind == "hyper":
+            head_map, tail_map = defn[0], defn[1]
+            if isinstance(head_map, dict):
+                for u in head_map.keys():
+                    vertex_ids.add(u)
+            if isinstance(tail_map, dict):
+                for v in tail_map.keys():
+                    vertex_ids.add(v)
+
+    # Add vertices now (no he:: nodes will be included since they aren't in the manifest)
+    for v in vertex_ids:
+        try:
+            H.add_vertex(v)
+        except Exception:
+            pass
+
+    # -------- edges/hyperedges (from manifest = SSOT) --------
+    for eid, defn in edges_def.items():
+        kind = defn[-1]
+        if kind == "regular":
+            u, v = defn[0], defn[1]
             is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
-            try: H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
-            except Exception: pass
+            try:
+                H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
+            except Exception:
+                pass
 
         elif kind == "hyper":
             head_map, tail_map = defn[0], defn[1]
@@ -829,34 +936,40 @@ def from_igraph(igG, manifest, *,
                 head = list(head_map.keys()); tail = list(tail_map.keys())
                 is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
                 try:
-                    H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=is_dir)
+                    if is_dir:
+                        H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=True)
+                    else:
+                        members = list(set(head) | set(tail))
+                        H.add_hyperedge(members=members, edge_id=eid, edge_directed=False)
                 except Exception:
+                    # degrade only if truly 1→1
                     if len(head) == 1 and len(tail) == 1:
-                        try: H.add_edge(head[0], tail[0], edge_id=eid, edge_directed=True)
-                        except Exception: pass
-                # endpoint coeffs -> private maps
-                try: existing_src = H.get_edge_attribute(eid, "__source_attr") or {}
-                except Exception: existing_src = {}
-                try: existing_tgt = H.get_edge_attribute(eid, "__target_attr") or {}
-                except Exception: existing_tgt = {}
+                        try:
+                            H.add_edge(head[0], tail[0], edge_id=eid, edge_directed=True)
+                        except Exception:
+                            pass
+
+                # restore endpoint coeffs
+                try:
+                    existing_src = H.get_edge_attribute(eid, "__source_attr") or {}
+                except Exception:
+                    existing_src = {}
+                try:
+                    existing_tgt = H.get_edge_attribute(eid, "__target_attr") or {}
+                except Exception:
+                    existing_tgt = {}
+
                 src_map = {u: {"__value": float(c)} for u, c in (head_map or {}).items()}
                 tgt_map = {v: {"__value": float(c)} for v, c in (tail_map or {}).items()}
                 try:
                     H.set_edge_attrs(eid,
-                                     __source_attr={**existing_src, **src_map},
-                                     __target_attr={**existing_tgt, **tgt_map})
-                except Exception:
-                    pass
-            else:
-                # malformed -> try regular
-                try:
-                    u, v = defn[0], defn[1]
-                    is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
-                    H.add_edge(u, v, edge_id=eid, edge_directed=is_dir)
+                        __source_attr={**existing_src, **src_map},
+                        __target_attr={**existing_tgt, **tgt_map}
+                    )
                 except Exception:
                     pass
         else:
-            # unknown -> try (u,v)
+            # unknown → best-effort binary
             try:
                 u, v = defn[0], defn[1]
                 is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
@@ -864,86 +977,112 @@ def from_igraph(igG, manifest, *,
             except Exception:
                 pass
 
-    # --- baseline weights
+    # -------- baseline weights --------
     for eid, w in (manifest.get("weights", {}) or {}).items():
-        try: H.edge_weights[eid] = float(w)
-        except Exception: pass
+        try:
+            H.edge_weights[eid] = float(w)
+        except Exception:
+            pass
 
-    # --- layers + per-layer overrides
+    # -------- layers + per-layer overrides --------
     for lid, eids in (manifest.get("layers", {}) or {}).items():
         try:
-            if lid not in set(H.list_layers(include_default=True)): H.add_layer(lid)
+            if lid not in set(H.list_layers(include_default=True)):
+                H.add_layer(lid)
         except Exception:
             pass
         for eid in (eids or []):
-            try: H.add_edge_to_layer(lid, eid)
-            except Exception: pass
+            try:
+                H.add_edge_to_layer(lid, eid)
+            except Exception:
+                pass
 
     for lid, per_edge in (manifest.get("layer_weights", {}) or {}).items():
         try:
-            if lid not in set(H.list_layers(include_default=True)): H.add_layer(lid)
+            if lid not in set(H.list_layers(include_default=True)):
+                H.add_layer(lid)
         except Exception:
             pass
         for eid, w in (per_edge or {}).items():
-            try: H.add_edge_to_layer(lid, eid)
-            except Exception: pass
-            try: H.set_edge_layer_attrs(lid, eid, weight=float(w))
+            try:
+                H.add_edge_to_layer(lid, eid)
             except Exception:
-                try: H.set_edge_layer_attr(lid, eid, "weight", float(w))
-                except Exception: pass
+                pass
+            try:
+                H.set_edge_layer_attrs(lid, eid, weight=float(w))
+            except Exception:
+                try:
+                    H.set_edge_layer_attr(lid, eid, "weight", float(w))
+                except Exception:
+                    pass
 
-    # --- restore vertex/edge attrs (you were missing this)
+    # -------- restore vertex/edge attrs --------
     for vid, attrs in (manifest.get("vertex_attrs", {}) or {}).items():
         if attrs:
-            try: H.set_vertex_attrs(vid, **attrs)
-            except Exception: pass
+            try:
+                H.set_vertex_attrs(vid, **attrs)
+            except Exception:
+                pass
+
     for eid, attrs in (manifest.get("edge_attrs", {}) or {}).items():
         if attrs:
-            try: H.set_edge_attrs(eid, **attrs)
-            except Exception: pass
+            try:
+                H.set_edge_attrs(eid, **attrs)
+            except Exception:
+                pass
 
-    # --- OPTIONAL: reified hyperedges present in igG but not in manifest
+    # -------- OPTIONAL: pull in reified HEs from igG not present in manifest --------
     if hyperedge == "reified":
-        hyperdefs, membership_idx = _ig_collect_reified(
-            igG,
-            he_node_flag=he_node_flag,
-            he_id_attr=he_id_attr,
-            role_attr=role_attr,
-            coeff_attr=coeff_attr,
-            membership_attr=membership_attr,
-        )
+        try:
+            hyperdefs = _ig_collect_reified(igG)
+        except Exception:
+            hyperdefs = []
         existing_eids = set(edges_def.keys())
-        names = igG.vs["name"] if "name" in igG.vs.attributes() else list(range(igG.vcount()))
+
         for eid, directed, head_map, tail_map, he_attrs, hi in hyperdefs:
             if eid in existing_eids:
                 continue
             # ensure vertices
             for x in set(head_map) | set(tail_map):
-                try: H.add_vertex(x)
-                except Exception: pass
-            # add hyperedge + endpoint coeffs
-            if directed:
-                try: H.add_hyperedge(head=list(head_map), tail=list(tail_map), edge_id=eid, edge_directed=True)
-                except Exception: pass
                 try:
-                    H.set_edge_attrs(eid,
-                                     __source_attr={u: {"__value": c} for u, c in head_map.items()},
-                                     __target_attr={v: {"__value": c} for v, c in tail_map.items()})
-                except Exception: pass
+                    H.add_vertex(x)
+                except Exception:
+                    pass
+
+            if directed:
+                try:
+                    H.add_hyperedge(head=list(head_map), tail=list(tail_map), edge_id=eid, edge_directed=True)
+                except Exception:
+                    pass
+                try:
+                    H.set_edge_attrs(
+                        eid,
+                        __source_attr={u: {"__value": c} for u, c in head_map.items()},
+                        __target_attr={v: {"__value": c} for v, c in tail_map.items()},
+                    )
+                except Exception:
+                    pass
             else:
                 members = list(set(head_map) | set(tail_map))
-                try: H.add_hyperedge(members=members, edge_id=eid, edge_directed=False)
-                except Exception: pass
                 try:
-                    H.set_edge_attrs(eid,
-                                     __source_attr={u: {"__value": head_map.get(u, 1.0)} for u in members},
-                                     __target_attr={v: {"__value": tail_map.get(v, 1.0)} for v in members})
-                except Exception: pass
+                    H.add_hyperedge(members=members, edge_id=eid, edge_directed=False)
+                except Exception:
+                    pass
+                try:
+                    H.set_edge_attrs(
+                        eid,
+                        __source_attr={u: {"__value": head_map.get(u, 1.0)} for u in members},
+                        __target_attr={v: {"__value": tail_map.get(v, 1.0)} for v in members},
+                    )
+                except Exception:
+                    pass
+
             # copy HE-node attrs minus markers
-            he_node_attrs = {k: igG.vs[hi][k] for k in igG.vs.attributes() if k not in {he_node_flag, he_id_attr}}
-            if he_node_attrs:
-                try: H.set_edge_attrs(eid, **he_node_attrs)
-                except Exception: pass
+            if he_attrs:
+                try:
+                    H.set_edge_attrs(eid, **he_attrs)
+                except Exception:
+                    pass
 
     return H
 
