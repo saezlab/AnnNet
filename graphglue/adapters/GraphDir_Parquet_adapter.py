@@ -2,6 +2,80 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import polars as pl
+import math
+
+def _strip_nulls(d: dict):
+    # remove keys whose value is None or NaN
+    clean = {}
+    for k, v in list(d.items()):
+        if v is None:
+            continue
+        if isinstance(v, float) and math.isnan(v):
+            continue
+        clean[k] = v
+    return clean
+
+
+def _is_directed_eid(graph, eid):
+    """Best-effort directedness probe; default True."""
+    try:
+        return bool(getattr(graph, "edge_directed", {}).get(eid, True))
+    except Exception:
+        pass
+    try:
+        val = graph.get_edge_attribute(eid, "directed")
+        return bool(val) if val is not None else True
+    except Exception:
+        return True
+
+def _coerce_coeff_mapping(val):
+    """
+    Normalize various serialized forms into {vertex: {__value: float}|float}.
+    Accepts dict | list | list-of-dicts | list-of-pairs | JSON string.
+    """
+    if val is None:
+        return {}
+    if isinstance(val, str):
+        try:
+            return _coerce_coeff_mapping(_json.loads(val))
+        except Exception:
+            return {}
+    if isinstance(val, dict):
+        return val
+    if isinstance(val, (list, tuple)):
+        out = {}
+        for item in val:
+            if isinstance(item, dict):
+                if "vertex" in item and "__value" in item:
+                    out[item["vertex"]] = {"__value": item["__value"]}
+                else:
+                    for k, v in item.items():
+                        out[k] = v
+            elif isinstance(item, (list, tuple)) and len(item) == 2:
+                k, v = item
+                out[k] = v
+        return out
+    return {}
+
+def _endpoint_coeff_map(edge_attrs, private_key, endpoint_set):
+    """
+    Return {vertex: float_coeff} for the given endpoint_set.
+    Reads from edge_attrs[private_key] which may be serialized in multiple shapes.
+    Missing endpoints default to 1.0.
+    """
+    raw_mapping = (edge_attrs or {}).get(private_key, {})
+    mapping = _coerce_coeff_mapping(raw_mapping)
+    endpoints = list(endpoint_set or mapping.keys())
+    out = {}
+    for u in endpoints:
+        val = mapping.get(u, 1.0)
+        if isinstance(val, dict):
+            val = val.get("__value", 1.0)
+        try:
+            out[u] = float(val)
+        except Exception:
+            out[u] = 1.0
+    return out
 
 def write_parquet_graphdir(graph: "Graph", path):
     """
@@ -122,20 +196,41 @@ def read_parquet_graphdir(path) -> "Graph":
         kind = rec.pop("kind")
         directed = bool(rec.pop("directed", True))
         w = float(rec.pop("weight", 1.0))
+
         if kind == "binary":
-            u = rec.pop("source"); v = rec.pop("target")
+            # take endpoints and drop hyper-only columns if present
+            u = rec.pop("source", None)
+            v = rec.pop("target", None)
+            # these can exist as NULL because the DF is wide
+            rec.pop("head", None)
+            rec.pop("tail", None)
+            rec.pop("members", None)
+
+            if u is None or v is None:
+                # defensive: reconstruct from any leftover endpoint list (rare)
+                # if nothing found, skip cleanly
+                continue
+
             H.add_edge(u, v, edge_id=eid, edge_directed=directed)
-        else:
-            head = list(rec.pop("head", []) or [])
-            tail = list(rec.pop("tail", []) or [])
-            members = list(rec.pop("members", []) or [])
+
+        else:  # hyper
+            head = rec.pop("head", None) or []
+            tail = rec.pop("tail", None) or []
+            members = rec.pop("members", None) or []
             if directed:
-                H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=True)
+                H.add_hyperedge(head=list(head), tail=list(tail), edge_id=eid, edge_directed=True)
             else:
-                if not members: members = list(set(head) | set(tail))
-                H.add_hyperedge(members=members, edge_id=eid, edge_directed=False)
+                if not members:
+                    members = list(set(head) | set(tail))
+                H.add_hyperedge(members=list(members), edge_id=eid, edge_directed=False)
+
+        # weight
         H.edge_weights[eid] = w
-        if rec: H.set_edge_attrs(eid, **rec)
+
+        # drop schema-nulls before attaching attrs (avoids head=None, etc.)
+        rec = _strip_nulls(rec)
+        if rec:
+            H.set_edge_attrs(eid, **rec)
 
     # layers
     for rec in L.to_dicts():
