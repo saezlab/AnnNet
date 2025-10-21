@@ -2,6 +2,84 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
+# --- local fallbacks for helpers used in JSON export ---
+# ------------------------------------------------------------
+# Robust helpers (handles dict | list | list-of-dicts | JSON)
+# ------------------------------------------------------------
+
+def _is_directed_eid(graph, eid):
+    try:
+        return bool(getattr(graph, "edge_directed", {}).get(eid, True))
+    except Exception:
+        pass
+    try:
+        val = graph.get_edge_attribute(eid, "directed")
+        return bool(val) if val is not None else True
+    except Exception:
+        return True
+
+def _coerce_coeff_mapping(val):
+    """
+    Normalize various serialized forms into {vertex: {__value: float}|float}
+    Accepts:
+      - dict({v: x} or {v: {"__value": x}})
+      - list of pairs [(v,x), ...]
+      - list of dicts [{"vertex": v, "__value": x} | {v: x}, ...]
+      - JSON string of any of the above
+    """
+    if val is None:
+        return {}
+    # JSON string?
+    if isinstance(val, str):
+        try:
+            return _coerce_coeff_mapping(json.loads(val))
+        except Exception:
+            return {}
+    # Already dict?
+    if isinstance(val, dict):
+        return val
+    # List-like
+    if isinstance(val, (list, tuple)):
+        out = {}
+        for item in val:
+            if isinstance(item, dict):
+                if "vertex" in item and "__value" in item:
+                    out[item["vertex"]] = {"__value": item["__value"]}
+                else:
+                    # e.g., {"A": 2.0}
+                    for k, v in item.items():
+                        out[k] = v
+            elif isinstance(item, (list, tuple)) and len(item) == 2:
+                k, v = item
+                out[k] = v
+            else:
+                # ignore unrecognized shapes
+                pass
+        return out
+    # Fallback
+    return {}
+
+def _endpoint_coeff_map(edge_attrs, private_key, endpoint_set):
+    """
+    Return {vertex: float_coeff} for the given endpoint_set.
+    Reads from edge_attrs[private_key] which may be serialized in multiple shapes.
+    Missing endpoints default to 1.0.
+    """
+    raw_mapping = (edge_attrs or {}).get(private_key, {})
+    mapping = _coerce_coeff_mapping(raw_mapping)
+    endpoints = list(endpoint_set or mapping.keys())
+    out = {}
+    for u in endpoints:
+        val = mapping.get(u, 1.0)
+        if isinstance(val, dict):
+            val = val.get("__value", 1.0)
+        try:
+            out[u] = float(val)
+        except Exception:
+            out[u] = 1.0
+    return out
+
+
 def to_json(graph: "Graph", path, *, public_only: bool = False, indent: int = 0):
     """
     Node-link JSON with x-extensions (layers, edge_layers, hyperedges).
