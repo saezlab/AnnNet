@@ -919,6 +919,26 @@ def from_nx_only(nxG, *,
             try: H.set_edge_attrs(eid, **dict(d))
             except Exception: pass
 
+    try:
+        H.edge_weights[eid] = float(w)
+    except Exception:
+        pass
+
+    # Copy edge attributes but drop structural keys that shouldn't live in user attrs
+    if isinstance(d, dict) and d:
+        try:
+            clean = dict(d)
+            # structural keys used for reconstruction only
+            for k in ("eid", "weight", "__weight", "directed"):
+                clean.pop(k, None)
+            if clean:
+                clean = dict(d)
+                for k in ("eid", "id", "key", "weight", "__weight", "directed"):
+                    clean.pop(k, None)
+                if clean:
+                    H.set_edge_attrs(eid, **clean)
+        except Exception:
+            pass
     return H
 
 
