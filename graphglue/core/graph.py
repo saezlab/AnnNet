@@ -46,7 +46,7 @@ class Graph:
 
     # Construction
 
-    def __init__(self, directed=True, n: int = 0, e: int = 0, **kwargs):
+    def __init__(self, directed=None, n: int = 0, e: int = 0, **kwargs):
         """
         Initialize an empty incidence-matrix graph.
 
@@ -77,7 +77,7 @@ class Graph:
         self.idx_to_edge = {}    # column index -> edge_id
         self.edge_definitions = {}  # edge_id -> (source, target, edge_type)
         self.edge_weights = {}   # edge_id -> weight
-        self.edge_directed = {} # edge_id -> bool  (True=directed, False=undirected)
+        self.edge_directed = {} # Per-edge directedness; edge_id -> bool  (None = Mixed, True=directed, False=undirected)
 
         # Sparse incidence matrix
         self._matrix = sp.dok_matrix((0, 0), dtype=np.float32)
@@ -575,6 +575,7 @@ class Graph:
         edge_type="regular",
         propagate="none",
         layer_weight=None,
+        directed=None,
         edge_directed=None,
         **attributes,
     ):
@@ -710,7 +711,12 @@ class Graph:
             edge_id = self._get_next_edge_id()
 
         # determine direction
-        is_dir = self.directed if edge_directed is None else bool(edge_directed)
+        if edge_directed is not None:
+            is_dir = bool(edge_directed)
+        elif self.directed is not None:
+            is_dir = self.directed
+        else:
+            is_dir = True
 
         if edge_id in edge_to_idx:
             # UPDATE existing column
@@ -1323,7 +1329,12 @@ class Graph:
             e_dir = d.get("edge_directed", default_edge_directed)
             edge_id = d.get("edge_id")
 
-            is_dir = self.directed if e_dir is None else bool(e_dir)
+            if e_dir is not None:
+                is_dir = bool(e_dir)
+            elif self.directed is not None:
+                is_dir = self.directed
+            else:
+                is_dir = True
             s_idx = self.entity_to_idx[s]; t_idx = self.entity_to_idx[t]
 
             if edge_id is None:
@@ -3200,8 +3211,9 @@ class Graph:
         -------
         list[str]
         """
+        default_dir = True if self.directed is None else self.directed
         return [eid for eid in self.edge_to_idx.keys() 
-                if self.edge_directed.get(eid, self.directed)]
+                if self.edge_directed.get(eid, default_dir)]
 
     def get_undirected_edges(self):
         """
@@ -3211,8 +3223,9 @@ class Graph:
         -------
         list[str]
         """
+        default_dir = True if self.directed is None else self.directed
         return [eid for eid in self.edge_to_idx.keys() 
-                if not self.edge_directed.get(eid, self.directed)]
+                if not self.edge_directed.get(eid, default_dir)]
 
     def number_of_vertices(self):
         """
@@ -4530,10 +4543,15 @@ class Graph:
                                         "edge_id": eid, "weight": w, "attributes": attrs})
             else:
                 s, t, et = self.edge_definitions[eid]
-                bin_payload.append({"source": s, "target": t, "edge_id": eid,
+                bin_payload.append({
+                                    "source": s, 
+                                    "target": t, 
+                                    "edge_id": eid,
                                     "edge_type": et,
-                                    "edge_directed": self.edge_directed.get(eid, self.directed),
-                                    "weight": w, "attributes": attrs})
+                                    "edge_directed": self.edge_directed.get(eid, True if self.directed is None else self.directed),
+                                    "weight": w, 
+                                    "attributes": attrs
+                                })
 
         if bin_payload:
             g.add_edges_bulk(bin_payload, layer=layer_id)
