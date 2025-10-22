@@ -1,91 +1,323 @@
 from __future__ import annotations
-from typing import Iterable, Tuple, List, Dict, Optional
+from typing import Iterable, List, Dict, Optional, Tuple, Union
+import json
 
-
-def to_sif(graph: "Graph", path, *, relation_attr="relation",
-           expand_hyperedges: bool = False, default_relation="interacts_with"):
-    """
-    Write SIF: 'source<tab>relation<tab>target' per line.
-    - Binary edges: relation from attr or default.
-    - Hyperedges: expand to pairwise if expand_hyperedges=True, else skip.
-    """
-    with open(path, "w", encoding="utf-8") as f:
-        # binary edges
-        for eidx in range(graph.number_of_edges()):
-            eid = graph.idx_to_edge[eidx]
-            if graph.edge_kind.get(eid) == "hyper":
-                continue
-            S, T = graph.get_edge(eidx)
-            members = (S | T)
-            if len(members) == 1:
-                u = next(iter(members)); v = u
-            else:
-                u, v = sorted(members)
-            rel = (graph.get_edge_attribute(eid, relation_attr)
-                   if hasattr(graph, "get_edge_attribute") else None) or default_relation
-            f.write(f"{u}\t{rel}\t{v}\n")
-
-        # hyperedges (optional expansion)
-        if expand_hyperedges:
-            for eidx in range(graph.number_of_edges()):
-                eid = graph.idx_to_edge[eidx]
-                if graph.edge_kind.get(eid) != "hyper":
-                    continue
-                S, T = graph.get_edge(eidx)
-                members = sorted((S | T))
-                for i in range(len(members)):
-                    for j in range(i+1, len(members)):
-                        f.write(f"{members[i]}\thyper_{eid}\t{members[j]}\n")
-
-def from_sif(path: str,
-             *,
-             directed: bool = True,
-             relation_attr: str = "relation",
-             delimiter: Optional[str] = None,
-             comment_prefixes: Tuple[str, ...] = ("#", "!", "//"),
-             encoding: str = "utf-8") -> "Graph":
-    """
-    Load a SIF (Simple Interaction Format) file into a Graph.
-
-    SIF lines:
-      - Classic:   source <sep> relation <sep> target1 [target2 ...] [kv kv ...]
-      - Strict-3:  source <sep> relation <sep> target [kv kv ...]
-
-    Extras after targets:
-      - key=value  -> edge attribute
-      - lone number-> weight
-      - anything   -> appended to 'sif_extra' (list[str]) for zero-loss ingestion.
-
-    Parameters
-    ----------
-    path : str
-    directed : bool
-        If True, create directed edges source→target; else undirected.
-    relation_attr : str
-        Attribute name to store the relation label under.
-    delimiter : Optional[str]
-        If None, auto-detect: prefer tab if present, else split on whitespace.
-    comment_prefixes : tuple[str, ...]
-        Lines starting with any of these are ignored.
-    encoding : str
-
-    Returns
-    -------
-    Graph
-    """
+try:
     from ..core.graph import Graph
+except Exception:
+    try:
+        from graphglue.core.graph import Graph
 
-    H = Graph()
 
-    def _split(line: str) -> List[str]:
-        if delimiter is not None:
-            return [t for t in line.rstrip("\n\r").split(delimiter) if t != ""]
-        # auto: use TAB if present, else whitespace
-        if "\t" in line:
-            return [t for t in line.rstrip("\n\r").split("\t") if t != ""]
-        return line.strip().split()
+def _split_sif_line(line: str, delimiter: Optional[str]) -> List[str]:
+    if delimiter is not None:
+        return [t for t in line.rstrip("\n\r").split(delimiter) if t != ""]
+    if "\t" in line:
+        return [t for t in line.rstrip("\n\r").split("\t") if t != ""]
+    return line.strip().split()
 
-    def _parse_kv(tok: str):
+
+def _safe_vertex_attr_table(graph: "Graph"):
+    va = getattr(graph, "vertex_attributes", None)
+    if va is None:
+        return None
+    return va if hasattr(va, "columns") and hasattr(va, "to_dicts") else None
+
+
+def _get_all_edge_attrs(graph: "Graph", edge_id: str):
+    ea = getattr(graph, "edge_attributes", None)
+    if ea is not None and hasattr(ea, "columns") and hasattr(ea, "filter") and hasattr(ea, "to_dicts"):
+        try:
+            if "edge_id" in ea.columns:
+                rows = ea.filter(ea["edge_id"] == edge_id).to_dicts()
+                if rows:
+                    attrs = dict(rows[0])
+                    attrs.pop("edge_id", None)
+                    return {k: v for k, v in attrs.items() if v is not None}
+        except Exception:
+            pass
+    return {}
+
+
+def _get_edge_weight(graph: "Graph", edge_id: str, default=1.0):
+    ew = getattr(graph, "edge_weights", None)
+    if ew is not None and hasattr(ew, "get"):
+        try:
+            w = ew.get(edge_id, default)
+            return float(w) if w is not None else default
+        except Exception:
+            pass
+    return default
+
+
+def to_sif(
+    graph: "Graph",
+    path: Optional[str] = None,
+    *,
+    relation_attr: str = "relation",
+    default_relation: str = "interacts_with",
+    write_nodes: bool = True,
+    nodes_path: Optional[str] = None,
+    lossless: bool = False,
+    manifest_path: Optional[str] = None,
+) -> Union[None, Tuple[None, Dict]]:
+    """
+    Export graph to SIF format.
+    
+    Standard mode (lossless=False):
+        - Writes only binary edges to SIF file
+        - Hyperedges, weights, attrs, IDs are lost
+        - Returns None
+        
+    Lossless mode (lossless=True):
+        - Writes binary edges to SIF file
+        - Returns (None, manifest) where manifest contains all lost info
+        - Manifest can be saved separately and used with from_sif()
+    
+    Args:
+        path: Output SIF file path (if None, only manifest is returned in lossless mode)
+        relation_attr: Edge attribute key for relation type
+        default_relation: Default relation if attr missing
+        write_nodes: Whether to write .nodes sidecar with vertex attrs
+        nodes_path: Custom path for nodes sidecar (default: path + ".nodes")
+        lossless: If True, return manifest with all non-SIF data
+        manifest_path: If provided, write manifest to this path (only when lossless=True)
+    
+    Returns:
+        None (standard mode) or (None, manifest_dict) (lossless mode)
+    """
+    
+    manifest = {
+        "version": "1.0",
+        "binary_edges": {},
+        "hyperedges": {},
+        "vertex_attrs": {},
+        "edge_metadata": {},
+        "layers": {},
+    } if lossless else None
+    
+    if path:
+        with open(path, "w", encoding="utf-8") as f:
+            edge_defs = getattr(graph, "edge_definitions", {}) or {}
+            
+            for eid, (src, tgt, _etype) in edge_defs.items():
+                if src is None or tgt is None:
+                    continue
+                src_str = str(src).strip()
+                tgt_str = str(tgt).strip()
+                if not src_str or not tgt_str or src_str.lower() == "none" or tgt_str.lower() == "none":
+                    continue
+                
+                all_attrs = _get_all_edge_attrs(graph, eid)
+                rel = all_attrs.get(relation_attr, default_relation)
+                
+                f.write(f"{src_str}\t{rel}\t{tgt_str}\n")
+                
+                if lossless:
+                    directed = getattr(graph, "edge_directed", {}).get(eid, True)
+                    weight = _get_edge_weight(graph, eid, 1.0)
+                    
+                    manifest["binary_edges"][eid] = {
+                        "source": src_str,
+                        "target": tgt_str,
+                        "directed": directed,
+                    }
+                    
+                    if weight != 1.0 or all_attrs or eid != f"edge_{len(manifest['binary_edges'])}":
+                        manifest["edge_metadata"][eid] = {
+                            "weight": weight,
+                            "attrs": all_attrs,
+                        }
+        
+        if write_nodes:
+            sidecar = nodes_path if nodes_path is not None else (str(path) + ".nodes")
+            with open(sidecar, "w", encoding="utf-8") as nf:
+                nf.write("# nodes sidecar for SIF; format: <vertex_id>\tkey=value ...\n")
+                
+                vtable = _safe_vertex_attr_table(graph)
+                vmap: Dict[str, Dict[str, object]] = {}
+                
+                if vtable is not None:
+                    try:
+                        for row in vtable.to_dicts():
+                            vid_raw = row.get("vertex_id", None)
+                            if vid_raw is None:
+                                continue
+                            vid = str(vid_raw).strip()
+                            if not vid or vid.lower() == "none":
+                                continue
+                            attrs = {k: v for k, v in row.items() if k != "vertex_id" and v is not None}
+                            vmap[vid] = attrs
+                    except Exception:
+                        vmap = {}
+                
+                if not vmap:
+                    getter = getattr(graph, "get_vertex_attrs", None)
+                    if callable(getter):
+                        try:
+                            for vid in graph.vertices():
+                                if vid is None:
+                                    continue
+                                svid = str(vid).strip()
+                                if not svid or svid.lower() == "none":
+                                    continue
+                                attrs = getter(vid) or {}
+                                vmap[svid] = {k: v for k, v in attrs.items() if v is not None}
+                        except Exception:
+                            pass
+                
+                for vid in graph.vertices():
+                    if vid is None:
+                        continue
+                    svid = str(vid).strip()
+                    if not svid or svid.lower() == "none":
+                        continue
+                    attrs = vmap.get(svid, {})
+                    if attrs:
+                        kv = "\t".join(f"{k}={v}" for k, v in attrs.items())
+                        nf.write(f"{svid}\t{kv}\n")
+                    else:
+                        nf.write(f"{svid}\n")
+                    
+                    if lossless and attrs:
+                        manifest["vertex_attrs"][svid] = attrs
+    
+    if lossless:
+        edge_kind = getattr(graph, "edge_kind", {}) or {}
+        hyp_defs = getattr(graph, "hyperedge_definitions", {}) or {}
+        
+        for eid, kind in edge_kind.items():
+            if kind != "hyper":
+                continue
+            meta = hyp_defs.get(eid)
+            if not meta:
+                continue
+            
+            directed = bool(meta.get("directed", False))
+            head = list(meta.get("head", [])) if directed else []
+            tail = list(meta.get("tail", [])) if directed else []
+            members = list(meta.get("members", [])) if not directed else []
+            
+            weight = _get_edge_weight(graph, eid, 1.0)
+            attrs = _get_all_edge_attrs(graph, eid)
+            
+            manifest["hyperedges"][eid] = {
+                "directed": directed,
+                "head": head,
+                "tail": tail,
+                "members": members,
+                "weight": weight,
+                "attrs": attrs,
+            }
+        
+        try:
+            layer_ids = list(graph.list_layers(include_default=True))
+            for lid in layer_ids:
+                try:
+                    edge_ids = list(graph.get_layer_edges(lid))
+                    if not edge_ids:
+                        continue
+                    
+                    layer_info = {"edges": edge_ids, "weights": {}}
+                    
+                    for eid in edge_ids:
+                        try:
+                            w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+                            if w is not None:
+                                layer_info["weights"][eid] = float(w)
+                        except Exception:
+                            pass
+                    
+                    manifest["layers"][str(lid)] = layer_info
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        
+        if manifest_path:
+            with open(manifest_path, "w", encoding="utf-8") as mf:
+                json.dump(manifest, mf, indent=2)
+        
+        return None, manifest
+    
+    return None
+
+
+def from_sif(
+    path: str,
+    *,
+    manifest: Optional[Union[str, Dict]] = None,
+    directed: bool = True,
+    relation_attr: str = "relation",
+    default_relation: str = "interacts_with",
+    read_nodes_sidecar: bool = True,
+    nodes_path: Optional[str] = None,
+    encoding: str = "utf-8",
+    delimiter: Optional[str] = None,
+    comment_prefixes: Iterable[str] = ("#", "!"),
+) -> "Graph":
+    """
+    Import graph from SIF (Simple Interaction Format).
+    
+    Standard mode (manifest=None):
+        - Reads binary edges from SIF file (source, relation, target)
+        - Auto-generates edge IDs (edge_0, edge_1, ...)
+        - All edges inherit the `directed` parameter
+        - Vertex attributes loaded from optional .nodes sidecar
+        - Hyperedges, per-edge directedness, and complex metadata are lost
+        
+    Lossless mode (manifest provided):
+        - Reads binary edges from SIF file
+        - Restores original edge IDs, weights, and attributes from manifest
+        - Reconstructs hyperedges from manifest
+        - Restores per-edge directedness from manifest
+        - Restores layer memberships and layer-specific weights from manifest
+        - Full round-trip fidelity when paired with to_sif(lossless=True)
+    
+    SIF Format:
+        - Three columns: source<TAB>relation<TAB>target
+        - Lines starting with comment_prefixes are ignored
+        - Vertices referenced in edges are created automatically
+        
+    Sidecar .nodes file format (optional):
+        - One vertex per line: vertex_id<TAB>key=value<TAB>key=value...
+        - Boolean values: true/false (case-insensitive)
+        - Numeric values: auto-detected floats
+        - String values: everything else
+    
+    Args:
+        path: Input SIF file path
+        manifest: Manifest dict or path to manifest JSON (for lossless reconstruction)
+        directed: Default directedness for edges (overridden by manifest if provided)
+        relation_attr: Edge attribute key for storing relation type
+        default_relation: Default relation if not specified in file
+        read_nodes_sidecar: Whether to read .nodes sidecar file with vertex attributes
+        nodes_path: Custom path for nodes sidecar (default: path + ".nodes")
+        encoding: File encoding (default: utf-8)
+        delimiter: Custom delimiter (default: auto-detect TAB or whitespace)
+        comment_prefixes: Line prefixes to skip (default: # and !)
+    
+    Returns:
+        Graph: Reconstructed graph object
+    
+    Notes:
+        - SIF format only supports binary edges natively
+        - For full graph reconstruction (hyperedges, layers, metadata), use manifest
+        - Manifest files are created by to_sif(lossless=True)
+        - Edge IDs are auto-generated in standard mode, preserved in lossless mode
+        - Vertex attributes require .nodes sidecar file or manifest
+    """
+
+    if manifest is not None and not isinstance(manifest, dict):
+        with open(str(manifest), "r", encoding="utf-8") as mf:
+            manifest = json.load(mf)
+    
+    if manifest and "binary_edges" in manifest:
+        H = Graph(directed=None)
+    else:
+        H = Graph(directed=directed)
+    
+    def _parse_node_kv(tok: str):
         if "=" not in tok:
             return None, None
         k, v = tok.split("=", 1)
@@ -93,142 +325,162 @@ def from_sif(path: str,
         v = v.strip()
         if k == "":
             return None, None
-        # try numeric
+        
+        lv = v.lower()
+        if lv == "true":
+            return k, True
+        if lv == "false":
+            return k, False
+        if lv in ("nan", "inf", "-inf"):
+            return k, v
+        
         try:
-            if v.lower() in ("nan", "inf", "-inf"):
-                return k, v
-            fv = float(v)
-            return k, fv
+            return k, float(v)
         except Exception:
             return k, v
-
-    with open(path, "r", encoding=encoding) as f:
-        line_no = 0
-        for raw in f:
-            line_no += 1
-            s = raw.strip()
-            if not s:
-                continue
-            if any(s.startswith(pfx) for pfx in comment_prefixes):
-                continue
-
-            toks = _split(raw)
-            if len(toks) < 3:
-                # not enough tokens -> stash as graph-level note
-                # but don't abort; keep zero-loss by storing in graph attr once
-                try:
-                    notes = H.get_graph_attr("sif_ignored_lines") or []
-                except Exception:
-                    notes = []
-                notes.append({"line": line_no, "content": raw.rstrip("\n\r")})
-                try:
-                    H.set_graph_attrs(sif_ignored_lines=notes)
-                except Exception:
-                    pass
-                continue
-
-            src, rel = toks[0], toks[1]
-            # everything after the 2nd token are targets and/or extras
-            tail = toks[2:]
-
-            # extract trailing key=val pairs and numeric weight(s)
-            extras: List[str] = []
-            kvs: Dict[str, object] = {}
-            numeric_weights: List[float] = []
-
-            # Identify target tokens: up to the first token that looks like key=val.
-            # If none are key=val, assume at least one target.
-            first_kv_idx = None
-            for i, t in enumerate(tail):
-                if "=" in t:
-                    first_kv_idx = i
-                    break
-            if first_kv_idx is None:
-                # entire tail are targets/weight/extras
-                targets = tail[:]
-                trailing = []
-            else:
-                targets = tail[:first_kv_idx]
-                trailing = tail[first_kv_idx:]
-
-            # If strict-3 form, targets has exactly one item; ok.
-            # Parse trailing key=val, and collect tokens that weren't k=v
-            for t in trailing:
-                k, v = _parse_kv(t)
-                if k is not None:
-                    kvs[k] = v
-                else:
-                    # maybe a lone numeric token intended as weight
-                    try:
-                        numeric_weights.append(float(t))
-                    except Exception:
-                        extras.append(t)
-
-            # If there are still leftover tokens after we use the first target,
-            # keep them in extras too (zero-loss), unless they were intended extra targets.
-            if not targets:
-                # malformed: no target; treat the first non-kv token as pseudo-target if exists
-                if extras:
-                    targets = [extras.pop(0)]
-                else:
-                    # give up on this line cleanly
-                    try:
-                        notes = H.get_graph_attr("sif_malformed") or []
-                    except Exception:
-                        notes = []
-                    notes.append({"line": line_no, "content": raw.rstrip("\n\r")})
-                    try:
-                        H.set_graph_attrs(sif_malformed=notes)
-                    except Exception:
-                        pass
-                    continue
-
-            # numeric weight policy:
-            # - if 'weight' key present in kvs -> that wins
-            # - else if exactly one numeric token -> weight
-            # - else ignore (but extras preserved)
-            explicit_weight = kvs.get("weight", None)
-            lone_weight = numeric_weights[0] if len(numeric_weights) == 1 else None
-
-            # Build edges
-            for i, tgt in enumerate(targets):
-                # create vertices
-                try:
-                    H.add_vertex(src)
-                except Exception:
-                    pass
-                try:
-                    H.add_vertex(tgt)
-                except Exception:
-                    pass
-
-                eid = str(kvs.get("id")) if ("id" in kvs) else f"sif::{line_no}#{i}"
-                try:
-                    H.add_edge(src, tgt, edge_id=eid, edge_directed=bool(directed))
-                except Exception:
-                    # fallback to directed True if API insists
-                    H.add_edge(src, tgt, edge_id=eid, edge_directed=True)
-
-                # weight
-                w = explicit_weight if explicit_weight is not None else lone_weight
-                if w is not None:
-                    try:
-                        H.edge_weights[eid] = float(w)
-                    except Exception:
-                        pass
-
-                # attributes (relation + kvs + residues)
-                attrs = {relation_attr: rel}
-                # keep all kv pairs (minus 'id' if we used it as eid)
-                for k, v in kvs.items():
-                    if k == "id":
+    
+    if read_nodes_sidecar:
+        sidecar = nodes_path if nodes_path is not None else (str(path) + ".nodes")
+        import os
+        if os.path.exists(sidecar):
+            with open(sidecar, "r", encoding=encoding) as nf:
+                for raw in nf:
+                    s = raw.rstrip("\n\r")
+                    if not s or any(s.lstrip().startswith(pfx) for pfx in comment_prefixes):
                         continue
-                    attrs[k] = v
-                if extras:
-                    attrs["sif_extra"] = list(extras)
+                    
+                    toks = s.split("\t") if "\t" in s else [s]
+                    vid_raw = toks[0]
+                    if vid_raw is None:
+                        continue
+                    vid = str(vid_raw).strip()
+                    if vid == "" or vid.lower() == "none":
+                        continue
+                    
+                    H.add_vertex(vid)
+                    
+                    if len(toks) > 1:
+                        kvs: Dict[str, object] = {}
+                        for t in toks[1:]:
+                            k, v = _parse_node_kv(t)
+                            if k is not None:
+                                kvs[k] = v
+                        if kvs:
+                            H.set_vertex_attrs(vid, **kvs)
+    
+    if manifest and "vertex_attrs" in manifest:
+        for vid, attrs in manifest["vertex_attrs"].items():
+            H.add_vertex(vid)
+            H.set_vertex_attrs(vid, **attrs)
+    
+    edge_mapping = {}
+    
+    with open(path, "r", encoding=encoding) as f:
+        for raw in f:
+            if not raw:
+                continue
+            if any(raw.lstrip().startswith(pfx) for pfx in comment_prefixes):
+                continue
+            
+            toks = _split_sif_line(raw, delimiter)
+            if not toks:
+                continue
+            
+            if len(toks) < 3:
+                continue
+            
+            src = toks[0].strip()
+            rel = toks[1].strip()
+            tgt = toks[2].strip()
+            
+            if src == "" or src.lower() == "none" or tgt == "" or tgt.lower() == "none":
+                continue
+            
+            H.add_vertex(src)
+            H.add_vertex(tgt)
+            
+            edge_key = (src, tgt, rel)
+            
+            if manifest and "binary_edges" in manifest:
+                orig_eid = None
+                edge_directed_val = directed
+                
+                for eid, info in manifest["binary_edges"].items():
+                    if info["source"] == src and info["target"] == tgt:
+                        meta = manifest.get("edge_metadata", {}).get(eid, {})
+                        edge_rel = meta.get("attrs", {}).get(relation_attr, default_relation)
+                        
+                        if edge_rel == rel:
+                            orig_eid = eid
+                            edge_directed_val = info.get("directed", directed)
+                            break
+                
+                if orig_eid:
+                    eid = H.add_edge(src, tgt, edge_id=orig_eid, edge_directed=edge_directed_val)
+                    edge_mapping[edge_key] = eid
+                    
+                    if orig_eid in manifest.get("edge_metadata", {}):
+                        meta = manifest["edge_metadata"][orig_eid]
+                        weight = meta.get("weight", 1.0)
+                        attrs = meta.get("attrs", {})
+                        
+                        if weight != 1.0:
+                            H.edge_weights[eid] = weight
+                        
+                        if attrs:
+                            H.set_edge_attrs(eid, **attrs)
+                        # REMOVED the else clause - don't add relation if no attrs in manifest
+                else:
+                    eid = H.add_edge(src, tgt, edge_directed=edge_directed_val)
+                    H.set_edge_attrs(eid, **{relation_attr: rel})
+                    edge_mapping[edge_key] = eid
+            else:
+                eid = H.add_edge(src, tgt, edge_directed=directed)
+                H.set_edge_attrs(eid, **{relation_attr: rel})
+                edge_mapping[edge_key] = eid
+    
+    if manifest and "hyperedges" in manifest:
+        for eid, info in manifest["hyperedges"].items():
+            directed_he = info.get("directed", False)
+            head = info.get("head", [])
+            tail = info.get("tail", [])
+            members = info.get("members", [])
+            weight = info.get("weight", 1.0)
+            attrs = info.get("attrs", {})
+            
+            for v in (head + tail + members):
+                H.add_vertex(v)
+            
+            if directed_he:
+                he_id = H.add_hyperedge(head=head, tail=tail, edge_id=eid, edge_directed=True)
+            else:
+                he_id = H.add_hyperedge(members=members, edge_id=eid, edge_directed=False)
+            
+            if weight != 1.0:
+                H.edge_weights[he_id] = weight
+            
+            if attrs:
+                H.set_edge_attrs(he_id, **attrs)
+    
+    if manifest and "layers" in manifest:
+        for lid, layer_info in manifest["layers"].items():
+            try:
+                if lid not in set(H.list_layers(include_default=True)):
+                    H.add_layer(lid)
+            except Exception:
+                H.add_layer(lid)
+            
+            for eid in layer_info.get("edges", []):
                 try:
-                    H.set_edge_attrs(eid, **attrs)
+                    H.add_edge_to_layer(lid, eid)
                 except Exception:
                     pass
-
+            
+            for eid, weight in layer_info.get("weights", {}).items():
+                try:
+                    H.set_edge_layer_attrs(lid, eid, weight=weight)
+                except Exception:
+                    pass
+    
     return H
+
