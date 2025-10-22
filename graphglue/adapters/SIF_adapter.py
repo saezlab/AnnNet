@@ -5,7 +5,6 @@ import json
 try:
     from ..core.graph import Graph
 except Exception:
-    try:
         from graphglue.core.graph import Graph
 
 
