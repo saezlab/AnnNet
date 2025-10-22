@@ -727,7 +727,7 @@ class Graph:
             if edge_directed is None:
                 is_dir = edge_dir.get(edge_id, is_dir)
             edge_dir[edge_id] = is_dir
-
+            
             # keep edge_type attr write
             self.set_edge_attrs(edge_id, edge_type=(EdgeType.DIRECTED if is_dir else EdgeType.UNDIRECTED))
 
