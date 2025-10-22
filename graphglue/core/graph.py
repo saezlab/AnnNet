@@ -3044,7 +3044,7 @@ class Graph:
                 return (M, M)
         else:
             u, v, _etype = self.edge_definitions[eid]
-            directed = self.edge_directed.get(eid, self.directed)
+            directed = self.edge_directed.get(eid, True if self.directed is None else self.directed)
             if directed:
                 return (frozenset([u]), frozenset([v]))
             else:
@@ -3440,7 +3440,7 @@ class Graph:
         # columns we might need
         need_global = include_weight or resolved_weight
         global_w = [self.edge_weights.get(eid, None) for eid in eids] if need_global else None
-        dirs = [self.edge_directed.get(eid, self.directed) for eid in eids] if include_directed else None
+        dirs = [self.edge_directed.get(eid, True if self.directed is None else self.directed) for eid in eids] if include_directed else None
 
         # endpoints / hyper metadata (one pass; no weight lookups)
         src, tgt, etype = [], [], []
@@ -3767,7 +3767,7 @@ class Graph:
                 if self.edge_kind.get(eid) == "hyper":
                     continue
                 s, t, _ = self.edge_definitions[eid]
-                edge_is_directed = self.edge_directed.get(eid, self.directed)
+                edge_is_directed = self.edge_directed.get(eid, True if self.directed is None else self.directed)
                 if s == source and t == target:
                     matches.append(eid)
                 elif undirected_match and not edge_is_directed and s == target and t == source:
@@ -4060,7 +4060,7 @@ class Graph:
             else:
                 # binary / vertex_edge
                 s, t, _ = self.edge_definitions[eid]
-                edir = self.edge_directed.get(eid, self.directed)
+                edir = self.edge_directed.get(eid, True if self.directed is None else self.directed)
                 if s == entity_id:
                     out.add(t)
                 elif t == entity_id and (not edir or self.entity_types.get(entity_id) == 'edge'):
@@ -4094,7 +4094,7 @@ class Graph:
                         out |= (meta["members"] - {vertex_id})
             else:
                 s, t, _ = self.edge_definitions[eid]
-                edir = self.edge_directed.get(eid, self.directed)
+                edir = self.edge_directed.get(eid, True if self.directed is None else self.directed)
                 if s == vertex_id:
                     out.add(t)
                 elif t == vertex_id and not edir:
@@ -4128,7 +4128,7 @@ class Graph:
                         out |= (meta["members"] - {vertex_id})
             else:
                 s, t, _ = self.edge_definitions[eid]
-                edir = self.edge_directed.get(eid, self.directed)
+                edir = self.edge_directed.get(eid, True if self.directed is None else self.directed)
                 if s == vertex_id:
                     out.add(t)
                 elif t == vertex_id and not edir:
@@ -4162,7 +4162,7 @@ class Graph:
                         inn |= (meta["members"] - {vertex_id})
             else:
                 s, t, _ = self.edge_definitions[eid]
-                edir = self.edge_directed.get(eid, self.directed)
+                edir = self.edge_directed.get(eid, True if self.directed is None else self.directed)
                 if t == vertex_id:
                     inn.add(s)
                 elif s == vertex_id and not edir:
@@ -4196,7 +4196,7 @@ class Graph:
                         inn |= (meta["members"] - {vertex_id})
             else:
                 s, t, _ = self.edge_definitions[eid]
-                edir = self.edge_directed.get(eid, self.directed)
+                edir = self.edge_directed.get(eid, True if self.directed is None else self.directed)
                 if t == vertex_id:
                     inn.add(s)
                 elif s == vertex_id and not edir:
@@ -4263,7 +4263,7 @@ class Graph:
                 V.add(s); V.add(t)
                 bin_payload.append({"source": s, "target": t, "edge_id": eid,
                                     "edge_type": etype,
-                                    "edge_directed": self.edge_directed.get(eid, self.directed),
+                                    "edge_directed": self.edge_directed.get(eid, True if self.directed is None else self.directed),
                                     "weight": self.edge_weights.get(eid, 1.0)})
 
         # new graph prealloc
@@ -4339,7 +4339,7 @@ class Graph:
             s, t, etype = self.edge_definitions[eid]
             bin_payload.append({"source": s, "target": t, "edge_id": eid,
                                 "edge_type": etype,
-                                "edge_directed": self.edge_directed.get(eid, self.directed),
+                                "edge_directed": self.edge_directed.get(eid, True if self.directed is None else self.directed),
                                 "weight": self.edge_weights.get(eid, 1.0)})
 
         hyper_payload = []
