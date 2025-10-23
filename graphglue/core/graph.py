@@ -13,6 +13,1222 @@ class EdgeType(Enum):
     DIRECTED = "DIRECTED"
     UNDIRECTED = "UNDIRECTED"
 
+class LayerManager:
+    """
+    Manager for graph layers and multi-layer operations.
+    
+    Provides organized namespace for layer operations by delegating to Graph methods.
+    All heavy lifting is done by the Graph class; this is just a clean API surface.
+
+    """
+    
+    def __init__(self, graph):
+        self._G = graph
+    
+    # ==================== Basic Operations (Delegation) ====================
+    
+    def add(self, layer_id, **attributes):
+        """
+        Create new layer.
+        
+        Delegates to Graph.add_layer()
+        """
+        return self._G.add_layer(layer_id, **attributes)
+    
+    def remove(self, layer_id):
+        """
+        Remove layer.
+        
+        Delegates to Graph.remove_layer()
+        """
+        return self._G.remove_layer(layer_id)
+    
+    def list(self, include_default=False):
+        """
+        List layer IDs.
+        
+        Delegates to Graph.list_layers()
+        """
+        return self._G.list_layers(include_default=include_default)
+    
+    def exists(self, layer_id):
+        """
+        Check if layer exists.
+        
+        Delegates to Graph.has_layer()
+        """
+        return self._G.has_layer(layer_id)
+    
+    def info(self, layer_id):
+        """
+        Get layer metadata.
+        
+        Delegates to Graph.get_layer_info()
+        """
+        return self._G.get_layer_info(layer_id)
+    
+    def count(self):
+        """
+        Get number of layers.
+        
+        Delegates to Graph.layer_count()
+        """
+        return self._G.layer_count()
+    
+    def vertices(self, layer_id):
+        """
+        Get vertices in layer.
+        
+        Delegates to Graph.get_layer_vertices()
+        """
+        return self._G.get_layer_vertices(layer_id)
+    
+    def edges(self, layer_id):
+        """
+        Get edges in layer.
+        
+        Delegates to Graph.get_layer_edges()
+        """
+        return self._G.get_layer_edges(layer_id)
+    
+    # ==================== Active Layer Property ====================
+    
+    @property
+    def active(self):
+        """
+        Get active layer ID.
+        
+        Delegates to Graph.get_active_layer()
+        """
+        return self._G.get_active_layer()
+    
+    @active.setter
+    def active(self, layer_id):
+        """
+        Set active layer ID.
+        
+        Delegates to Graph.set_active_layer()
+        """
+        self._G.set_active_layer(layer_id)
+    
+    # ==================== Set Operations (Pure Delegation) ====================
+    
+    def union(self, layer_ids):
+        """
+        Compute union of layers (returns dict, doesn't create layer).
+        
+        Delegates to Graph.layer_union()
+        
+        Parameters
+        ----------
+        layer_ids : list[str]
+            Layers to union
+        
+        Returns
+        -------
+        dict
+            {"vertices": set[str], "edges": set[str]}
+        """
+        return self._G.layer_union(layer_ids)
+    
+    def intersect(self, layer_ids):
+        """
+        Compute intersection of layers (returns dict, doesn't create layer).
+        
+        Delegates to Graph.layer_intersection()
+        
+        Parameters
+        ----------
+        layer_ids : list[str]
+            Layers to intersect
+        
+        Returns
+        -------
+        dict
+            {"vertices": set[str], "edges": set[str]}
+        """
+        return self._G.layer_intersection(layer_ids)
+    
+    def difference(self, layer_a, layer_b):
+        """
+        Compute set difference (returns dict, doesn't create layer).
+        
+        Delegates to Graph.layer_difference()
+        
+        Parameters
+        ----------
+        layer_a : str
+            First layer
+        layer_b : str
+            Second layer
+        
+        Returns
+        -------
+        dict
+            {"vertices": set[str], "edges": set[str]}
+            Elements in layer_a but not in layer_b
+        """
+        return self._G.layer_difference(layer_a, layer_b)
+    
+    # ==================== Creation from Operations ====================
+    
+    def union_create(self, layer_ids, name, **attributes):
+        """
+        Create new layer as union of existing layers.
+        
+        Combines Graph.layer_union() + Graph.create_layer_from_operation()
+        
+        Parameters
+        ----------
+        layer_ids : list[str]
+            Layers to union
+        name : str
+            New layer name
+        **attributes
+            Layer attributes
+        
+        Returns
+        -------
+        str
+            Created layer ID
+        """
+        result = self._G.layer_union(layer_ids)
+        return self._G.create_layer_from_operation(name, result, **attributes)
+    
+    def intersect_create(self, layer_ids, name, **attributes):
+        """
+        Create new layer as intersection of existing layers.
+        
+        Combines Graph.layer_intersection() + Graph.create_layer_from_operation()
+        
+        Parameters
+        ----------
+        layer_ids : list[str]
+            Layers to intersect
+        name : str
+            New layer name
+        **attributes
+            Layer attributes
+        
+        Returns
+        -------
+        str
+            Created layer ID
+        """
+        result = self._G.layer_intersection(layer_ids)
+        return self._G.create_layer_from_operation(name, result, **attributes)
+    
+    def difference_create(self, layer_a, layer_b, name, **attributes):
+        """
+        Create new layer as difference of two layers.
+        
+        Combines Graph.layer_difference() + Graph.create_layer_from_operation()
+        
+        Parameters
+        ----------
+        layer_a : str
+            First layer
+        layer_b : str
+            Second layer
+        name : str
+            New layer name
+        **attributes
+            Layer attributes
+        
+        Returns
+        -------
+        str
+            Created layer ID
+        """
+        result = self._G.layer_difference(layer_a, layer_b)
+        return self._G.create_layer_from_operation(name, result, **attributes)
+    
+    def aggregate(self, source_layer_ids, target_layer_id, method='union', 
+                  weight_func=None, **attributes):
+        """
+        Create aggregated layer from multiple sources.
+        
+        Delegates to Graph.create_aggregated_layer()
+        
+        Parameters
+        ----------
+        source_layer_ids : list[str]
+            Source layers
+        target_layer_id : str
+            Target layer name
+        method : {'union', 'intersection'}
+            Aggregation method
+        weight_func : callable, optional
+            Weight merging function (reserved)
+        **attributes
+            Layer attributes
+        
+        Returns
+        -------
+        str
+            Created layer ID
+        """
+        return self._G.create_aggregated_layer(
+            source_layer_ids, target_layer_id, method, weight_func, **attributes
+        )
+    
+    # ==================== Analysis & Queries ====================
+    
+    def stats(self, include_default=False):
+        """
+        Get statistics for all layers.
+        
+        Delegates to Graph.layer_statistics()
+        
+        Returns
+        -------
+        dict[str, dict]
+            {layer_id: {'vertices': int, 'edges': int, 'attributes': dict}}
+        """
+        return self._G.layer_statistics(include_default=include_default)
+    
+    def vertex_presence(self, vertex_id, include_default=False):
+        """
+        Find layers containing a vertex.
+        
+        Delegates to Graph.vertex_presence_across_layers()
+        
+        Parameters
+        ----------
+        vertex_id : str
+            Vertex to search for
+        include_default : bool
+            Include default layer
+        
+        Returns
+        -------
+        list[str]
+            Layer IDs containing the vertex
+        """
+        return self._G.vertex_presence_across_layers(vertex_id, include_default)
+    
+    def edge_presence(self, edge_id=None, source=None, target=None, 
+                     include_default=False, undirected_match=None):
+        """
+        Find layers containing an edge.
+        
+        Delegates to Graph.edge_presence_across_layers()
+        
+        Parameters
+        ----------
+        edge_id : str, optional
+            Edge ID to search for
+        source : str, optional
+            Source node (with target)
+        target : str, optional
+            Target node (with source)
+        include_default : bool
+            Include default layer
+        undirected_match : bool, optional
+            Allow symmetric matches
+        
+        Returns
+        -------
+        list[str] or dict[str, list[str]]
+            If edge_id: list of layer IDs
+            If source/target: {layer_id: [edge_ids]}
+        """
+        return self._G.edge_presence_across_layers(
+            edge_id, source, target, 
+            include_default=include_default, 
+            undirected_match=undirected_match
+        )
+    
+    def hyperedge_presence(self, members=None, head=None, tail=None, 
+                          include_default=False):
+        """
+        Find layers containing a hyperedge.
+        
+        Delegates to Graph.hyperedge_presence_across_layers()
+        
+        Parameters
+        ----------
+        members : Iterable[str], optional
+            Undirected hyperedge members
+        head : Iterable[str], optional
+            Directed hyperedge head
+        tail : Iterable[str], optional
+            Directed hyperedge tail
+        include_default : bool
+            Include default layer
+        
+        Returns
+        -------
+        dict[str, list[str]]
+            {layer_id: [edge_ids]}
+        """
+        return self._G.hyperedge_presence_across_layers(
+            members=members, head=head, tail=tail, 
+            include_default=include_default
+        )
+    
+    def conserved_edges(self, min_layers=2, include_default=False):
+        """
+        Find edges present in multiple layers.
+        
+        Delegates to Graph.conserved_edges()
+        
+        Parameters
+        ----------
+        min_layers : int
+            Minimum number of layers
+        include_default : bool
+            Include default layer
+        
+        Returns
+        -------
+        dict[str, int]
+            {edge_id: layer_count}
+        """
+        return self._G.conserved_edges(min_layers, include_default)
+    
+    def specific_edges(self, layer_id):
+        """
+        Find edges unique to a layer.
+        
+        Delegates to Graph.layer_specific_edges()
+        
+        Parameters
+        ----------
+        layer_id : str
+            Layer to check
+        
+        Returns
+        -------
+        set[str]
+            Edge IDs unique to this layer
+        """
+        return self._G.layer_specific_edges(layer_id)
+    
+    def temporal_dynamics(self, ordered_layers, metric='edge_change'):
+        """
+        Analyze temporal changes across layers.
+        
+        Delegates to Graph.temporal_dynamics()
+        
+        Parameters
+        ----------
+        ordered_layers : list[str]
+            Layers in chronological order
+        metric : {'edge_change', 'vertex_change'}
+            What to track
+        
+        Returns
+        -------
+        list[dict]
+            Per-step changes: [{'added': int, 'removed': int, 'net_change': int}]
+        """
+        return self._G.temporal_dynamics(ordered_layers, metric)
+    
+    # ==================== Convenience Methods ====================
+    
+    def summary(self):
+        """
+        Get human-readable summary of all layers.
+        
+        Returns
+        -------
+        str
+            Formatted summary
+        """
+        stats = self.stats(include_default=True)
+        lines = [f"Layers: {len(stats)}"]
+        
+        for i, (layer_id, info) in enumerate(stats.items()):
+            prefix = "├─" if i < len(stats) - 1 else "└─"
+            lines.append(
+                f"{prefix} {layer_id}: {info['vertices']} vertices, "
+                f"{info['edges']} edges"
+            )
+        
+        return "\n".join(lines)
+    
+    def __repr__(self):
+        return f"LayerManager({self.count()} layers)"
+
+class IndexManager:
+    """
+    Namespace for index operations.
+    Provides clean API over existing dicts.
+    """
+    
+    def __init__(self, graph):
+        self._G = graph
+    
+    # ==================== Entity (Node) Indexes ====================
+    
+    def entity_to_row(self, entity_id):
+        """Map entity ID to matrix row index."""
+        if entity_id not in self._G.entity_to_idx:
+            raise KeyError(f"Entity '{entity_id}' not found")
+        return self._G.entity_to_idx[entity_id]
+    
+    def row_to_entity(self, row):
+        """Map matrix row index to entity ID."""
+        if row not in self._G.idx_to_entity:
+            raise KeyError(f"Row {row} not found")
+        return self._G.idx_to_entity[row]
+    
+    def entities_to_rows(self, entity_ids):
+        """Batch convert entity IDs to row indices."""
+        return [self._G.entity_to_idx[eid] for eid in entity_ids]
+    
+    def rows_to_entities(self, rows):
+        """Batch convert row indices to entity IDs."""
+        return [self._G.idx_to_entity[r] for r in rows]
+    
+    # ==================== Edge Indexes ====================
+    
+    def edge_to_col(self, edge_id):
+        """Map edge ID to matrix column index."""
+        if edge_id not in self._G.edge_to_idx:
+            raise KeyError(f"Edge '{edge_id}' not found")
+        return self._G.edge_to_idx[edge_id]
+    
+    def col_to_edge(self, col):
+        """Map matrix column index to edge ID."""
+        if col not in self._G.idx_to_edge:
+            raise KeyError(f"Column {col} not found")
+        return self._G.idx_to_edge[col]
+    
+    def edges_to_cols(self, edge_ids):
+        """Batch convert edge IDs to column indices."""
+        return [self._G.edge_to_idx[eid] for eid in edge_ids]
+    
+    def cols_to_edges(self, cols):
+        """Batch convert column indices to edge IDs."""
+        return [self._G.idx_to_edge[c] for c in cols]
+    
+    # ==================== Utilities ====================
+    
+    def entity_type(self, entity_id):
+        """Get entity type ('vertex' or 'edge')."""
+        if entity_id not in self._G.entity_types:
+            raise KeyError(f"Entity '{entity_id}' not found")
+        return self._G.entity_types[entity_id]
+    
+    def is_vertex(self, entity_id):
+        """Check if entity is a vertex."""
+        return self.entity_type(entity_id) == "vertex"
+    
+    def is_edge_entity(self, entity_id):
+        """Check if entity is an edge-entity (vertex-edge hybrid)."""
+        return self.entity_type(entity_id) == "edge"
+    
+    def has_entity(self, entity_id: str) -> bool:
+        """True if the ID exists as any entity (vertex or edge-entity)."""
+        return entity_id in self._G.entity_to_idx
+
+    def has_vertex(self, vertex_id: str) -> bool:
+        """True if the ID exists and is a vertex (not an edge-entity)."""
+        return self._G.entity_types.get(vertex_id) == "vertex"
+
+    def has_edge_id(self, edge_id: str) -> bool:
+        """True if an edge with this ID exists."""
+        return edge_id in self._G.edge_to_idx
+
+    def edge_count(self) -> int:
+        """Number of edges (columns in incidence)."""
+        return len(self._G.edge_to_idx)
+
+    def entity_count(self) -> int:
+        """Number of entities (vertices + edge-entities)."""
+        return len(self._G.entity_to_idx)
+
+    def vertex_count(self) -> int:
+        """Number of true vertices (excludes edge-entities)."""
+        return sum(1 for t in self._G.entity_types.values() if t == "vertex")
+
+    def stats(self):
+        """Get index statistics."""
+        return {
+            "n_entities": len(self._G.entity_to_idx),
+            "n_vertices": sum(1 for t in self._G.entity_types.values() 
+                            if t == "vertex"),
+            "n_edge_entities": sum(1 for t in self._G.entity_types.values() 
+                                  if t == "edge"),
+            "n_edges": len(self._G.edge_to_idx),
+            "max_row": max(self._G.idx_to_entity.keys()) if self._G.idx_to_entity else -1,
+            "max_col": max(self._G.idx_to_edge.keys()) if self._G.idx_to_edge else -1,
+        }
+    
+class CacheManager:
+    """
+    Cache manager for materialized views (CSR/CSC).
+    """
+    
+    def __init__(self, graph):
+        self._G = graph
+        self._csr = None
+        self._csc = None
+        self._adjacency = None
+        self._csr_version = None
+        self._csc_version = None
+        self._adjacency_version = None
+    
+    # ==================== CSR/CSC Properties ====================
+    
+    @property
+    def csr(self):
+        """
+        Get CSR (Compressed Sparse Row) format.
+        Builds and caches on first access.
+        """
+        if self._csr is None or self._csr_version != self._G._version:
+            self._csr = self._G._matrix.tocsr()
+            self._csr_version = self._G._version
+        return self._csr
+    
+    @property
+    def csc(self):
+        """
+        Get CSC (Compressed Sparse Column) format.
+        Builds and caches on first access.
+        """
+        if self._csc is None or self._csc_version != self._G._version:
+            self._csc = self._G._matrix.tocsc()
+            self._csc_version = self._G._version
+        return self._csc
+    
+    @property
+    def adjacency(self):
+        """
+        Get adjacency matrix (computed from incidence).
+        For incidence B: adjacency A = B @ B.T
+        """
+        if self._adjacency is None or self._adjacency_version != self._G._version:
+            csr = self.csr
+            # Adjacency from incidence: A = B @ B.T
+            self._adjacency = csr @ csr.T
+            self._adjacency_version = self._G._version
+        return self._adjacency
+    
+    def has_csr(self) -> bool:
+        """True if CSR cache exists and matches current graph version."""
+        return self._csr is not None and self._csr_version == self._G._version
+
+    def has_csc(self) -> bool:
+        """True if CSC cache exists and matches current graph version."""
+        return self._csc is not None and self._csc_version == self._G._version
+
+    def has_adjacency(self) -> bool:
+        """True if adjacency cache exists and matches current graph version."""
+        return self._adjacency is not None and self._adjacency_version == self._G._version
+
+    def get_csr(self):
+        return self.csr
+
+    def get_csc(self):
+        return self.csc
+
+    def get_adjacency(self):
+        return self.adjacency
+
+    # ==================== Cache Management ====================
+    
+    def invalidate(self, formats=None):
+        """
+        Invalidate cached formats.
+        
+        Parameters
+        ----------
+        formats : list[str], optional
+            Formats to invalidate ('csr', 'csc', 'adjacency').
+            If None, invalidate all.
+        """
+        if formats is None:
+            formats = ['csr', 'csc', 'adjacency']
+        
+        for fmt in formats:
+            if fmt == 'csr':
+                self._csr = None
+                self._csr_version = None
+            elif fmt == 'csc':
+                self._csc = None
+                self._csc_version = None
+            elif fmt == 'adjacency':
+                self._adjacency = None
+                self._adjacency_version = None
+    
+    def build(self, formats=None):
+        """
+        Pre-build specified formats (eager caching).
+        
+        Parameters
+        ----------
+        formats : list[str], optional
+            Formats to build ('csr', 'csc', 'adjacency').
+            If None, build all.
+        """
+        if formats is None:
+            formats = ['csr', 'csc', 'adjacency']
+        
+        for fmt in formats:
+            if fmt == 'csr':
+                _ = self.csr
+            elif fmt == 'csc':
+                _ = self.csc
+            elif fmt == 'adjacency':
+                _ = self.adjacency
+    
+    def clear(self):
+        """Clear all caches."""
+        self.invalidate()
+    
+    def info(self):
+        """
+        Get cache status and memory usage.
+        
+        Returns
+        -------
+        dict
+            Status of each cached format
+        """
+        def _format_info(matrix, version):
+            if matrix is None:
+                return {'cached': False}
+            
+            # Calculate size
+            size_bytes = 0
+            if hasattr(matrix, 'data'):
+                size_bytes += matrix.data.nbytes
+            if hasattr(matrix, 'indices'):
+                size_bytes += matrix.indices.nbytes
+            if hasattr(matrix, 'indptr'):
+                size_bytes += matrix.indptr.nbytes
+            
+            return {
+                'cached': True,
+                'version': version,
+                'size_mb': size_bytes / (1024**2),
+                'nnz': matrix.nnz if hasattr(matrix, 'nnz') else 0,
+                'shape': matrix.shape
+            }
+        
+        return {
+            'csr': _format_info(self._csr, self._csr_version),
+            'csc': _format_info(self._csc, self._csc_version),
+            'adjacency': _format_info(self._adjacency, self._adjacency_version)
+        }
+
+class GraphView:
+    """
+    Lazy view into a graph with deferred operations.
+    
+    Provides filtered access to graph components without copying the underlying data.
+    Views can be materialized into concrete subgraphs when needed.
+    
+    Parameters
+    ----------
+    graph : Graph
+        Parent graph instance
+    nodes : list[str] | set[str] | callable | None
+        Node IDs to include, or predicate function
+    edges : list[str] | set[str] | callable | None
+        Edge IDs to include, or predicate function
+    layers : str | list[str] | None
+        Layer ID(s) to include
+    predicate : callable | None
+        Additional filter: predicate(vertex_id) -> bool
+    """
+    
+    def __init__(self, graph, nodes=None, edges=None, layers=None, predicate=None):
+        self._graph = graph
+        self._nodes_filter = nodes
+        self._edges_filter = edges
+        self._predicate = predicate
+        
+        # Normalize layers to list
+        if layers is None:
+            self._layers = None
+        elif isinstance(layers, str):
+            self._layers = [layers]
+        else:
+            self._layers = list(layers)
+        
+        # Lazy caches
+        self._node_ids_cache = None
+        self._edge_ids_cache = None
+        self._computed = False
+    
+    # ==================== Properties ====================
+    
+    @property
+    def obs(self):
+        """Filtered node attribute table (uses Graph.vertex_attributes)."""
+        node_ids = self.node_ids
+        if node_ids is None:
+            return self._graph.vertex_attributes
+        
+        import polars as pl
+        return self._graph.vertex_attributes.filter(
+            pl.col("vertex_id").is_in(list(node_ids))
+        )
+    
+    @property
+    def var(self):
+        """Filtered edge attribute table (uses Graph.edge_attributes)."""
+        edge_ids = self.edge_ids
+        if edge_ids is None:
+            return self._graph.edge_attributes
+        
+        import polars as pl
+        return self._graph.edge_attributes.filter(
+            pl.col("edge_id").is_in(list(edge_ids))
+        )
+    
+    @property
+    def X(self):
+        """Filtered incidence matrix subview."""
+        node_ids = self.node_ids
+        edge_ids = self.edge_ids
+        
+        # Get row and column indices
+        if node_ids is not None:
+            rows = [self._graph.entity_to_idx[nid] 
+                   for nid in node_ids 
+                   if nid in self._graph.entity_to_idx]
+        else:
+            rows = list(range(self._graph._matrix.shape[0]))
+        
+        if edge_ids is not None:
+            cols = [self._graph.edge_to_idx[eid] 
+                   for eid in edge_ids
+                   if eid in self._graph.edge_to_idx]
+        else:
+            cols = list(range(self._graph._matrix.shape[1]))
+        
+        # Return submatrix slice
+        if rows and cols:
+            return self._graph._matrix[rows, :][:, cols]
+        else:
+            import scipy.sparse as sp
+            return sp.dok_matrix((len(rows), len(cols)), dtype=self._graph._matrix.dtype)
+    
+    @property
+    def node_ids(self):
+        """Get filtered node IDs (cached)."""
+        if not self._computed:
+            self._compute_ids()
+        return self._node_ids_cache
+    
+    @property
+    def edge_ids(self):
+        """Get filtered edge IDs (cached)."""
+        if not self._computed:
+            self._compute_ids()
+        return self._edge_ids_cache
+    
+    @property
+    def node_count(self):
+        """Number of nodes in this view."""
+        node_ids = self.node_ids
+        if node_ids is None:
+            return sum(1 for t in self._graph.entity_types.values() if t == "vertex")
+        return len(node_ids)
+    
+    @property
+    def edge_count(self):
+        """Number of edges in this view."""
+        edge_ids = self.edge_ids
+        if edge_ids is None:
+            return len(self._graph.edge_to_idx)
+        return len(edge_ids)
+    
+    # ==================== Internal Computation ====================
+    
+    def _compute_ids(self):
+        """Compute and cache filtered node and edge IDs."""
+        node_ids = None
+        edge_ids = None
+        
+        # Step 1: Apply layer filter (uses Graph._layers)
+        if self._layers is not None:
+            node_ids = set()
+            edge_ids = set()
+            for layer_id in self._layers:
+                if layer_id in self._graph._layers:
+                    node_ids.update(self._graph._layers[layer_id]["vertices"])
+                    edge_ids.update(self._graph._layers[layer_id]["edges"])
+        
+        # Step 2: Apply node filter
+        if self._nodes_filter is not None:
+            candidate_nodes = node_ids if node_ids is not None else set(
+                vid for vid, vtype in self._graph.entity_types.items() 
+                if vtype == "vertex"
+            )
+            
+            if callable(self._nodes_filter):
+                filtered_nodes = set()
+                for vid in candidate_nodes:
+                    try:
+                        if self._nodes_filter(vid):
+                            filtered_nodes.add(vid)
+                    except Exception:
+                        pass
+                node_ids = filtered_nodes
+            else:
+                specified = set(self._nodes_filter)
+                if node_ids is not None:
+                    node_ids &= specified
+                else:
+                    node_ids = specified & candidate_nodes
+        
+        # Step 3: Apply edge filter
+        if self._edges_filter is not None:
+            candidate_edges = edge_ids if edge_ids is not None else set(
+                self._graph.edge_to_idx.keys()
+            )
+            
+            if callable(self._edges_filter):
+                filtered_edges = set()
+                for eid in candidate_edges:
+                    try:
+                        if self._edges_filter(eid):
+                            filtered_edges.add(eid)
+                    except Exception:
+                        pass
+                edge_ids = filtered_edges
+            else:
+                specified = set(self._edges_filter)
+                if edge_ids is not None:
+                    edge_ids &= specified
+                else:
+                    edge_ids = specified & candidate_edges
+        
+        # Step 4: Apply additional predicate to nodes
+        if self._predicate is not None and node_ids is not None:
+            filtered_nodes = set()
+            for vid in node_ids:
+                try:
+                    if self._predicate(vid):
+                        filtered_nodes.add(vid)
+                except Exception:
+                    pass
+            node_ids = filtered_nodes
+        
+        # Step 5: Filter edges by node connectivity (uses Graph.edge_definitions, hyperedge_definitions)
+        if node_ids is not None and edge_ids is not None:
+            filtered_edges = set()
+            for eid in edge_ids:
+                # Binary/vertex-edge edges
+                if eid in self._graph.edge_definitions:
+                    source, target, _ = self._graph.edge_definitions[eid]
+                    if source in node_ids and target in node_ids:
+                        filtered_edges.add(eid)
+                # Hyperedges
+                elif eid in self._graph.hyperedge_definitions:
+                    hdef = self._graph.hyperedge_definitions[eid]
+                    if hdef.get("directed", False):
+                        heads = set(hdef.get("head", []))
+                        tails = set(hdef.get("tail", []))
+                        if heads.issubset(node_ids) and tails.issubset(node_ids):
+                            filtered_edges.add(eid)
+                    else:
+                        members = set(hdef.get("members", []))
+                        if members.issubset(node_ids):
+                            filtered_edges.add(eid)
+            edge_ids = filtered_edges
+        
+        # Cache results
+        self._node_ids_cache = node_ids
+        self._edge_ids_cache = edge_ids
+        self._computed = True
+    
+    # ==================== View Methods (use Graph's existing methods) ====================
+    
+    def edges_df(self, **kwargs):
+        """
+        Get edge DataFrame view with optional filtering.
+        Uses Graph.edges_view() and filters by edge IDs.
+        """
+        # Use Graph's existing edges_view() method
+        df = self._graph.edges_view(**kwargs)
+        
+        # Filter by edge IDs in this view
+        edge_ids = self.edge_ids
+        if edge_ids is not None:
+            import polars as pl
+            df = df.filter(pl.col("edge_id").is_in(list(edge_ids)))
+        
+        return df
+    
+    def vertices_df(self, **kwargs):
+        """
+        Get vertex DataFrame view.
+        Uses Graph.vertices_view() and filters by vertex IDs.
+        """
+        # Use Graph's existing vertices_view() method
+        df = self._graph.vertices_view(**kwargs)
+        
+        # Filter by vertex IDs in this view
+        node_ids = self.node_ids
+        if node_ids is not None:
+            import polars as pl
+            df = df.filter(pl.col("vertex_id").is_in(list(node_ids)))
+        
+        return df
+    
+    # ==================== Materialization (uses Graph methods) ====================
+    
+    def materialize(self, copy_attributes=True):
+        """
+        Create a concrete subgraph from this view.
+        Uses Graph.add_vertex(), add_edge(), add_hyperedge(), get_*_attrs()
+        """
+        # Create new Graph instance
+        subG = Graph(directed=self._graph.directed)
+        
+        node_ids = self.node_ids
+        edge_ids = self.edge_ids
+        
+        # Determine which nodes to copy
+        if node_ids is not None:
+            nodes_to_copy = node_ids
+        else:
+            nodes_to_copy = [vid for vid, vtype in self._graph.entity_types.items() 
+                           if vtype == "vertex"]
+        
+        # Copy nodes (uses Graph.add_vertex, get_vertex_attrs)
+        for vid in nodes_to_copy:
+            if copy_attributes:
+                attrs = self._graph.get_vertex_attrs(vid)
+                # drop structural keys
+                attrs = {k: v for k, v in attrs.items() if k not in self._graph._vertex_RESERVED}
+                subG.add_vertex(vid, **attrs)
+            else:
+                subG.add_vertex(vid)
+        
+        # Determine which edges to copy
+        if edge_ids is not None:
+            edges_to_copy = edge_ids
+        else:
+            edges_to_copy = self._graph.edge_to_idx.keys()
+        
+        # Copy edges (uses Graph methods)
+        for eid in edges_to_copy:
+            # Binary edges
+            if eid in self._graph.edge_definitions:
+                source, target, edge_type = self._graph.edge_definitions[eid]
+                
+                if source not in nodes_to_copy or target not in nodes_to_copy:
+                    continue
+                
+                weight = self._graph.edge_weights.get(eid, 1.0)
+                directed = self._graph.edge_directed.get(eid, self._graph.directed)
+                
+                if copy_attributes:
+                    attrs = self._graph.get_edge_attrs(eid)
+                    subG.add_edge(source, target, weight=weight, 
+                                directed=directed, **attrs)
+                else:
+                    subG.add_edge(source, target, weight=weight, directed=directed)
+            
+            # Hyperedges
+            elif eid in self._graph.hyperedge_definitions:
+                hdef = self._graph.hyperedge_definitions[eid]
+                
+                if hdef.get("directed", False):
+                    heads = list(hdef.get("head", []))
+                    tails = list(hdef.get("tail", []))
+                    
+                    if not all(h in nodes_to_copy for h in heads):
+                        continue
+                    if not all(t in nodes_to_copy for t in tails):
+                        continue
+                    
+                    weight = self._graph.edge_weights.get(eid, 1.0)
+                    if copy_attributes:
+                        attrs = self._graph.get_edge_attrs(eid)
+                        subG.add_hyperedge(head=heads, tail=tails, 
+                                         weight=weight, **attrs)
+                    else:
+                        subG.add_hyperedge(head=heads, tail=tails, weight=weight)
+                else:
+                    members = list(hdef.get("members", []))
+                    
+                    if not all(m in nodes_to_copy for m in members):
+                        continue
+                    
+                    weight = self._graph.edge_weights.get(eid, 1.0)
+                    if copy_attributes:
+                        attrs = self._graph.get_edge_attrs(eid)
+                        subG.add_hyperedge(members=members, weight=weight, **attrs)
+                    else:
+                        subG.add_hyperedge(members=members, weight=weight)
+        
+        return subG
+    
+    def subview(self, nodes=None, edges=None, layers=None, predicate=None):
+        """
+        Create a new GraphView by further restricting this view.
+
+        - nodes/edges: if a list/set is given, intersect with this view's node_ids/edge_ids.
+        - layers: defaults to this view's layers if None.
+        - predicate: applied in addition to the current filtering (AND).
+        """
+        # Force compute current filters
+        base_nodes = self.node_ids
+        base_edges = self.edge_ids
+
+        # Nodes
+        if nodes is None:
+            new_nodes = base_nodes
+            node_pred = None
+        elif callable(nodes):
+            new_nodes = base_nodes  # keep current set; apply new predicate below
+            node_pred = nodes
+        else:
+            to_set = set(nodes)
+            new_nodes = (set(base_nodes) & to_set) if base_nodes is not None else to_set
+            node_pred = None
+
+        # Edges
+        if edges is None:
+            new_edges = base_edges
+            edge_pred = None
+        elif callable(edges):
+            new_edges = base_edges
+            edge_pred = edges
+        else:
+            to_set = set(edges)
+            new_edges = (set(base_edges) & to_set) if base_edges is not None else to_set
+            edge_pred = None
+
+        # Layers
+        new_layers = layers if layers is not None else (self._layers if self._layers else None)
+
+        # Combine predicates (AND) with existing one
+        def combined_pred(v):
+            ok = True
+            if self._predicate:
+                try: ok = ok and bool(self._predicate(v))
+                except Exception: ok = False
+            if predicate:
+                try: ok = ok and bool(predicate(v))
+                except Exception: ok = False
+            if node_pred:
+                try: ok = ok and bool(node_pred(v))
+                except Exception: ok = False
+            return ok
+
+        final_pred = combined_pred if (self._predicate or predicate or node_pred) else None
+
+        # Return a fresh GraphView
+        return GraphView(self._graph, nodes=new_nodes, edges=new_edges, layers=new_layers, predicate=final_pred)
+
+    # ==================== Convenience ====================
+    
+    def summary(self):
+        """Human-readable summary."""
+        lines = [
+            "GraphView Summary",
+            "─" * 30,
+            f"Nodes: {self.node_count}",
+            f"Edges: {self.edge_count}",
+        ]
+        
+        filters = []
+        if self._layers:
+            filters.append(f"layers={self._layers}")
+        if self._nodes_filter:
+            if callable(self._nodes_filter):
+                filters.append("nodes=<predicate>")
+            else:
+                filters.append(f"nodes={len(list(self._nodes_filter))} specified")
+        if self._edges_filter:
+            if callable(self._edges_filter):
+                filters.append("edges=<predicate>")
+            else:
+                filters.append(f"edges={len(list(self._edges_filter))} specified")
+        if self._predicate:
+            filters.append("predicate=<function>")
+        
+        if filters:
+            lines.append(f"Filters: {', '.join(filters)}")
+        else:
+            lines.append("Filters: None (full graph)")
+        
+        return "\n".join(lines)
+    
+    def __repr__(self):
+        return f"GraphView(nodes={self.node_count}, edges={self.edge_count})"
+    
+    def __len__(self):
+        return self.node_count
+
+class GraphDiff:
+    """
+    Represents the difference between two graph states.
+    
+    Attributes
+    ----------
+    vertices_added : set
+        Vertices in b but not in a
+    vertices_removed : set
+        Vertices in a but not in b
+    edges_added : set
+        Edges in b but not in a
+    edges_removed : set
+        Edges in a but not in b
+    layers_added : set
+        Layers in b but not in a
+    layers_removed : set
+        Layers in a but not in b
+    """
+    
+    def __init__(self, snapshot_a, snapshot_b):
+        self.snapshot_a = snapshot_a
+        self.snapshot_b = snapshot_b
+        
+        # Compute differences
+        self.vertices_added = snapshot_b["vertex_ids"] - snapshot_a["vertex_ids"]
+        self.vertices_removed = snapshot_a["vertex_ids"] - snapshot_b["vertex_ids"]
+        self.edges_added = snapshot_b["edge_ids"] - snapshot_a["edge_ids"]
+        self.edges_removed = snapshot_a["edge_ids"] - snapshot_b["edge_ids"]
+        self.layers_added = snapshot_b["layer_ids"] - snapshot_a["layer_ids"]
+        self.layers_removed = snapshot_a["layer_ids"] - snapshot_b["layer_ids"]
+    
+    def summary(self):
+        """Human-readable summary of differences."""
+        lines = [
+            f"Diff: {self.snapshot_a['label']} → {self.snapshot_b['label']}",
+            "",
+            f"Vertices: {len(self.vertices_added):+d} added, {len(self.vertices_removed)} removed",
+            f"Edges: {len(self.edges_added):+d} added, {len(self.edges_removed)} removed",
+            f"Layers: {len(self.layers_added):+d} added, {len(self.layers_removed)} removed",
+        ]
+        return "\n".join(lines)
+    
+    def is_empty(self):
+        """Check if there are no differences."""
+        return (not self.vertices_added and not self.vertices_removed and
+                not self.edges_added and not self.edges_removed and
+                not self.layers_added and not self.layers_removed)
+    
+    def __repr__(self):
+        return self.summary()
+    
+    def to_dict(self):
+        """Convert to dictionary for serialization."""
+        return {
+            "snapshot_a": self.snapshot_a["label"],
+            "snapshot_b": self.snapshot_b["label"],
+            "vertices_added": list(self.vertices_added),
+            "vertices_removed": list(self.vertices_removed),
+            "edges_added": list(self.edges_added),
+            "edges_removed": list(self.edges_removed),
+            "layers_added": list(self.layers_added),
+            "layers_removed": list(self.layers_removed),
+        }
+
+# ===================================
+
 class Graph:
     """
     Sparse incidence-matrix graph with layers, attributes, parallel edges, and hyperedges.
@@ -145,6 +1361,7 @@ class Graph:
         self._version = 0
         self._history_clock0 = time.perf_counter_ns()
         self._install_history_hooks()  # wrap mutating methods
+        self._snapshots = []
 
     # Layer basics
 
@@ -211,7 +1428,7 @@ class Graph:
         """
         return self._current_layer
     
-    def layers(self, include_default: bool = False):
+    def get_layers_dict(self, include_default: bool = False):
         """
         Get a mapping of layer IDs to their metadata.
 
@@ -243,7 +1460,7 @@ class Graph:
         list[str]
             Layer IDs.
         """
-        return list(self.layers(include_default=include_default).keys())
+        return list(self.get_layers_dict(include_default=include_default).keys())
 
     def has_layer(self, layer_id):
         """
@@ -3129,7 +4346,22 @@ class Graph:
             if src == source and tgt == target:
                 return True
         return False
-            
+
+    def has_vertex(self, vertex_id: str) -> bool:
+        """
+        Test for the existence of a vertex.
+
+        Parameters
+        ----------
+        vertex_id : str
+
+        Returns
+        -------
+        bool
+        """
+        return vertex_id in self.entity_to_idx and self.entity_types.get(vertex_id) == "vertex"
+
+
     def get_edge_ids(self, source, target):
         """
         List all edge IDs between two endpoints.
@@ -3751,7 +4983,7 @@ class Graph:
         if has_id == has_pair:
             raise ValueError("Provide either edge_id OR (source and target), but not both.")
 
-        layers_view = self.layers(include_default=include_default)
+        layers_view = self.get_layers_dict(include_default=include_default)
 
         if has_id:
             return [lid for lid, ldata in layers_view.items() if edge_id in ldata["edges"]]
@@ -3825,7 +5057,7 @@ class Graph:
             if head & tail:
                 raise ValueError("head and tail must be disjoint.")
 
-        layers_view = self.layers(include_default=include_default)
+        layers_view = self.get_layers_dict(include_default=include_default)
         out: dict[str, list[str]] = {}
 
         for lid, ldata in layers_view.items():
@@ -3858,7 +5090,7 @@ class Graph:
         list[str]
         """
         layers_with_vertex = []
-        for layer_id, layer_data in self.layers(include_default=include_default).items():
+        for layer_id, layer_data in self.get_layers_dict(include_default=include_default).items():
             if vertex_id in layer_data["vertices"]:
                 layers_with_vertex.append(layer_id)
         return layers_with_vertex
@@ -3877,7 +5109,7 @@ class Graph:
         dict[str, int]
             ``{edge_id: count}``.
         """
-        layers_to_check = self.layers(include_default=include_default)  # hides 'default' by default
+        layers_to_check = self.get_layers_dict(include_default=include_default)  # hides 'default' by default
         edge_counts = {}
         for _, layer_data in layers_to_check.items():
             for eid in layer_data["edges"]:
@@ -4019,7 +5251,7 @@ class Graph:
             ``{layer_id: {'vertices': int, 'edges': int, 'attributes': dict}}``.
         """
         stats = {}
-        for layer_id, layer_data in self.layers(include_default=include_default).items():
+        for layer_id, layer_data in self.get_layers_dict(include_default=include_default).items():
             stats[layer_id] = {
                 'vertices': len(layer_data["vertices"]),
                 'edges': len(layer_data["edges"]),
@@ -5073,7 +6305,7 @@ class Graph:
         def peek_nodes(self, k: int = 10):
             """Debug helper: return up to k node IDs visible to NX."""
             nxG = self._get_or_make_nx(
-                directed=True, hyperedge_mode="skip", layer=None, layers=None, needed_attrs=set(),
+                directed=True, hyperedge_mode="expand", layer=None, layers=None, needed_attrs=set(),
                 simple=False, edge_aggs=None
             )
             out = []
@@ -5092,7 +6324,7 @@ class Graph:
             self,
             *,
             directed: bool = True,
-            hyperedge_mode: str = "skip",
+            hyperedge_mode: str = "expand",
             layer=None,
             layers=None,
             needed_attrs=None,
@@ -5132,19 +6364,24 @@ class Graph:
                 import networkx as _nx
 
                 # Proxy-only knobs (consumed here; not forwarded to NX)
-                directed = bool(kwargs.pop("_nx_directed", True))
-                hyperedge_mode = kwargs.pop("_nx_hyperedge", "skip")  # "skip" | "expand"
+                directed = bool(kwargs.pop("_nx_directed", getattr(self, "default_directed", True)))
+                hyperedge_mode = kwargs.pop("_nx_hyperedge", getattr(self, "default_hyperedge_mode", "expand"))  # "skip" | "expand"
                 layer = kwargs.pop("_nx_layer", None)
                 layers = kwargs.pop("_nx_layers", None)
                 label_field = kwargs.pop("_nx_label_field", None)      # explicit label column
                 guess_labels = kwargs.pop("_nx_guess_labels", True)    # try auto-infer when not provided
 
                 # force simple Graph/DiGraph and aggregation policy for parallel edges
-                simple = bool(kwargs.pop("_nx_simple", False))
+                simple = bool(kwargs.pop("_nx_simple", getattr(self, "default_simple", False)))
                 edge_aggs = kwargs.pop("_nx_edge_aggs", None)  # e.g. {"weight":"min","capacity":"sum"} or callables
 
                 # Determine required edge attributes (keep graph skinny)
                 needed_edge_attrs = self._needed_edge_attrs(nx_callable, kwargs)
+
+                # many nx.* functions need G; auto-inject when omitted
+                if "G" not in kwargs:
+                    # we inject the owner Graph; it will be swapped to the NX backend below
+                    kwargs["G"] = self._G
 
                 # Acquire (or build) backend NX graph for this config
                 nxG = self._get_or_make_nx(
@@ -5898,13 +7135,176 @@ class Graph:
             row = self.entity_to_idx[vid]
             self._matrix[row, col] = float(coeff)
 
+    # AnnNet API
 
-
-
-
-
-
-
+    def X(self): 
+        """Sparse incidence matrix."""
+        return self._matrix
+    
+    @property
+    def obs(self): 
+        """Node attribute table (observations)."""
+        return self.vertex_attributes
+    
+    @property
+    def var(self): 
+        """Edge attribute table (variables)."""
+        return self.edge_attributes
+    
+    @property
+    def uns(self): 
+        """Unstructured metadata."""
+        return self.graph_attributes
+    
+    @property
+    def layers(self):
+        """Layer operations (add, remove, union, intersect)."""
+        if not hasattr(self, "_layer_manager"):
+            self._layer_manager = LayerManager(self)
+        return self._layer_manager
+    
+    @property
+    def idx(self):
+        """Index lookups (entity_id↔row, edge_id↔col)."""
+        if not hasattr(self, "_index_manager"):
+            self._index_manager = IndexManager(self)
+        return self._index_manager
+    
+    @property
+    def cache(self):
+        """Cache management (CSR/CSC materialization)."""
+        if not hasattr(self, "_cache_manager"):
+            self._cache_manager = CacheManager(self)
+        return self._cache_manager
+    
+    # I/O
+    def write(self, path, **kwargs):
+        """Save to .annnet format (zero loss)."""
+        from ..io.io_annnet import write
+        write(self, path, **kwargs)
+    
+    @classmethod
+    def read(cls, path, **kwargs):
+        """Load from .annnet format."""
+        from ..io.io_annnet import read
+        return read(path, **kwargs)
+    
+    # View API
+    def view(self, nodes=None, edges=None, layers=None, predicate=None):
+        """Create lazy view/subgraph."""
+        return GraphView(self, nodes, edges, layers, predicate)
+    
+    # Audit
+    def snapshot(self, label=None):
+        """
+        Create a named snapshot of current graph state.
+        
+        Uses existing Graph attributes: entity_types, edge_to_idx, _layers, _version
+        
+        Parameters
+        ----------
+        label : str, optional
+            Human-readable label for snapshot (auto-generated if None)
+        
+        Returns
+        -------
+        dict
+            Snapshot metadata
+        """
+        from datetime import datetime, timezone
+        
+        if label is None:
+            label = f"snapshot_{len(self._snapshots)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        snapshot = {
+            "label": label,
+            "version": self._version,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "counts": {
+                "vertices": self.number_of_vertices(),
+                "edges": self.number_of_edges(),
+                "layers": len(self._layers)
+            },
+            # Store minimal state for comparison (uses existing Graph attributes)
+            "vertex_ids": set(v for v, t in self.entity_types.items() if t == "vertex"),
+            "edge_ids": set(self.edge_to_idx.keys()),
+            "layer_ids": set(self._layers.keys()),
+        }
+        
+        self._snapshots.append(snapshot)
+        return snapshot
+    
+    def diff(self, a, b=None):
+        """
+        Compare two snapshots or compare snapshot with current state.
+        
+        Parameters
+        ----------
+        a : str | dict | Graph
+            First snapshot (label, snapshot dict, or Graph instance)
+        b : str | dict | Graph | None
+            Second snapshot. If None, compare with current state.
+        
+        Returns
+        -------
+        GraphDiff
+            Difference object with added/removed entities
+        """
+        snap_a = self._resolve_snapshot(a)
+        snap_b = self._resolve_snapshot(b) if b is not None else self._current_snapshot()
+        
+        return GraphDiff(snap_a, snap_b)
+    
+    def _resolve_snapshot(self, ref):
+        """Resolve snapshot reference (label, dict, or Graph)."""
+        if isinstance(ref, dict):
+            return ref
+        elif isinstance(ref, str):
+            # Find by label
+            for snap in self._snapshots:
+                if snap["label"] == ref:
+                    return snap
+            raise ValueError(f"Snapshot '{ref}' not found")
+        elif isinstance(ref, Graph):
+            # Create snapshot from another graph (uses Graph attributes)
+            return {
+                "label": "external",
+                "version": ref._version,
+                "vertex_ids": set(v for v, t in ref.entity_types.items() if t == "vertex"),
+                "edge_ids": set(ref.edge_to_idx.keys()),
+                "layer_ids": set(ref._layers.keys()),
+            }
+        else:
+            raise TypeError(f"Invalid snapshot reference: {type(ref)}")
+    
+    def _current_snapshot(self):
+        """Create snapshot of current state (uses Graph attributes)."""
+        return {
+            "label": "current",
+            "version": self._version,
+            "vertex_ids": set(v for v, t in self.entity_types.items() if t == "vertex"),
+            "edge_ids": set(self.edge_to_idx.keys()),
+            "layer_ids": set(self._layers.keys()),
+        }
+    
+    def list_snapshots(self):
+        """
+        List all snapshots.
+        
+        Returns
+        -------
+        list[dict]
+            Snapshot metadata
+        """
+        return [
+            {
+                "label": snap["label"],
+                "timestamp": snap["timestamp"],
+                "version": snap["version"],
+                "counts": snap["counts"]
+            }
+            for snap in self._snapshots
+        ]
 
 
 
