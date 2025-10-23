@@ -58,8 +58,9 @@ def write(graph, path: str | Path, *, compression="zstd", overwrite=False):
         "layers": list(graph._layers.keys()),
         "active_layer": graph._current_layer,
         "default_layer": graph._default_layer,
-        "compression": compression
-    }
+        "compression": compression,
+        # make encoding explicit for tests/docs
+        "encoding": {"zarr": "v3", "parquet": "2.0"}    }
     (root / "manifest.json").write_text(json.dumps(manifest, indent=2))
     
     # 2. Write structure/ (topology)
@@ -229,17 +230,27 @@ def _write_layers(graph, path: Path, compression: str):
     )
     
     # Edge memberships with weights
-    edge_members = []
-    for layer_id, edge_weights in graph.layer_edge_weights.items():
+    edge_members: list[dict] = []
+    # Primary: explicit per-layer weights (if present)
+    for layer_id, edge_weights in getattr(graph, "layer_edge_weights", {}).items():
         for edge_id, weight in edge_weights.items():
-            edge_members.append({
-                "layer_id": layer_id,
-                "edge_id": edge_id,
-                "weight": weight
-            })
-    pl.DataFrame(edge_members).write_parquet(
-        path / "edge_memberships.parquet", compression=compression
-    )
+            edge_members.append({"layer_id": layer_id, "edge_id": edge_id, "weight": weight})
+    # Fallback: derive from registered layer edges if no explicit weights
+    if not edge_members:
+        for layer_id, layer_data in graph._layers.items():
+            for edge_id in layer_data.get("edges", ()):
+                edge_members.append({"layer_id": layer_id, "edge_id": edge_id, "weight": None})
+    # Ensure a stable schema even if there are zero rows
+    if edge_members:
+        em_df = pl.DataFrame(edge_members)
+    else:
+        em_df = pl.DataFrame(
+            {"layer_id": pl.Series([], dtype=pl.Utf8),
+             "edge_id":  pl.Series([], dtype=pl.Utf8),
+             "weight":   pl.Series([], dtype=pl.Float64)}
+        )
+    em_df.write_parquet(path / "edge_memberships.parquet", compression=compression)
+
 
 def _write_audit(graph, path: Path, compression: str):
     """Write history, snapshots, provenance."""
@@ -514,9 +525,11 @@ def _load_layers(graph, path: Path):
     for row in edge_df.to_dicts():
         lid = row["layer_id"]
         eid = row["edge_id"]
-        w   = row["weight"]
         graph._layers[lid]["edges"].add(eid)
-        graph.layer_edge_weights.setdefault(lid, {})[eid] = w
+        # Only set a per-layer weight if it was explicitly stored (not None).
+        w = row.get("weight", None)
+        if w is not None:
+            graph.layer_edge_weights.setdefault(lid, {})[eid] = w
 
 def _load_audit(graph, path: Path):
     """Load history and provenance."""
