@@ -20,7 +20,7 @@ import numpy as np
 import warnings
 warnings.filterwarnings("ignore", message="Signature .*numpy.longdouble.*")
 
-from graph import Graph
+from ..core.graph import Graph
 
 
 # ----------------------- utilities -----------------------
