@@ -5498,6 +5498,7 @@ class Graph:
         return self._ig_proxy
 
     class _LazyIGProxy:
+
         """
         Lazy, cached igraph adapter:
           - On-demand backend conversion (no persistent igraph graph).
@@ -5846,6 +5847,7 @@ class Graph:
             return H
 
         def _collapse_multiedges(self, igG, *, directed: bool,
+                                 
                                  aggregations: dict | None, needed_attrs: set):
             import igraph as _ig
             H = _ig.Graph(directed=directed)
@@ -5886,3 +5888,27 @@ class Graph:
                 agg = _agg_for(k)
                 H.es[k] = [agg(buckets[edge].get(k, [])) for edge in edges]
             return H
+
+    # For SBML Stoechiometry
+
+    def set_hyperedge_coeffs(self, edge_id: str, coeffs: dict[str, float]) -> None:
+        """Write per-vertex coefficients into the incidence column (DOK [dictionary of keys])."""
+        col = self.edge_to_idx[edge_id]
+        for vid, coeff in coeffs.items():
+            row = self.entity_to_idx[vid]
+            self._matrix[row, col] = float(coeff)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
