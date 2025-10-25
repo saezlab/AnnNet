@@ -22,7 +22,9 @@ class TestPerformance:
 
         start = time.time()
         write_parquet_graphdir(G, tmpdir_fixture / "perf_dir")
-        read_parquet_graphdir(G, tmpdir_fixture / "perf_dir")
+        H = read_parquet_graphdir(tmpdir_fixture / "perf_dir")
+        # optional sanity:
+        assert H.number_of_edges() == G.number_of_edges()
         results['Parquet'] = time.time() - start
 
         start = time.time()

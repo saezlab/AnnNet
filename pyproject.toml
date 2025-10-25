@@ -1,6 +1,6 @@
 [build-system]
+requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
-requires = ["hatchling"]
 
 [dependency-groups]
 dev = [
@@ -96,7 +96,6 @@ classifiers = [
 dependencies = [
     "numpy>=2.2.6",
     "polars>=0.20.0",
-    "pandas>=2.0.3",
     "scipy>=1.9.0",
 ]
 description = "A Python tool to build, manipulate, and interoperate with flexible graph structures"
@@ -106,12 +105,65 @@ maintainers = [
 ]
 name = "graphglue"
 readme = "README.md"
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.9"
 version = "0.0.1"
 
 [project.optional-dependencies]
-igraph = ["python-igraph>=0.11"]
-networkx = ["networkx>=3.0"]
+networkx = ["networkx>=3.3"]
+igraph   = ["python-igraph>=0.11"]
+pandas = ["pandas>=2.0.3"]
+excel    = ["openpyxl>=3.1"]          # used by graphglue/io/excel.py
+sbml     = ["lxml>=5"]                # used by sbml_adapter.py
+parquet  = ["pyarrow>=14"]            # used by GraphDir_Parquet_adapter.py
+zarr_io  = ["zarr>=2.18", "numcodecs>=0.12"]  # used by io_annnet.py
+plot     = ["matplotlib>=3.8"]
+
+# convenience bundle for end users who want "everything"
+all = [
+  "networkx>=3.3",
+  "python-igraph>=0.11",
+  "openpyxl>=3.1",
+  "lxml>=5",
+  "pyarrow>=14",
+  "zarr>=2.18",
+  "numcodecs>=0.12",
+  "matplotlib>=3.8",
+  "pandas>=2.0.3"
+]
+
+
+# make CI tools installable via `.[dev]`
+dev = [
+  "ruff>=0.6",
+  "mypy>=1.10",
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "build>=1.2",
+  "twine>=5.0",
+]
+
+# unit-test helpers via `.[tests]`
+tests = [
+  "coverage>=6.0",
+  "tox>=4.11",
+  "tox-gh>=1.5.0",
+  "diff_cover",
+  "codecov-cli>=10.2.0",
+]
+
+# switch docs extra to **MkDocs** (workflows call mkdocs)
+docs = [
+  "mkdocs>=1.6",
+  "mkdocs-material>=9.5",
+  "mkdocstrings[python]>=0.25",
+  "mkdocs-jupyter>=0.25",
+]
+
+[tool.hatch.build]
+exclude = [
+  "**/__pycache__/**",
+  "**/.ipynb_checkpoints/**"
+]
 
 [project.scripts]
 gg = "graphglue:main"
@@ -165,8 +217,8 @@ report_level = "INFO"
 
 [tool.ruff]
 extend-include = ["*.ipynb"]
-line-length = 80
-target-version = "py311"
+line-length = 100
+target-version = "py312"
 unfixable = ["UP"]
 
 [tool.ruff.format]
