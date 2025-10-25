@@ -2,7 +2,7 @@ import sys, pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
 from graphglue.adapters.GraphDir_Parquet_adapter import write_parquet_graphdir, read_parquet_graphdir  # Parquet (columnar storage)
-from conftest import assert_graphs_equal, assert_vertex_attrs_equal, assert_edge_attrs_equal
+from .helpers import assert_graphs_equal, assert_vertex_attrs_equal, assert_edge_attrs_equal
 
 class TestGraphDirAdapter:
     """Tests for GraphDir Parquet adapter."""

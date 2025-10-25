@@ -2,7 +2,7 @@ import sys, pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
 from graphglue.adapters.json_adapter import to_json, from_json, write_ndjson  # JSON (JavaScript Object Notation), NDJSON (Newline-Delimited JSON)
-from conftest import assert_graphs_equal, assert_vertex_attrs_equal, assert_edge_attrs_equal
+from .helpers import assert_graphs_equal, assert_vertex_attrs_equal, assert_edge_attrs_equal
 
 class TestJSONAdapter:
     """Tests for JSON adapter."""

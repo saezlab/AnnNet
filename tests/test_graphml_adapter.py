@@ -2,7 +2,7 @@ import sys, pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
 from graphglue.adapters.GraphML_adapter import to_graphml, from_graphml  # GraphML (Graph Markup Language)
-from conftest import assert_graphs_equal
+from .helpers import assert_graphs_equal
 
 class TestGraphMLAdapter:
     """Tests for GraphML adapter (NetworkX wrapper)."""

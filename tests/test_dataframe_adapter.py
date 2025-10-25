@@ -5,7 +5,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
 from graphglue.adapters.dataframe_adapter import to_dataframes, from_dataframes
 from graphglue.core.graph import Graph
-from conftest import assert_graphs_equal, assert_vertex_attrs_equal, assert_edge_attrs_equal
+from .helpers import assert_graphs_equal, assert_vertex_attrs_equal, assert_edge_attrs_equal
 
 class TestDataFrameAdapter:
     """Tests for Polars DataFrame adapter."""
