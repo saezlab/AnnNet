@@ -3,6 +3,10 @@ import os
 import unittest
 import numpy as np
 
+import sys, pathlib
+ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
+sys.path.insert(0, str(ROOT))
+
 from graphglue.adapters.sbml_adapter import _graph_from_stoich, from_cobra_model
 from  graphglue.core import Graph
 
@@ -74,7 +78,7 @@ class TestSBMLAdapter(unittest.TestCase):
         self.assertEqual(G.num_edges, 2)
         self.assertIn("R1", G.edge_to_idx)
 
-    def test_boundary_reactions():
+    def test_boundary_reactions(self):
         import numpy as np
         from graphglue.adapters.sbml_adapter import _graph_from_stoich, BOUNDARY_SOURCE, BOUNDARY_SINK
         mets = ["A"]
