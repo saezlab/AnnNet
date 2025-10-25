@@ -6378,37 +6378,40 @@ class Graph:
                 # Determine required edge attributes (keep graph skinny)
                 needed_edge_attrs = self._needed_edge_attrs(nx_callable, kwargs)
 
-                # many nx.* functions need G; auto-inject when omitted
-                if "G" not in kwargs:
-                    # we inject the owner Graph; it will be swapped to the NX backend below
-                    kwargs["G"] = self._G
-
-                # Acquire (or build) backend NX graph for this config
-                nxG = self._get_or_make_nx(
-                    directed=directed,
-                    hyperedge_mode=hyperedge_mode,
-                    layer=layer,
-                    layers=layers,
-                    needed_attrs=needed_edge_attrs,
-                    simple=simple,
-                    edge_aggs=edge_aggs,
-                )
-
-                # Replace any Graph instance with nxG
+                # Do NOT auto-inject G. Only convert/replace if the user passed our Graph.
                 args = list(args)
-                for i, v in enumerate(args):
-                    if v is self._G:
-                        args[i] = nxG
-                for k, v in list(kwargs.items()):
-                    if v is self._G:
-                        kwargs[k] = nxG
+                has_owner_graph = any(a is self._G for a in args) or any(v is self._G for v in kwargs.values())
 
-                # Bind to NX signature so we can coerce node args reliably
+                # Build backend ONLY if we actually need to replace self._G
+                nxG = None
+                if has_owner_graph:
+                    nxG = self._get_or_make_nx(
+                        directed=directed,
+                        hyperedge_mode=hyperedge_mode,
+                        layer=layer,
+                        layers=layers,
+                        needed_attrs=needed_edge_attrs,
+                        simple=simple,
+                        edge_aggs=edge_aggs,
+                    )
+
+
+                # Replace any occurrence of our Graph with the NX backend
+                if nxG is not None:
+                    for i, v in enumerate(args):
+                        if v is self._G:
+                            args[i] = nxG
+                    for k, v in list(kwargs.items()):
+                        if v is self._G:
+                            kwargs[k] = nxG
+
+                # Bind to NX signature so we can coerce node args (no defaults!)
+                bound = None
                 try:
                     sig = inspect.signature(nx_callable)
                     bound = sig.bind_partial(*args, **kwargs)
                 except Exception:
-                    bound = None
+                    pass
 
                 # Coerce node args (labels/indices -> vertex IDs)
                 try:
@@ -6416,18 +6419,23 @@ class Graph:
                     if label_field is None and guess_labels:
                         label_field = self._infer_label_field()
 
-                    if bound is not None:
+                    if bound is not None and nxG is not None:
                         self._coerce_nodes_in_bound(bound, nxG, label_field)
-                        # Reconstruct call
-                        bound.apply_defaults()
+                        # Reconstruct WITHOUT applying defaults (avoid flow_func=None, etc.)
                         pargs = bound.args
                         pkwargs = bound.kwargs
                     else:
                         # Fallback: best-effort coercion on kwargs only
-                        self._coerce_nodes_in_kwargs(kwargs, nxG, label_field)
+                        if nxG is not None:
+                            self._coerce_nodes_in_kwargs(kwargs, nxG, label_field)
                         pargs, pkwargs = tuple(args), kwargs
                 except Exception:
                     pargs, pkwargs = tuple(args), kwargs  # best effort; let NX raise if needed
+
+                # Never leak private knobs to NX
+                for k in list(pkwargs.keys()):
+                    if isinstance(k, str) and k.startswith("_nx_"):
+                        pkwargs.pop(k, None)
 
                 try:
                     return nx_callable(*pargs, **pkwargs)
