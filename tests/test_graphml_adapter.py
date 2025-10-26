@@ -1,8 +1,15 @@
-import sys, pathlib
+import pathlib
+import sys
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
-from graphglue.adapters.GraphML_adapter import to_graphml, from_graphml  # GraphML (Graph Markup Language)
+from graphglue.adapters.GraphML_adapter import (
+    from_graphml,
+    to_graphml,
+)  # GraphML (Graph Markup Language)
+
 from .helpers import assert_graphs_equal
+
 
 class TestGraphMLAdapter:
     """Tests for GraphML adapter (NetworkX wrapper)."""
@@ -29,13 +36,10 @@ class TestGraphMLAdapter:
 
     def test_attribute_type_preservation(self, tmpdir_fixture):
         from graphglue.core.graph import Graph
+
         G = Graph()
         G.add_vertex("A")
-        G.set_vertex_attrs("A",
-                           string_val="text",
-                           int_val=42,
-                           float_val=3.14,
-                           bool_val=True)
+        G.set_vertex_attrs("A", string_val="text", int_val=42, float_val=3.14, bool_val=True)
         to_graphml(G, tmpdir_fixture / "graph.graphml")
         G2 = from_graphml(tmpdir_fixture / "graph.graphml")
         attrs = G2.get_vertex_attrs("A")

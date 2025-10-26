@@ -8,11 +8,14 @@ _BACKENDS = {
     "igraph": ("igraph", ".igraph", "IGraphAdapter"),  # pip pkg is python-igraph; import is igraph
 }
 
+
 def _is_installed(name: str, modname: str) -> bool:
     return util.find_spec(modname) is not None
 
+
 def available_backends() -> dict:
     return {name: _is_installed(name, mod) for name, (mod, _, _) in _BACKENDS.items()}
+
 
 def load_adapter(name: str, *args, **kwargs):
     if name not in _BACKENDS:
@@ -25,6 +28,7 @@ def load_adapter(name: str, *args, **kwargs):
         )
     mod = import_module(__name__ + submod)
     return getattr(mod, cls)(*args, **kwargs)
+
 
 """
 Standardize via adapter pattern with shared interface + fallback to edge list + attributes.

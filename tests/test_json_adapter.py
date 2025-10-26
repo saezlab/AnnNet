@@ -1,8 +1,16 @@
-import sys, pathlib
+import pathlib
+import sys
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
-from graphglue.adapters.json_adapter import to_json, from_json, write_ndjson  # JSON (JavaScript Object Notation), NDJSON (Newline-Delimited JSON)
-from .helpers import assert_graphs_equal, assert_vertex_attrs_equal, assert_edge_attrs_equal
+from graphglue.adapters.json_adapter import (
+    from_json,
+    to_json,
+    write_ndjson,
+)  # JSON (JavaScript Object Notation), NDJSON (Newline-Delimited JSON)
+
+from .helpers import assert_edge_attrs_equal, assert_graphs_equal, assert_vertex_attrs_equal
+
 
 class TestJSONAdapter:
     """Tests for JSON adapter."""
@@ -59,6 +67,7 @@ class TestJSONAdapter:
         assert (tmpdir_fixture / "ndjson_dir" / "hyperedges.ndjson").exists()
         assert (tmpdir_fixture / "ndjson_dir" / "layers.ndjson").exists()
         import json
+
         with open(tmpdir_fixture / "ndjson_dir" / "nodes.ndjson") as f:
             lines = f.readlines()
             assert len(lines) > 0

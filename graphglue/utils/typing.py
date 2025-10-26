@@ -1,13 +1,11 @@
-from typing import TYPE_CHECKING, Any, FrozenSet, Tuple, TypeVar, Union, Optional
 from enum import Enum
+from typing import Any, FrozenSet, Optional, Tuple
 
 # ------------------------------------------------------------------------------
 # Basic Type Definitions
 # ------------------------------------------------------------------------------
 
 Edge = Tuple[FrozenSet[Any], FrozenSet[Any]]
-
-
 
 
 class Attr(str, Enum):
@@ -19,6 +17,7 @@ class Attr(str, Enum):
         SOURCE_ATTR: Represents the key for a source attribute.
         TARGET_ATTR: Represents the key for a target attribute.
         CUSTOM_ATTR: Represents the key for a custom attribute.
+
     """
 
     VALUE = "__value"
@@ -35,7 +34,7 @@ class Attributes(dict):
     """
 
     __slots__ = ()
-    __protected_attrs = set(dir(dict))  # noqa: RUF012
+    __protected_attrs = set(dir(dict))
 
     def __setattr__(self, __name: str, __value: Any) -> None:
         """Set an attribute as a dictionary key-value pair.
@@ -49,6 +48,7 @@ class Attributes(dict):
 
         Raises:
             AttributeError: If trying to set a protected attribute.
+
         """
         if __name in self.__protected_attrs:
             raise AttributeError(f"'{__name}' is a protected attribute")
@@ -68,6 +68,7 @@ class Attributes(dict):
 
         Raises:
             AttributeError: If the attribute does not exist.
+
         """
         if __name in self:
             return self.__getitem__(__name)
@@ -80,6 +81,7 @@ class Attributes(dict):
             key (Attr): The key for the attribute, represented as an `Attr` enum.
             value (Any): The value to assign to the key. If the value is an enum,
                          its value is used.
+
         """
         v = value if not isinstance(value, Enum) else value.value
         self.__setitem__(key.value, v)
@@ -94,6 +96,7 @@ class Attributes(dict):
         Returns:
             bool: `True` if the attribute exists and matches the value (if provided),
                   otherwise `False`.
+
         """
         if value is None:
             return key.value in self
@@ -110,6 +113,7 @@ class Attributes(dict):
 
         Returns:
             Any: The value of the attribute, or the default value if not found.
+
         """
         if default is not None:
             return self.get(key.value, default)

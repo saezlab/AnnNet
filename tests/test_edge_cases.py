@@ -1,16 +1,23 @@
-import sys, pathlib
+import pathlib
+import sys
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
 
-from graphglue.adapters.json_adapter import to_json, from_json  # JSON (JavaScript Object Notation)
-from graphglue.adapters.GraphDir_Parquet_adapter import write_parquet_graphdir, read_parquet_graphdir  # Parquet (columnar storage)
-from graphglue.adapters.SIF_adapter import to_sif, from_sif  # SIF (Simple Interaction Format)
+from graphglue.adapters.GraphDir_Parquet_adapter import (
+    read_parquet_graphdir,
+    write_parquet_graphdir,
+)  # Parquet (columnar storage)
+from graphglue.adapters.json_adapter import from_json, to_json  # JSON (JavaScript Object Notation)
+from graphglue.adapters.SIF_adapter import from_sif, to_sif  # SIF (Simple Interaction Format)
+
 
 class TestEdgeCases:
     """Edge cases and error handling."""
 
     def test_empty_graph_all_adapters(self, tmpdir_fixture):
         from graphglue.core.graph import Graph
+
         G = Graph()
         to_json(G, tmpdir_fixture / "empty.json")
         G_json = from_json(tmpdir_fixture / "empty.json")
@@ -20,20 +27,24 @@ class TestEdgeCases:
         G_parquet = read_parquet_graphdir(tmpdir_fixture / "empty_dir")
         assert len(list(G_parquet.vertices())) == 0
 
-        from graphglue.adapters.dataframe_adapter import to_dataframes, from_dataframes
+        from graphglue.adapters.dataframe_adapter import from_dataframes, to_dataframes
+
         dfs = to_dataframes(G)
         G_df = from_dataframes(**dfs)
         assert len(list(G_df.vertices())) == 0
 
     def test_special_characters_in_ids(self, tmpdir_fixture):
         from graphglue.core.graph import Graph
+
         G = Graph()
         special_ids = [
             "node with spaces",
             "node-with-dashes",
             "node_with_underscores",
             "node.with.dots",
-            "α", "β", "γ",
+            "α",
+            "β",
+            "γ",
             "node\twith\ttabs",
         ]
         for vid in special_ids:
@@ -49,8 +60,10 @@ class TestEdgeCases:
 
     def test_large_weights_and_extreme_values(self, tmpdir_fixture):
         from graphglue.core.graph import Graph
+
         G = Graph()
-        G.add_vertex("A"); G.add_vertex("B")
+        G.add_vertex("A")
+        G.add_vertex("B")
         G.add_edge("A", "B", edge_id="e1", weight=1e10)
         G.add_edge("A", "B", edge_id="e2", weight=1e-10)
         G.add_edge("A", "B", edge_id="e3", weight=0.0)
@@ -62,6 +75,7 @@ class TestEdgeCases:
 
     def test_self_loops(self, tmpdir_fixture):
         from graphglue.core.graph import Graph
+
         G = Graph()
         G.add_vertex("A")
         G.add_edge("A", "A", edge_id="loop", weight=2.5)
@@ -71,16 +85,23 @@ class TestEdgeCases:
         write_parquet_graphdir(G, tmpdir_fixture / "loop_dir")
         G_parquet = read_parquet_graphdir(tmpdir_fixture / "loop_dir")
         assert "loop" in G_parquet.edge_to_idx
-        to_sif(G, tmpdir_fixture / "loop.sif", lossless=True,
-               manifest_path=tmpdir_fixture / "loop.manifest.json")
-        G_sif = from_sif(tmpdir_fixture / "loop.sif",
-                         manifest=tmpdir_fixture / "loop.manifest.json")
+        to_sif(
+            G,
+            tmpdir_fixture / "loop.sif",
+            lossless=True,
+            manifest_path=tmpdir_fixture / "loop.manifest.json",
+        )
+        G_sif = from_sif(
+            tmpdir_fixture / "loop.sif", manifest=tmpdir_fixture / "loop.manifest.json"
+        )
         assert "loop" in G_sif.edge_to_idx
 
     def test_parallel_edges(self, tmpdir_fixture):
         from graphglue.core.graph import Graph
+
         G = Graph()
-        G.add_vertex("A"); G.add_vertex("B")
+        G.add_vertex("A")
+        G.add_vertex("B")
         G.add_edge("A", "B", edge_id="e1", weight=1.0)
         G.add_edge("A", "B", edge_id="e2", weight=2.0)
         G.add_edge("A", "B", edge_id="e3", weight=3.0)
@@ -93,13 +114,10 @@ class TestEdgeCases:
 
     def test_null_and_none_handling(self, tmpdir_fixture):
         from graphglue.core.graph import Graph
+
         G = Graph()
         G.add_vertex("A")
-        G.set_vertex_attrs("A",
-                           present="value",
-                           missing=None,
-                           zero=0,
-                           empty_string="")
+        G.set_vertex_attrs("A", present="value", missing=None, zero=0, empty_string="")
         to_json(G, tmpdir_fixture / "nulls.json")
         G_json = from_json(tmpdir_fixture / "nulls.json")
         attrs = G_json.get_vertex_attrs("A") or {}
@@ -108,8 +126,10 @@ class TestEdgeCases:
         assert "missing" not in attrs or attrs.get("missing") is None
 
     def test_very_large_graph(self, tmpdir_fixture):
-        from graphglue.core.graph import Graph
         import random
+
+        from graphglue.core.graph import Graph
+
         G = Graph()
         n_vertices = 1000
         n_edges = 2000
@@ -117,8 +137,8 @@ class TestEdgeCases:
             G.add_vertex(f"v{i}")
         random.seed(42)
         for i in range(n_edges):
-            u = f"v{random.randint(0, n_vertices-1)}"
-            v = f"v{random.randint(0, n_vertices-1)}"
+            u = f"v{random.randint(0, n_vertices - 1)}"
+            v = f"v{random.randint(0, n_vertices - 1)}"
             G.add_edge(u, v, edge_id=f"e{i}", weight=random.random())
         write_parquet_graphdir(G, tmpdir_fixture / "large_dir")
         G_parquet = read_parquet_graphdir(tmpdir_fixture / "large_dir")

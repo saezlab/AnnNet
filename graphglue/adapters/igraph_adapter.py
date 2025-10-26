@@ -6,18 +6,19 @@ except ModuleNotFoundError as e:
         "Install with: pip install graphglue[igraph]"
     ) from e
 
-from typing import Any
-from enum import Enum
 import json
-from ._utils import _is_directed_eid, _endpoint_coeff_map
+from enum import Enum
+from typing import Any
+
+from ._utils import _endpoint_coeff_map, _is_directed_eid
 
 
 def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
-    """
-    Returns:
+    """Returns:
       layers_section: {layer_id: [edge_id, ...]}
       layer_weights:  {layer_id: {edge_id: weight}}
     Backends supported: Polars-like, .to_dicts()-like, dict.
+
     """
     layers_section: dict = {}
     layer_weights: dict = {}
@@ -27,7 +28,7 @@ def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
     if t is not None and hasattr(t, "filter"):
         try:
             # Attempt Polars path without hard dependency
-            import polars as pl  # optional; if missing, we'll fall through
+
             # Get all rows then group by layer in Python (keeps us backend-agnostic)
             if hasattr(t, "to_dicts"):
                 rows = t.to_dicts()
@@ -74,7 +75,11 @@ def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
                 layers_section.setdefault(lid, []).extend(eids)
                 # pick weights if present
                 for eid, attrs in ed.items():
-                    if isinstance(attrs, dict) and "weight" in attrs and attrs["weight"] is not None:
+                    if (
+                        isinstance(attrs, dict)
+                        and "weight" in attrs
+                        and attrs["weight"] is not None
+                    ):
                         layer_weights.setdefault(lid, {})[eid] = float(attrs["weight"])
 
     # --- Fallback D: per-edge scan (if graph exposes edge iteration + get_edge_layers)
@@ -150,14 +155,18 @@ def _attrs_to_dict(attrs_dict: dict) -> dict:
     return out
 
 
-def _export_legacy(graph: "Graph", *, directed: bool = True,
-                   skip_hyperedges: bool = True, public_only: bool = False):
-    """
-    Export Graph to igraph.Graph without manifest.
-    
+def _export_legacy(
+    graph: "Graph",
+    *,
+    directed: bool = True,
+    skip_hyperedges: bool = True,
+    public_only: bool = False,
+):
+    """Export Graph to igraph.Graph without manifest.
+
     igraph requires integer vertex indices; external vertex IDs are preserved
     in vertex attribute 'name'. Edge IDs stored in edge attribute 'eid'.
-    
+
     Parameters
     ----------
     graph : Graph
@@ -171,10 +180,11 @@ def _export_legacy(graph: "Graph", *, directed: bool = True,
           - undirected hyperedges expand to clique
     public_only : bool
         If True, strip private attrs starting with "__".
-    
+
     Returns
     -------
     igraph.Graph
+
     """
     import igraph as ig
 
@@ -218,7 +228,12 @@ def _export_legacy(graph: "Graph", *, directed: bool = True,
     # Pre-scan to a dict for O(1) lookup
     vattr_map = {}
     try:
-        if vtab is not None and hasattr(vtab, "to_dicts") and vtab.height > 0 and "vertex_id" in vtab.columns:
+        if (
+            vtab is not None
+            and hasattr(vtab, "to_dicts")
+            and vtab.height > 0
+            and "vertex_id" in vtab.columns
+        ):
             for row in vtab.to_dicts():
                 d = dict(row)
                 vid = d.pop("vertex_id", None)
@@ -237,8 +252,9 @@ def _export_legacy(graph: "Graph", *, directed: bool = True,
     for v in vertices:
         v_attr = dict(vattr_map.get(v, {}))
         if public_only:
-            v_attr = {k: _serialize_value(val) for k, val in v_attr.items()
-                      if not str(k).startswith("__")}
+            v_attr = {
+                k: _serialize_value(val) for k, val in v_attr.items() if not str(k).startswith("__")
+            }
         else:
             v_attr = {k: _serialize_value(val) for k, val in v_attr.items()}
 
@@ -259,7 +275,12 @@ def _export_legacy(graph: "Graph", *, directed: bool = True,
     etab = getattr(graph, "edge_attributes", None)
     eattr_map = {}
     try:
-        if etab is not None and hasattr(etab, "to_dicts") and etab.height > 0 and "edge_id" in etab.columns:
+        if (
+            etab is not None
+            and hasattr(etab, "to_dicts")
+            and etab.height > 0
+            and "edge_id" in etab.columns
+        ):
             for row in etab.to_dicts():
                 d = dict(row)
                 eid = d.pop("edge_id", None)
@@ -274,8 +295,9 @@ def _export_legacy(graph: "Graph", *, directed: bool = True,
 
         e_attr = dict(eattr_map.get(eid, {}))
         if public_only:
-            e_attr = {k: _serialize_value(val) for k, val in e_attr.items()
-                      if not str(k).startswith("__")}
+            e_attr = {
+                k: _serialize_value(val) for k, val in e_attr.items() if not str(k).startswith("__")
+            }
         else:
             e_attr = {k: _serialize_value(val) for k, val in e_attr.items()}
 
@@ -285,7 +307,7 @@ def _export_legacy(graph: "Graph", *, directed: bool = True,
         else:
             e_attr["__weight"] = weight
 
-        is_hyper = (graph.edge_kind.get(eid) == "hyper")
+        is_hyper = graph.edge_kind.get(eid) == "hyper"
         is_dir = _is_dir_eid(graph, eid)
         members = S | T
 
@@ -393,10 +415,16 @@ def _coeff_from_obj(obj) -> float:
     return 1.0
 
 
-def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip", 
-              layer=None, layers=None, public_only=False, reify_prefix="he::"):
-    """
-    Export Graph → (igraph.Graph, manifest).
+def to_igraph(
+    graph: "Graph",
+    directed=True,
+    hyperedge_mode="skip",
+    layer=None,
+    layers=None,
+    public_only=False,
+    reify_prefix="he::",
+):
+    """Export Graph → (igraph.Graph, manifest).
 
     hyperedge_mode: {"skip","expand","reify"}
       - "skip": drop HE edges from igG (manifest keeps them)
@@ -409,7 +437,7 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
         graph,
         directed=directed,
         skip_hyperedges=(hyperedge_mode in ("skip", "reify")),
-        public_only=public_only
+        public_only=public_only,
     )
 
     # -------------- collect vertex/edge attrs for manifest --------------
@@ -427,9 +455,7 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
     edge_attrs = {}
     for eidx in range(graph.number_of_edges()):
         eid = graph.idx_to_edge[eidx]
-        e_rows = graph.edge_attributes.filter(
-            graph.edge_attributes["edge_id"] == eid
-        ).to_dicts()
+        e_rows = graph.edge_attributes.filter(graph.edge_attributes["edge_id"] == eid).to_dicts()
         attrs = dict(e_rows[0]) if e_rows else {}
         attrs.pop("edge_id", None)
         if public_only:
@@ -441,7 +467,7 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
     for eidx in range(graph.number_of_edges()):
         S, T = graph.get_edge(eidx)
         eid = graph.idx_to_edge[eidx]
-        is_hyper = (graph.edge_kind.get(eid) == "hyper")
+        is_hyper = graph.edge_kind.get(eid) == "hyper"
         if not is_hyper:
             members = S | T
             if len(members) == 1:
@@ -463,10 +489,13 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
 
     # ---------- layers + per-layer weights for manifest ----------
     def _rows_from_table(t):
-        if t is None: return []
+        if t is None:
+            return []
         if hasattr(t, "to_dicts"):
-            try: return list(t.to_dicts())
-            except Exception: pass
+            try:
+                return list(t.to_dicts())
+            except Exception:
+                pass
         return []
 
     all_eids = list(manifest_edges.keys())
@@ -491,7 +520,8 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
             seen = set(layers_section[lid])
             for e in eids:
                 if e not in seen:
-                    layers_section[lid].append(e); seen.add(e)
+                    layers_section[lid].append(e)
+                    seen.add(e)
 
     t = getattr(graph, "edge_layer_attributes", None)
     if isinstance(t, dict):
@@ -501,19 +531,22 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
                 seen = set(arr)
                 for eid in list(mapping.keys()):
                     if eid not in seen:
-                        arr.append(eid); seen.add(eid)
+                        arr.append(eid)
+                        seen.add(eid)
     for r in _rows_from_table(t):
         lid = r.get("layer") or r.get("layer_id") or r.get("lid")
-        if lid is None: continue
+        if lid is None:
+            continue
         eid = r.get("edge_id", r.get("edge"))
         if eid is not None:
             arr = layers_section.setdefault(lid, [])
-            if eid not in arr: arr.append(eid)
+            if eid not in arr:
+                arr.append(eid)
 
     etl = getattr(graph, "edge_to_layers", None)
     if isinstance(etl, dict):
         for eid, arr_lids in etl.items():
-            for lid in (arr_lids or []):
+            for lid in arr_lids or []:
                 arr = layers_section.setdefault(lid, [])
                 if eid not in arr:
                     arr.append(eid)
@@ -525,7 +558,8 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
             seen = set(arr)
             for eid in list(eids):
                 if eid not in seen:
-                    arr.append(eid); seen.add(eid)
+                    arr.append(eid)
+                    seen.add(eid)
 
     # remove empties
     layers_section = {lid: eids for lid, eids in layers_section.items() if eids}
@@ -564,7 +598,6 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
 
     # -------------- REIFY: add HE nodes + membership edges to igG --------------
     if hyperedge_mode == "reify":
-        import igraph as ig
 
         # allowed HE set under layer filter (None => all)
         allowed = None
@@ -629,19 +662,26 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
                     payloads.append({"role": "head", "coeff": float(coeff), "membership_of": eid})
             else:
                 members = {}
-                members.update(tail_map or {}); members.update(head_map or {})
+                members.update(tail_map or {})
+                members.update(head_map or {})
                 if directed:  # directed container: add both directions
                     for u, coeff in members.items():
                         ui = ensure_vertex(u)
                         new_edges.append((ui, he_idx))
-                        payloads.append({"role": "member", "coeff": float(coeff), "membership_of": eid})
+                        payloads.append(
+                            {"role": "member", "coeff": float(coeff), "membership_of": eid}
+                        )
                         new_edges.append((he_idx, ui))
-                        payloads.append({"role": "member", "coeff": float(coeff), "membership_of": eid})
+                        payloads.append(
+                            {"role": "member", "coeff": float(coeff), "membership_of": eid}
+                        )
                 else:  # undirected container: one edge is enough
                     for u, coeff in members.items():
                         ui = ensure_vertex(u)
                         new_edges.append((ui, he_idx))
-                        payloads.append({"role": "member", "coeff": float(coeff), "membership_of": eid})
+                        payloads.append(
+                            {"role": "member", "coeff": float(coeff), "membership_of": eid}
+                        )
 
         if new_edges:
             start = igG.ecount()
@@ -653,78 +693,82 @@ def to_igraph(graph: "Graph", directed=True, hyperedge_mode="skip",
 
     # -------------- manifest (unchanged semantics) --------------
     manifest = {
-         "edges": manifest_edges,
-         "weights": base_weights,
-         "layers": layers_section,
-         "vertex_attrs": vertex_attrs,
-         "edge_attrs": edge_attrs,
-         "layer_weights": layer_weights,
-         "edge_directed": {eid: bool(_is_directed_eid(graph, eid)) for eid in all_eids},
-         "manifest_version": 1,
+        "edges": manifest_edges,
+        "weights": base_weights,
+        "layers": layers_section,
+        "vertex_attrs": vertex_attrs,
+        "edge_attrs": edge_attrs,
+        "layer_weights": layer_weights,
+        "edge_directed": {eid: bool(_is_directed_eid(graph, eid)) for eid in all_eids},
+        "manifest_version": 1,
     }
 
     return igG, manifest
 
 
 def save_manifest(manifest: dict, path: str):
-    """
-    Write manifest to JSON file.
-    
+    """Write manifest to JSON file.
+
     Parameters
     ----------
     manifest : dict
         Manifest dictionary from to_igraph().
     path : str
         Output file path (typically .json extension).
-    
+
     Returns
     -------
     None
-    
+
     Raises
     ------
     OSError
         If file cannot be written.
+
     """
     with open(path, "w") as f:
         json.dump(manifest, f, indent=2)
 
 
 def load_manifest(path: str) -> dict:
-    """
-    Load manifest from JSON file.
-    
+    """Load manifest from JSON file.
+
     Parameters
     ----------
     path : str
         Path to manifest JSON file created by save_manifest().
-    
+
     Returns
     -------
     dict
         Manifest dictionary suitable for from_igraph().
-    
+
     Raises
     ------
     OSError
         If file cannot be read.
     json.JSONDecodeError
         If file contains invalid JSON.
+
     """
     with open(path) as f:
         return json.load(f)
 
-def _ig_collect_reified(igG,
-                        he_node_flag="is_hyperedge",
-                        he_id_attr="eid",
-                        role_attr="role",
-                        coeff_attr="coeff",
-                        membership_attr="membership_of"):
-    """
-    Scan igG for reified hyperedges.
+
+def _ig_collect_reified(
+    igG,
+    he_node_flag="is_hyperedge",
+    he_id_attr="eid",
+    role_attr="role",
+    coeff_attr="coeff",
+    membership_attr="membership_of",
+):
+    """Scan igG for reified hyperedges.
+
     Returns:
       - hyperdefs: list of (eid, directed:bool, head_map:dict, tail_map:dict, he_node_attrs:dict, he_vertex_index)
       - membership_edge_idx: set of edge indices that are membership edges (to skip for binary import)
+
     """
     import math
 
@@ -763,11 +807,15 @@ def _ig_collect_reified(igG,
                 coeff = 1.0
 
             if role == "head":
-                head_map[other] = coeff; saw_head = True
+                head_map[other] = coeff
+                saw_head = True
             elif role == "tail":
-                tail_map[other] = coeff; saw_tail = True
+                tail_map[other] = coeff
+                saw_tail = True
             else:
-                head_map[other] = coeff; tail_map[other] = coeff; saw_member = True
+                head_map[other] = coeff
+                tail_map[other] = coeff
+                saw_member = True
 
         directed = bool(saw_head or saw_tail) and not (saw_member and not (saw_head or saw_tail))
         hyperdefs.append((eid, directed, head_map, tail_map, nd, hi))
@@ -775,13 +823,16 @@ def _ig_collect_reified(igG,
     return hyperdefs, membership_edge_idx
 
 
-def from_igraph(igG, manifest, *,
-                hyperedge: str = "none",
-                he_node_flag: str = "is_hyperedge",
-                he_id_attr: str = "eid",
-                reify_prefix: str = "he::") -> "Graph":
-    """
-    Reconstruct a Graph from igraph.Graph + manifest.
+def from_igraph(
+    igG,
+    manifest,
+    *,
+    hyperedge: str = "none",
+    he_node_flag: str = "is_hyperedge",
+    he_id_attr: str = "eid",
+    reify_prefix: str = "he::",
+) -> "Graph":
+    """Reconstruct a Graph from igraph.Graph + manifest.
 
     hyperedge: "none" (default) | "reified"
       When "reified", also detect hyperedge nodes in igG and rebuild true hyperedges
@@ -793,8 +844,7 @@ def from_igraph(igG, manifest, *,
 
     # -------- helper: scan reified HE nodes in igG (used only if hyperedge == "reified") --------
     def _ig_collect_reified(ig):
-        """
-        Return list of tuples:
+        """Return list of tuples:
           (eid, directed, head_map, tail_map, he_attrs, he_index)
         where head_map/tail_map are {vertex_id: coeff}.
         """
@@ -833,7 +883,7 @@ def from_igraph(igG, manifest, *,
             except Exception:
                 eid = None
             if not eid and isinstance(he_name, str) and he_name.startswith(reify_prefix):
-                eid = he_name[len(reify_prefix):]
+                eid = he_name[len(reify_prefix) :]
             if not eid:
                 eid = f"he::{hi}"
 
@@ -866,9 +916,11 @@ def from_igraph(igG, manifest, *,
                         coeff = 1.0
 
                 if role == "head":
-                    head_map[v] = coeff; saw_head = True
+                    head_map[v] = coeff
+                    saw_head = True
                 elif role == "tail":
-                    tail_map[v] = coeff; saw_tail = True
+                    tail_map[v] = coeff
+                    saw_tail = True
                 else:
                     # undirected membership → symmetric
                     head_map[v] = head_map.get(v, coeff)
@@ -902,7 +954,8 @@ def from_igraph(igG, manifest, *,
         kind = defn[-1]
         if kind == "regular":
             u, v = defn[0], defn[1]
-            vertex_ids.add(u); vertex_ids.add(v)
+            vertex_ids.add(u)
+            vertex_ids.add(v)
         elif kind == "hyper":
             head_map, tail_map = defn[0], defn[1]
             if isinstance(head_map, dict):
@@ -933,7 +986,8 @@ def from_igraph(igG, manifest, *,
         elif kind == "hyper":
             head_map, tail_map = defn[0], defn[1]
             if isinstance(head_map, dict) and isinstance(tail_map, dict):
-                head = list(head_map.keys()); tail = list(tail_map.keys())
+                head = list(head_map.keys())
+                tail = list(tail_map.keys())
                 is_dir = bool(manifest.get("edge_directed", {}).get(eid, True))
                 try:
                     if is_dir:
@@ -962,9 +1016,10 @@ def from_igraph(igG, manifest, *,
                 src_map = {u: {"__value": float(c)} for u, c in (head_map or {}).items()}
                 tgt_map = {v: {"__value": float(c)} for v, c in (tail_map or {}).items()}
                 try:
-                    H.set_edge_attrs(eid,
+                    H.set_edge_attrs(
+                        eid,
                         __source_attr={**existing_src, **src_map},
-                        __target_attr={**existing_tgt, **tgt_map}
+                        __target_attr={**existing_tgt, **tgt_map},
                     )
                 except Exception:
                     pass
@@ -991,7 +1046,7 @@ def from_igraph(igG, manifest, *,
                 H.add_layer(lid)
         except Exception:
             pass
-        for eid in (eids or []):
+        for eid in eids or []:
             try:
                 H.add_edge_to_layer(lid, eid)
             except Exception:
@@ -1051,7 +1106,9 @@ def from_igraph(igG, manifest, *,
 
             if directed:
                 try:
-                    H.add_hyperedge(head=list(head_map), tail=list(tail_map), edge_id=eid, edge_directed=True)
+                    H.add_hyperedge(
+                        head=list(head_map), tail=list(tail_map), edge_id=eid, edge_directed=True
+                    )
                 except Exception:
                     pass
                 try:
@@ -1088,9 +1145,8 @@ def from_igraph(igG, manifest, *,
 
 
 def to_backend(graph, **kwargs):
-    """
-    Export Graph to igraph without manifest (legacy compatibility).
-    
+    """Export Graph to igraph without manifest (legacy compatibility).
+
     Parameters
     ----------
     graph : Graph
@@ -1104,7 +1160,7 @@ def to_backend(graph, **kwargs):
             (cartesian product for directed, clique for undirected).
         - public_only : bool, default False
             Strip attributes starting with "__" if True.
-    
+
     Returns
     -------
     igraph.Graph
@@ -1113,24 +1169,28 @@ def to_backend(graph, **kwargs):
         attribute 'eid'. Hyperedges are either dropped or expanded into
         multiple binary edges. No manifest is returned, so round-tripping
         will lose hyperedge structure, layers, and precise edge IDs.
-    
+
     Notes
     -----
     This is a lossy export. Use to_igraph() with manifest for full fidelity.
     igraph requires integer vertex indices internally; the 'name' attribute
     preserves your original string IDs.
+
     """
     return _export_legacy(graph, **kwargs)
 
-def from_ig_only(igG, *,
-                 hyperedge="none",
-                 he_node_flag="is_hyperedge",
-                 he_id_attr="eid",
-                 role_attr="role",
-                 coeff_attr="coeff",
-                 membership_attr="membership_of"):
-    """
-    Best-effort import from a *plain* igraph.Graph (no manifest).
+
+def from_ig_only(
+    igG,
+    *,
+    hyperedge="none",
+    he_node_flag="is_hyperedge",
+    he_id_attr="eid",
+    role_attr="role",
+    coeff_attr="coeff",
+    membership_attr="membership_of",
+):
+    """Best-effort import from a *plain* igraph.Graph (no manifest).
     Preserves all vertex/edge attributes.
     hyperedge: "none" | "reified"
       When "reified", rebuild true hyperedges and skip membership edges from binary import.
@@ -1142,12 +1202,16 @@ def from_ig_only(igG, *,
     # vertices
     names = igG.vs["name"] if "name" in igG.vs.attributes() else list(range(igG.vcount()))
     for i, vid in enumerate(names):
-        try: H.add_vertex(vid)
-        except Exception: pass
+        try:
+            H.add_vertex(vid)
+        except Exception:
+            pass
         vattrs = {k: igG.vs[i][k] for k in igG.vs.attributes()}
         if vattrs:
-            try: H.set_vertex_attrs(vid, **vattrs)
-            except Exception: pass
+            try:
+                H.set_vertex_attrs(vid, **vattrs)
+            except Exception:
+                pass
 
     membership_idx = set()
     if hyperedge == "reified":
@@ -1161,30 +1225,48 @@ def from_ig_only(igG, *,
         )
         for eid, directed, head_map, tail_map, he_attrs, hi in hyperdefs:
             for x in set(head_map) | set(tail_map):
-                try: H.add_vertex(x)
-                except Exception: pass
-            if directed:
-                try: H.add_hyperedge(head=list(head_map), tail=list(tail_map), edge_id=eid, edge_directed=True)
-                except Exception: pass
                 try:
-                    H.set_edge_attrs(eid,
-                                     __source_attr={u: {"__value": c} for u, c in head_map.items()},
-                                     __target_attr={v: {"__value": c} for v, c in tail_map.items()})
-                except Exception: pass
+                    H.add_vertex(x)
+                except Exception:
+                    pass
+            if directed:
+                try:
+                    H.add_hyperedge(
+                        head=list(head_map), tail=list(tail_map), edge_id=eid, edge_directed=True
+                    )
+                except Exception:
+                    pass
+                try:
+                    H.set_edge_attrs(
+                        eid,
+                        __source_attr={u: {"__value": c} for u, c in head_map.items()},
+                        __target_attr={v: {"__value": c} for v, c in tail_map.items()},
+                    )
+                except Exception:
+                    pass
             else:
                 members = list(set(head_map) | set(tail_map))
-                try: H.add_hyperedge(members=members, edge_id=eid, edge_directed=False)
-                except Exception: pass
                 try:
-                    H.set_edge_attrs(eid,
-                                     __source_attr={u: {"__value": head_map.get(u, 1.0)} for u in members},
-                                     __target_attr={v: {"__value": tail_map.get(v, 1.0)} for v in members})
-                except Exception: pass
+                    H.add_hyperedge(members=members, edge_id=eid, edge_directed=False)
+                except Exception:
+                    pass
+                try:
+                    H.set_edge_attrs(
+                        eid,
+                        __source_attr={u: {"__value": head_map.get(u, 1.0)} for u in members},
+                        __target_attr={v: {"__value": tail_map.get(v, 1.0)} for v in members},
+                    )
+                except Exception:
+                    pass
             # copy HE-node attrs (minus markers)
-            he_node_attrs = {k: igG.vs[hi][k] for k in igG.vs.attributes() if k not in {he_node_flag, he_id_attr}}
+            he_node_attrs = {
+                k: igG.vs[hi][k] for k in igG.vs.attributes() if k not in {he_node_flag, he_id_attr}
+            }
             if he_node_attrs:
-                try: H.set_edge_attrs(eid, **he_node_attrs)
-                except Exception: pass
+                try:
+                    H.set_edge_attrs(eid, **he_node_attrs)
+                except Exception:
+                    pass
 
     # binary edges (skip membership edges if reified)
     is_dir = igG.is_directed()
@@ -1192,7 +1274,8 @@ def from_ig_only(igG, *,
     for e in igG.es:
         if e.index in membership_idx:
             continue
-        src = names[e.source]; dst = names[e.target]
+        src = names[e.source]
+        dst = names[e.target]
         d = {k: e[k] for k in igG.es.attributes()}
 
         eid = d.get("eid")
@@ -1203,43 +1286,52 @@ def from_ig_only(igG, *,
         e_directed = bool(d.get("directed", is_dir))
         w = d.get("weight", d.get("__weight", 1.0))
 
-        try: H.add_vertex(src); H.add_vertex(dst)
-        except Exception: pass
-        try: H.add_edge(src, dst, edge_id=eid, edge_directed=e_directed)
+        try:
+            H.add_vertex(src)
+            H.add_vertex(dst)
+        except Exception:
+            pass
+        try:
+            H.add_edge(src, dst, edge_id=eid, edge_directed=e_directed)
         except Exception:
             H.add_edge(src, dst, edge_id=eid, edge_directed=True)
 
-        try: H.edge_weights[eid] = float(w)
-        except Exception: pass
+        try:
+            H.edge_weights[eid] = float(w)
+        except Exception:
+            pass
 
         if d:
-            try: H.set_edge_attrs(eid, **d)
-            except Exception: pass
+            try:
+                H.set_edge_attrs(eid, **d)
+            except Exception:
+                pass
 
     return H
 
 
 class IGraphAdapter:
-    """
-    Legacy adapter class for backward compatibility.
-    
+    """Legacy adapter class for backward compatibility.
+
     Methods
     -------
     export(graph, **kwargs)
         Export Graph to igraph.Graph without manifest (lossy).
+
     """
+
     def export(self, graph, **kwargs):
-        """
-        Export Graph to igraph.Graph without manifest.
-        
+        """Export Graph to igraph.Graph without manifest.
+
         Parameters
         ----------
         graph : Graph
         **kwargs
             See to_backend() for supported parameters.
-        
+
         Returns
         -------
         igraph.Graph
+
         """
         return _export_legacy(graph, **kwargs)

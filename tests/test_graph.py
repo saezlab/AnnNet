@@ -1,22 +1,22 @@
 # test_graph.py
+import os
+import sys
 import unittest
-import math
 
-import numpy as np
 import polars as pl
 
-import sys
-import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from graphglue.core.graph import Graph, EdgeType
-
 import warnings
+
+from graphglue.core.graph import Graph
+
 warnings.filterwarnings(
     "ignore",
     message=r"Signature .*numpy\.longdouble.*",
     category=UserWarning,
     module=r"numpy\._core\.getlimits",
 )
+
 
 class TestGraphBasics(unittest.TestCase):
     def setUp(self):
@@ -120,7 +120,9 @@ class TestGraphBasics(unittest.TestCase):
         self.g.set_active_layer("L2")
         self.g.add_vertex("C")
         # add edge with propagate=shared (only layers that have both endpoints A,B -> L1)
-        e1 = self.g.add_edge("A", "B", layer="L2", propagate="shared")  # placed in L2, but should propagate to L1?
+        e1 = self.g.add_edge(
+            "A", "B", layer="L2", propagate="shared"
+        )  # placed in L2, but should propagate to L1?
         # L1 has both A,B so edge should be present in L1 as well
         self.assertIn(e1, self.g._layers["L1"]["edges"])
         self.assertIn(e1, self.g._layers["L2"]["edges"])
@@ -148,7 +150,9 @@ class TestGraphBasics(unittest.TestCase):
         # effective weight in Lw reflects the override
         self.assertAlmostEqual(self.g.get_effective_edge_weight(eid, layer="Lw"), 1.25, places=7)
         # asking for a non-existent layer should fall back to the global weight
-        self.assertAlmostEqual(self.g.get_effective_edge_weight(eid, layer="NonExistent"), 5.0, places=7)     
+        self.assertAlmostEqual(
+            self.g.get_effective_edge_weight(eid, layer="NonExistent"), 5.0, places=7
+        )
 
     def test_incident_edges(self):
         e1 = self.g.add_edge("i1", "i2", weight=1)
@@ -185,7 +189,8 @@ class TestGraphBasics(unittest.TestCase):
             [
                 self.g.vertex_attributes,
                 pl.DataFrame({"vertex_id": ["ghost"]}),
-            ], how="vertical"
+            ],
+            how="vertical",
         )
         audit = self.g.audit_attributes()
         self.assertIn("ghost", audit["extra_vertex_rows"])

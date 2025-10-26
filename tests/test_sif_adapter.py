@@ -1,8 +1,12 @@
-import sys, pathlib
+import pathlib
+import sys
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
-from graphglue.adapters.SIF_adapter import to_sif, from_sif  # SIF (Simple Interaction Format)
-from .helpers import assert_graphs_equal, assert_vertex_attrs_equal, assert_edge_attrs_equal
+from graphglue.adapters.SIF_adapter import from_sif, to_sif  # SIF (Simple Interaction Format)
+
+from .helpers import assert_edge_attrs_equal, assert_graphs_equal, assert_vertex_attrs_equal
+
 
 class TestSIFAdapter:
     """Tests for SIF adapter."""
@@ -20,12 +24,9 @@ class TestSIFAdapter:
             G,
             tmpdir_fixture / "net.sif",
             lossless=True,
-            manifest_path=tmpdir_fixture / "net.manifest.json"
+            manifest_path=tmpdir_fixture / "net.manifest.json",
         )
-        G2 = from_sif(
-            tmpdir_fixture / "net.sif",
-            manifest=tmpdir_fixture / "net.manifest.json"
-        )
+        G2 = from_sif(tmpdir_fixture / "net.sif", manifest=tmpdir_fixture / "net.manifest.json")
         assert_graphs_equal(G, G2, check_layers=True, check_hyperedges=True)
         assert G2.edge_directed.get("e1") is True
         assert G2.edge_directed.get("e2") is False
@@ -46,12 +47,9 @@ class TestSIFAdapter:
             G,
             tmpdir_fixture / "net.sif",
             relation_attr="interaction_type",
-            default_relation="unknown"
+            default_relation="unknown",
         )
-        G2 = from_sif(
-            tmpdir_fixture / "net.sif",
-            relation_attr="interaction_type"
-        )
+        G2 = from_sif(tmpdir_fixture / "net.sif", relation_attr="interaction_type")
         attrs = G2.edge_attributes.filter(
             G2.edge_attributes["edge_id"].is_in(list(G2.edge_to_idx.keys()))
         ).to_dicts()
@@ -59,13 +57,18 @@ class TestSIFAdapter:
 
     def test_mixed_directedness(self, tmpdir_fixture):
         from graphglue.core.graph import Graph
+
         G = Graph(directed=None)
-        G.add_vertex("A"); G.add_vertex("B")
+        G.add_vertex("A")
+        G.add_vertex("B")
         G.add_edge("A", "B", edge_id="e_dir", edge_directed=True)
         G.add_edge("B", "A", edge_id="e_undir", edge_directed=False)
-        to_sif(G, tmpdir_fixture / "net.sif", lossless=True,
-               manifest_path=tmpdir_fixture / "net.manifest.json")
-        G2 = from_sif(tmpdir_fixture / "net.sif",
-                      manifest=tmpdir_fixture / "net.manifest.json")
+        to_sif(
+            G,
+            tmpdir_fixture / "net.sif",
+            lossless=True,
+            manifest_path=tmpdir_fixture / "net.manifest.json",
+        )
+        G2 = from_sif(tmpdir_fixture / "net.sif", manifest=tmpdir_fixture / "net.manifest.json")
         assert G2.edge_directed.get("e_dir") is True
         assert G2.edge_directed.get("e_undir") is False

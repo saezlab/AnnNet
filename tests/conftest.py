@@ -1,21 +1,23 @@
+"""Shared fixtures and helpers for adapter tests.
 """
-Shared fixtures and helpers for adapter tests.
-"""
-import tempfile
+
+import pathlib
 import shutil
+import sys
+import tempfile
 from pathlib import Path
+
 import pytest
-import sys, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
 
 from graphglue.core.graph import Graph  # noqa: E402
 
-
 # ======================================================================
 # FIXTURES
 # ======================================================================
+
 
 @pytest.fixture
 def simple_graph():
@@ -61,12 +63,10 @@ def complex_graph():
     G.set_edge_attrs("parallel", relation="inhibits", tag="secondary")
 
     # Hyperedges
-    G.add_hyperedge(head=["B", "C"], tail=["A"], edge_id="h1",
-                    edge_directed=True, weight=0.7)
+    G.add_hyperedge(head=["B", "C"], tail=["A"], edge_id="h1", edge_directed=True, weight=0.7)
     G.set_edge_attrs("h1", pathway="signaling", complex="ABC")
 
-    G.add_hyperedge(members=["A", "D", "E"], edge_id="h2",
-                    edge_directed=False, weight=5.0)
+    G.add_hyperedge(members=["A", "D", "E"], edge_id="h2", edge_directed=False, weight=5.0)
     G.set_edge_attrs("h2", complex="trimer", stability=0.75)
 
     # Layers
@@ -99,6 +99,7 @@ def tmpdir_fixture():
 # HELPERS
 # ======================================================================
 
+
 def assert_graphs_equal(G1, G2, check_layers=True, check_hyperedges=True):
     """Assert two graphs are structurally identical."""
     # Vertices
@@ -123,8 +124,9 @@ def assert_graphs_equal(G1, G2, check_layers=True, check_hyperedges=True):
 
     # Hyperedges
     if check_hyperedges:
-        assert set(G1.hyperedge_definitions.keys()) == set(G2.hyperedge_definitions.keys()), \
+        assert set(G1.hyperedge_definitions.keys()) == set(G2.hyperedge_definitions.keys()), (
             "Hyperedge IDs differ"
+        )
 
         for eid in G1.hyperedge_definitions.keys():
             h1 = G1.hyperedge_definitions[eid]
@@ -190,5 +192,5 @@ def assert_edge_attrs_equal(G1, G2, edge_id, ignore_none=True, ignore_private=Fa
 def pytest_configure(config):
     """Configure pytest with custom markers."""
     config.addinivalue_line(
-        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+        "markers", 'slow: marks tests as slow (deselect with \'-m "not slow"\')'
     )

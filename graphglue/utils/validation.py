@@ -3,9 +3,8 @@ import json
 from itertools import filterfalse
 from typing import Any, Callable, Iterable, Optional, Set, TypeVar
 
-import numpy as np
-
 T = TypeVar("T")
+
 
 def canonicalize(obj):
     """Recursively convert an object into a JSON-serializable structure
@@ -13,7 +12,9 @@ def canonicalize(obj):
     """
     if isinstance(obj, dict):
         # Convert dictionary keys to strings and sort the keys
-        return {str(key): canonicalize(obj[key]) for key in sorted(obj.keys(), key=lambda x: str(x))}
+        return {
+            str(key): canonicalize(obj[key]) for key in sorted(obj.keys(), key=lambda x: str(x))
+        }
     elif isinstance(obj, (list, tuple)):
         # Recursively canonicalize each element in the list or tuple
         return [canonicalize(item) for item in obj]
@@ -40,7 +41,9 @@ def obj_canonicalized_hash(obj) -> str:
     # Serialize the canonical object to a JSON string.
     # 'sort_keys=True' ensures consistent key order,
     # and separators remove unnecessary whitespace.
-    obj_serialized = json.dumps(canonical_obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    obj_serialized = json.dumps(canonical_obj, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
     # Compute the SHA256 hash of the serialized bytes
     hash_obj = hashlib.sha256()
     hash_obj.update(obj_serialized)
@@ -61,4 +64,3 @@ def unique_iter(iterable: Iterable[T], key: Optional[Callable[[T], Any]] = None)
             if k not in seen:
                 seen_add(k)
                 yield element
-

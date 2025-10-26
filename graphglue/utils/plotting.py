@@ -1,16 +1,18 @@
 from __future__ import annotations
-from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 
 import contextlib
 import io
 import math
+from typing import Any, Dict, Iterable, List, Literal, Optional
 
 import numpy as np
 
-
 # Small helpers
 
-def _normalize(values: Iterable[float], lo: float | None = None, hi: float | None = None, eps: float = 1e-12):
+
+def _normalize(
+    values: Iterable[float], lo: float | None = None, hi: float | None = None, eps: float = 1e-12
+):
     arr = np.asarray(list(values), dtype=float)
     if arr.size == 0:
         return arr
@@ -42,12 +44,14 @@ def _suppress_repr_warnings(g: Any) -> None:
             def wrapper(*args, **kwargs):
                 with contextlib.redirect_stderr(io.StringIO()):
                     return orig_func(*args, **kwargs)
+
             return wrapper
 
         setattr(g, method_name, make_wrapper(original))
 
 
 # Label builders
+
 
 def build_vertex_labels(graph, key: Optional[str] = None) -> Dict[str, str]:
     labels: Dict[str, str] = {}
@@ -59,7 +63,13 @@ def build_vertex_labels(graph, key: Optional[str] = None) -> Dict[str, str]:
     return labels
 
 
-def build_edge_labels(graph, *, use_weight: bool = True, extra_keys: Optional[List[str]] = None, layer: Optional[str] = None) -> Dict[int, str]:
+def build_edge_labels(
+    graph,
+    *,
+    use_weight: bool = True,
+    extra_keys: Optional[List[str]] = None,
+    layer: Optional[str] = None,
+) -> Dict[int, str]:
     extra_keys = extra_keys or []
     labels: Dict[int, str] = {}
     for j in range(graph.number_of_edges()):
@@ -80,12 +90,10 @@ def build_edge_labels(graph, *, use_weight: bool = True, extra_keys: Optional[Li
     return labels
 
 
-
 # Edge style from weights
 
 
 def edge_style_from_weights(
-
     graph,
     *,
     layer: Optional[str] = None,
@@ -93,13 +101,12 @@ def edge_style_from_weights(
     max_width: float = 5.0,
     color_mode: Literal["greys", "signed"] = "greys",
 ) -> Dict[int, Dict[str, str]]:
-    """
-    Compute visual edge styles (pen width and color) from effective weights.
+    """Compute visual edge styles (pen width and color) from effective weights.
 
     Parameters
     ----------
     graph : object
-        Graph-like object exposing `number_of_edges()`, `idx_to_edge`, and 
+        Graph-like object exposing `number_of_edges()`, `idx_to_edge`, and
         `get_effective_edge_weight(eid, layer)` methods.
     layer : str, optional
         Layer name for retrieving edge weights. Defaults to `None`, which uses global weights.
@@ -123,6 +130,7 @@ def edge_style_from_weights(
     -----
     - Invalid or missing weights default to 1.0.
     - Normalization is performed across all edges in the graph.
+
     """
     eidxs = list(range(graph.number_of_edges()))
     raw_vals: List[float] = []
@@ -150,11 +158,12 @@ def edge_style_from_weights(
     return styles
 
 
-
 # Backends
 
 
-def _add_nodes_graphviz(Gv, node_names: Iterable[str], custom_vertex_attr: Optional[Dict[str, Dict[str, str]]] = None):
+def _add_nodes_graphviz(
+    Gv, node_names: Iterable[str], custom_vertex_attr: Optional[Dict[str, Dict[str, str]]] = None
+):
     custom_vertex_attr = custom_vertex_attr or {}
     for v in node_names:
         attrs = {"shape": "circle"}
@@ -162,7 +171,9 @@ def _add_nodes_graphviz(Gv, node_names: Iterable[str], custom_vertex_attr: Optio
         Gv.node(v, **attrs)
 
 
-def _add_nodes_pydot(Gd, node_names: Iterable[str], custom_vertex_attr: Optional[Dict[str, Dict[str, str]]] = None):
+def _add_nodes_pydot(
+    Gd, node_names: Iterable[str], custom_vertex_attr: Optional[Dict[str, Dict[str, str]]] = None
+):
     import pydot
 
     custom_vertex_attr = custom_vertex_attr or {}
@@ -187,7 +198,9 @@ def to_graphviz(
 ):
     import graphviz
 
-    Gv = graphviz.Digraph(engine=layout, graph_attr=graph_attr, node_attr=node_attr, edge_attr=edge_attr)
+    Gv = graphviz.Digraph(
+        engine=layout, graph_attr=graph_attr, node_attr=node_attr, edge_attr=edge_attr
+    )
 
     # vertices to materialize (union of all endpoints)
     all_nodes: set[str] = set()
@@ -247,7 +260,16 @@ def to_graphviz(
 
     if suppress_warnings:
         _suppress_repr_warnings(Gv)
-    if (len([1 for j in range(graph.number_of_edges()) if len(graph.get_edge(j)[0]) > 1 or len(graph.get_edge(j)[1]) > 1]) > 0) and graph_attr is None:
+    if (
+        len(
+            [
+                1
+                for j in range(graph.number_of_edges())
+                if len(graph.get_edge(j)[0]) > 1 or len(graph.get_edge(j)[1]) > 1
+            ]
+        )
+        > 0
+    ) and graph_attr is None:
         Gv.graph_attr["splines"] = "true"
     return Gv
 
@@ -319,12 +341,22 @@ def to_pydot(
                 uu, vv = list(S)[0], list(T)[0]
                 Gd.add_edge(pydot.Edge(str(uu), str(vv), **a))
 
-    if (len([1 for j in range(graph.number_of_edges()) if len(graph.get_edge(j)[0]) > 1 or len(graph.get_edge(j)[1]) > 1]) > 0) and graph_attr is None:
+    if (
+        len(
+            [
+                1
+                for j in range(graph.number_of_edges())
+                if len(graph.get_edge(j)[0]) > 1 or len(graph.get_edge(j)[1]) > 1
+            ]
+        )
+        > 0
+    ) and graph_attr is None:
         Gd.set_splines("true")
     return Gd
 
 
 # One-call plotting API
+
 
 def plot(
     graph,
@@ -341,8 +373,7 @@ def plot(
     suppress_warnings: bool = True,
     **kwargs,
 ):
-    """
-    Build a fully styled graph object ready for rendering with Graphviz or Pydot.
+    """Build a fully styled graph object ready for rendering with Graphviz or Pydot.
 
     Parameters
     ----------
@@ -385,6 +416,7 @@ def plot(
     -----
     - Edge styling and labels are applied before backend construction.
     - If `show_edge_labels=True`, edges are regenerated with label overrides.
+
     """
     # edge styles
     custom_edge_attr: Dict[int, Dict[str, str]] = {}
@@ -411,7 +443,9 @@ def plot(
             suppress_warnings=suppress_warnings,
         )
         if show_edge_labels:
-            elabels = build_edge_labels(graph, use_weight=True, extra_keys=edge_label_keys, layer=layer)
+            elabels = build_edge_labels(
+                graph, use_weight=True, extra_keys=edge_label_keys, layer=layer
+            )
             # reapply labels by regenerating with label overrides
             for j, txt in elabels.items():
                 custom_edge_attr.setdefault(j, {})["label"] = txt
@@ -444,7 +478,10 @@ def plot(
         if show_edge_labels:
             # mutate by adding parallel labeled edges
             import pydot
-            elabels = build_edge_labels(graph, use_weight=True, extra_keys=edge_label_keys, layer=layer)
+
+            elabels = build_edge_labels(
+                graph, use_weight=True, extra_keys=edge_label_keys, layer=layer
+            )
             for j, txt in elabels.items():
                 S, T = graph.get_edge(j)
                 sv = next(iter(S)) if len(S) else f"e_{j}_source"
@@ -458,9 +495,9 @@ def plot(
 
 # Renderer
 
+
 def render(obj: Any, path: str, format: str = "svg") -> str:
-    """
-    Render a Graphviz or Pydot graph object to disk and return the output path.
+    """Render a Graphviz or Pydot graph object to disk and return the output path.
 
     Parameters
     ----------
@@ -486,6 +523,7 @@ def render(obj: Any, path: str, format: str = "svg") -> str:
     - Graphviz objects use the built-in `.render()` API.
     - Pydot objects write directly via `.write_svg()`, `.write_png()`, or `.write_raw()`.
     - The file extension is appended automatically if not present.
+
     """
     kind = obj.__class__.__module__
     fmt = format.lower()

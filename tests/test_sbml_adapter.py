@@ -1,14 +1,15 @@
-
-import os
+import pathlib
+import sys
 import unittest
+
 import numpy as np
 
-import sys, pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
 
 from graphglue.adapters.sbml_adapter import _graph_from_stoich, from_cobra_model
-from  graphglue.core import Graph
+from graphglue.core import Graph
+
 
 class TestSBMLAdapter(unittest.TestCase):
     def test_graph_from_stoich_preserves_signs_and_sets(self):
@@ -17,11 +18,14 @@ class TestSBMLAdapter(unittest.TestCase):
         # R2: C -> A
         mets = ["A", "B", "C"]
         rxns = ["R1", "R2"]
-        S = np.array([
-            [-1, +1],   # A
-            [-2,  0],   # B
-            [+1, -1],   # C
-        ], dtype=float)
+        S = np.array(
+            [
+                [-1, +1],  # A
+                [-2, 0],  # B
+                [+1, -1],  # C
+            ],
+            dtype=float,
+        )
 
         G = Graph(directed=True)
         G = _graph_from_stoich(S, mets, rxns, graph=G, preserve_stoichiometry=True)
@@ -55,7 +59,7 @@ class TestSBMLAdapter(unittest.TestCase):
         except Exception:
             self.skipTest("COBRApy not installed in this environment")
         # Build a micro COBRA model in-memory if cobra is available
-        from cobra import Model, Reaction, Metabolite
+        from cobra import Metabolite, Model, Reaction
 
         model = Model("toy")
         A = Metabolite("A")
@@ -80,16 +84,23 @@ class TestSBMLAdapter(unittest.TestCase):
 
     def test_boundary_reactions(self):
         import numpy as np
-        from graphglue.adapters.sbml_adapter import _graph_from_stoich, BOUNDARY_SOURCE, BOUNDARY_SINK
+
+        from graphglue.adapters.sbml_adapter import (
+            BOUNDARY_SINK,
+            BOUNDARY_SOURCE,
+            _graph_from_stoich,
+        )
+
         mets = ["A"]
         rxns = ["deg", "syn"]
         S = np.array([[-1.0, +1.0]])  # A degrades (col0) and is synthesized (col1)
-        G = _graph_from_stoich(S, mets, rxns, graph=Graph(directed=True), preserve_stoichiometry=True)
+        G = _graph_from_stoich(
+            S, mets, rxns, graph=Graph(directed=True), preserve_stoichiometry=True
+        )
         h_deg = G.hyperedge_definitions["deg"]
         h_syn = G.hyperedge_definitions["syn"]
         assert h_deg["tail"] == {"A"} and h_deg["head"] == {BOUNDARY_SINK}
         assert h_syn["tail"] == {BOUNDARY_SOURCE} and h_syn["head"] == {"A"}
-
 
 
 if __name__ == "__main__":

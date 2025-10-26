@@ -1,5 +1,4 @@
-"""
-This module purposefully avoids importing stdlib `csv` and uses Polars for IO.
+"""This module purposefully avoids importing stdlib `csv` and uses Polars for IO.
 
 It ingests a CSV into Graph by auto-detecting common schemas:
 - Edge list (including DOK/COO triples and variations)
@@ -29,15 +28,16 @@ Public entry points:
 
 Both will create and return an Graph (or mutate the provided one).
 """
+
 from __future__ import annotations
 
-from typing import Iterable, Optional, Tuple, Dict, Any, List, Set
-import math
 import json
+import math
 import re
+from typing import Any, Iterable, List, Optional, Set
 
-import polars as pl
 import numpy as np
+import polars as pl
 
 from ..core.graph import Graph
 
@@ -65,7 +65,22 @@ ROW_COLS = ["row", "i", "r"]
 COL_COLS = ["col", "column", "j", "c"]
 VAL_COLS = ["val", "value", "w", "weight"]
 
-RESERVED = set(SRC_COLS + DST_COLS + WGT_COLS + DIR_COLS + LAYER_COLS + EDGE_ID_COLS + vertex_ID_COLS + NEIGH_COLS + MEMBERS_COLS + HEAD_COLS + TAIL_COLS + ROW_COLS + COL_COLS + VAL_COLS)
+RESERVED = set(
+    SRC_COLS
+    + DST_COLS
+    + WGT_COLS
+    + DIR_COLS
+    + LAYER_COLS
+    + EDGE_ID_COLS
+    + vertex_ID_COLS
+    + NEIGH_COLS
+    + MEMBERS_COLS
+    + HEAD_COLS
+    + TAIL_COLS
+    + ROW_COLS
+    + COL_COLS
+    + VAL_COLS
+)
 
 
 def _norm(s: Any) -> str:
@@ -99,7 +114,9 @@ def _split_layers(cell: Any) -> List[str]:
         if not cell:
             return []
         # Try JSON array first
-        if (cell.startswith("[") and cell.endswith("]")) or (cell.startswith("{") and cell.endswith("}")):
+        if (cell.startswith("[") and cell.endswith("]")) or (
+            cell.startswith("{") and cell.endswith("}")
+        ):
             try:
                 val = json.loads(cell)
                 if isinstance(val, (list, set, tuple)):
@@ -122,9 +139,9 @@ def _split_set(cell: Any) -> Set[str]:
         if not s:
             return set()
         # JSON array
-        if (s.startswith("[") and s.endswith("]")):
+        if s.startswith("[") and s.endswith("]"):
             try:
-                return { _norm(v) for v in json.loads(s) }
+                return {_norm(v) for v in json.loads(s)}
             except Exception:
                 return {p.strip() for p in _SET_SEP.split(s) if p.strip()}
         return {p.strip() for p in _SET_SEP.split(s) if p.strip()}
@@ -142,7 +159,18 @@ def _pick_first(df: pl.DataFrame, candidates: List[str]) -> Optional[str]:
 
 
 def _is_numeric_series(s: pl.Series) -> bool:
-    return s.dtype.is_numeric() or s.dtype in (pl.Float64, pl.Float32, pl.Int64, pl.Int32, pl.Int16, pl.Int8, pl.UInt64, pl.UInt32, pl.UInt16, pl.UInt8)
+    return s.dtype.is_numeric() or s.dtype in (
+        pl.Float64,
+        pl.Float32,
+        pl.Int64,
+        pl.Int32,
+        pl.Int16,
+        pl.Int8,
+        pl.UInt64,
+        pl.UInt32,
+        pl.UInt16,
+        pl.UInt8,
+    )
 
 
 def _attr_columns(df: pl.DataFrame, exclude: Iterable[str]) -> List[str]:
@@ -154,11 +182,14 @@ def _attr_columns(df: pl.DataFrame, exclude: Iterable[str]) -> List[str]:
 # Schema detection
 # ---------------------------
 
+
 def _detect_schema(df: pl.DataFrame) -> str:
     cols = [c.lower() for c in df.columns]
 
     # Hyperedge table if we have 'members' OR (head and tail)
-    if any(c in cols for c in MEMBERS_COLS) or (any(c in cols for c in HEAD_COLS) and any(c in cols for c in TAIL_COLS)):
+    if any(c in cols for c in MEMBERS_COLS) or (
+        any(c in cols for c in HEAD_COLS) and any(c in cols for c in TAIL_COLS)
+    ):
         return "hyperedge"
 
     # LIL: neighbors column
@@ -166,7 +197,11 @@ def _detect_schema(df: pl.DataFrame) -> str:
         return "lil"
 
     # COO/DOK triple variants
-    if any(c in cols for c in ROW_COLS) and any(c in cols for c in COL_COLS) and any(c in cols for c in VAL_COLS):
+    if (
+        any(c in cols for c in ROW_COLS)
+        and any(c in cols for c in COL_COLS)
+        and any(c in cols for c in VAL_COLS)
+    ):
         return "edge_list"
 
     # Classic edge list (src/dst present)
@@ -196,6 +231,7 @@ def _detect_schema(df: pl.DataFrame) -> str:
 # Public API
 # ---------------------------
 
+
 def load_csv_to_graph(
     path: str,
     *,
@@ -210,8 +246,7 @@ def load_csv_to_graph(
     low_memory: bool = True,
     **kwargs: Any,
 ):
-    """
-    Load a CSV and construct/augment an Graph.
+    """Load a CSV and construct/augment an Graph.
 
     Parameters
     ----------
@@ -250,6 +285,7 @@ def load_csv_to_graph(
         If no Graph can be constructed or imported.
     ValueError
         If schema is unknown or parsing fails.
+
     """
     df = pl.read_csv(
         path,
@@ -279,8 +315,7 @@ def from_dataframe(
     default_weight: float = 1.0,
     **kwargs: Any,
 ):
-    """
-    Build/augment an Graph from a Polars DataFrame.
+    """Build/augment an Graph from a Polars DataFrame.
 
     Parameters
     ----------
@@ -302,6 +337,7 @@ def from_dataframe(
     -------
     Graph
         The populated graph instance.
+
     """
     G = graph
     if G is None:
@@ -330,8 +366,7 @@ def from_dataframe(
 
 
 def export_edge_list_csv(G, path, layer=None):
-    """
-    Export the binary edge subgraph to a CSV [Comma-Separated Values] file.
+    """Export the binary edge subgraph to a CSV [Comma-Separated Values] file.
 
     Parameters
     ----------
@@ -355,6 +390,7 @@ def export_edge_list_csv(G, path, layer=None):
     - If a weight column does not exist, a default weight of 1.0 is written.
     - If a directedness column is absent, it will be written as ``None``.
     - This format is compatible with ``load_csv_to_graph(schema="edge_list")``.
+
     """
     df = G.edges_view(layer=layer) if layer is not None else G.edges_view()
 
@@ -372,7 +408,9 @@ def export_edge_list_csv(G, path, layer=None):
     src = next((cols[k] for k in ("source", "src", "u", "from") if k in cols), None)
     dst = next((cols[k] for k in ("target", "dst", "v", "to") if k in cols), None)
     if not (src and dst):
-        raise ValueError("No binary endpoints in edges_view; likely hyperedge-only. Use export_hyperedge_csv.")
+        raise ValueError(
+            "No binary endpoints in edges_view; likely hyperedge-only. Use export_hyperedge_csv."
+        )
 
     # Filter out rows lacking endpoints (safety if view is mixed)
     df = df.filter(pl.col(src).is_not_null() & pl.col(dst).is_not_null())
@@ -380,29 +418,35 @@ def export_edge_list_csv(G, path, layer=None):
     # Optional columns
     dircol = cols.get("directed") or cols.get("edge_directed")
     # Prefer resolved/global weights if present
-    wcol = cols.get("effective_weight") or cols.get("global_weight") \
-           or cols.get("weight") or cols.get("w")
+    wcol = (
+        cols.get("effective_weight")
+        or cols.get("global_weight")
+        or cols.get("weight")
+        or cols.get("w")
+    )
     layercol = cols.get("layer")
 
     n = df.height
 
-    out = pl.DataFrame({
-        "source":   df[src],
-        "target":   df[dst],
-        "weight":   (df[wcol] if wcol else pl.Series("weight", [1.0] * n)),
-        "directed": (df[dircol] if dircol else pl.Series("directed", [None] * n)),
-        "layer": (
-            pl.Series("layer", [layer] * n) if layer is not None
-            else (df[layercol] if layercol else pl.Series("layer", [None] * n))
-        ),
-    })
+    out = pl.DataFrame(
+        {
+            "source": df[src],
+            "target": df[dst],
+            "weight": (df[wcol] if wcol else pl.Series("weight", [1.0] * n)),
+            "directed": (df[dircol] if dircol else pl.Series("directed", [None] * n)),
+            "layer": (
+                pl.Series("layer", [layer] * n)
+                if layer is not None
+                else (df[layercol] if layercol else pl.Series("layer", [None] * n))
+            ),
+        }
+    )
 
     out.write_csv(path)
 
 
 def export_hyperedge_csv(G, path, layer=None, directed=None):
-    """
-    Export hyperedges from the graph to a CSV [Comma-Separated Values] file.
+    """Export hyperedges from the graph to a CSV [Comma-Separated Values] file.
 
     Parameters
     ----------
@@ -432,6 +476,7 @@ def export_hyperedge_csv(G, path, layer=None, directed=None):
     - A 'layer' column is included if present or if ``layer`` is specified.
     - This format is compatible with ``load_csv_to_graph(schema="hyperedge")``.
     - If the graph does not expose hyperedge columns, a ``ValueError`` is raised.
+
     """
     df = G.edges_view(layer=layer) if layer is not None else G.edges_view()
     if not isinstance(df, pl.DataFrame):
@@ -445,12 +490,16 @@ def export_hyperedge_csv(G, path, layer=None, directed=None):
         df = df.filter(pl.col(kindcol).cast(str).str.to_lowercase() == "hyper")
 
     members = cols.get("members")
-    head    = cols.get("head")
-    tail    = cols.get("tail")
-    dircol  = cols.get("directed") or cols.get("edge_directed")
+    head = cols.get("head")
+    tail = cols.get("tail")
+    dircol = cols.get("directed") or cols.get("edge_directed")
     # Prefer resolved/global weights if present
-    wcol    = cols.get("effective_weight") or cols.get("global_weight") \
-              or cols.get("weight") or cols.get("w")
+    wcol = (
+        cols.get("effective_weight")
+        or cols.get("global_weight")
+        or cols.get("weight")
+        or cols.get("w")
+    )
     layercol = cols.get("layer")
     n = df.height
 
@@ -482,14 +531,23 @@ def export_hyperedge_csv(G, path, layer=None, directed=None):
         m = _to_pipe_joined(df[members], "members")
         # drop null/empty rows (mixed views might include non-hyper rows)
         mask = m.is_not_null() & (m.str.len_chars() > 0)
-        out = pl.DataFrame({
-            "members": m.filter(mask),
-            "weight":  (df[wcol].filter(mask) if wcol else pl.Series("weight", [1.0] * int(mask.sum()))),
-            "layer":   (
-                pl.Series("layer", [layer] * int(mask.sum())) if layer is not None
-                else (df[layercol].filter(mask) if layercol else pl.Series("layer", [None] * int(mask.sum())))
-            ),
-        })
+        out = pl.DataFrame(
+            {
+                "members": m.filter(mask),
+                "weight": (
+                    df[wcol].filter(mask) if wcol else pl.Series("weight", [1.0] * int(mask.sum()))
+                ),
+                "layer": (
+                    pl.Series("layer", [layer] * int(mask.sum()))
+                    if layer is not None
+                    else (
+                        df[layercol].filter(mask)
+                        if layercol
+                        else pl.Series("layer", [None] * int(mask.sum()))
+                    )
+                ),
+            }
+        )
         out.write_csv(path)
         return
 
@@ -505,15 +563,26 @@ def export_hyperedge_csv(G, path, layer=None, directed=None):
         mask = h.is_not_null() & (h.str.len_chars() > 0) & t.is_not_null() & (t.str.len_chars() > 0)
 
         if is_dir:
-            out = pl.DataFrame({
-                "head":    h.filter(mask),
-                "tail":    t.filter(mask),
-                "weight":  (df[wcol].filter(mask) if wcol else pl.Series("weight", [1.0] * int(mask.sum()))),
-                "layer":   (
-                    pl.Series("layer", [layer] * int(mask.sum())) if layer is not None
-                    else (df[layercol].filter(mask) if layercol else pl.Series("layer", [None] * int(mask.sum())))
-                ),
-            })
+            out = pl.DataFrame(
+                {
+                    "head": h.filter(mask),
+                    "tail": t.filter(mask),
+                    "weight": (
+                        df[wcol].filter(mask)
+                        if wcol
+                        else pl.Series("weight", [1.0] * int(mask.sum()))
+                    ),
+                    "layer": (
+                        pl.Series("layer", [layer] * int(mask.sum()))
+                        if layer is not None
+                        else (
+                            df[layercol].filter(mask)
+                            if layercol
+                            else pl.Series("layer", [None] * int(mask.sum()))
+                        )
+                    ),
+                }
+            )
         else:
             # Merge head/tail into undirected 'members'
             merged = pl.Series(
@@ -521,24 +590,39 @@ def export_hyperedge_csv(G, path, layer=None, directed=None):
                 [
                     "|".join(sorted([p for p in (hval.split("|") + tval.split("|")) if p]))
                     for hval, tval in zip(h.filter(mask).to_list(), t.filter(mask).to_list())
-                ]
+                ],
             )
-            out = pl.DataFrame({
-                "members": merged,
-                "weight":  (df[wcol].filter(mask) if wcol else pl.Series("weight", [1.0] * int(mask.sum()))),
-                "layer":   (
-                    pl.Series("layer", [layer] * int(mask.sum())) if layer is not None
-                    else (df[layercol].filter(mask) if layercol else pl.Series("layer", [None] * int(mask.sum())))
-                ),
-            })
+            out = pl.DataFrame(
+                {
+                    "members": merged,
+                    "weight": (
+                        df[wcol].filter(mask)
+                        if wcol
+                        else pl.Series("weight", [1.0] * int(mask.sum()))
+                    ),
+                    "layer": (
+                        pl.Series("layer", [layer] * int(mask.sum()))
+                        if layer is not None
+                        else (
+                            df[layercol].filter(mask)
+                            if layercol
+                            else pl.Series("layer", [None] * int(mask.sum()))
+                        )
+                    ),
+                }
+            )
         out.write_csv(path)
         return
 
-    raise ValueError("edges_view does not expose hyperedge columns; export via incidence or adjust edges_view.")
+    raise ValueError(
+        "edges_view does not expose hyperedge columns; export via incidence or adjust edges_view."
+    )
+
 
 # ---------------------------
 # Ingestors
 # ---------------------------
+
 
 def _ingest_edge_list(
     df: pl.DataFrame,
@@ -581,8 +665,14 @@ def _ingest_edge_list(
             directed = _truthy(row[dcol])
         else:
             directed = default_directed
-        w = float(row[wcol]) if (wcol and row[wcol] is not None and str(row[wcol]).strip() != "") else default_weight
-        layers = _split_layers(row[lcol]) if lcol else ([] if default_layer is None else [default_layer])
+        w = (
+            float(row[wcol])
+            if (wcol and row[wcol] is not None and str(row[wcol]).strip() != "")
+            else default_weight
+        )
+        layers = (
+            _split_layers(row[lcol]) if lcol else ([] if default_layer is None else [default_layer])
+        )
 
         # attributes for the edge (pure)
         pure_attrs = {k: row[k] for k in attrs_cols if row[k] is not None}
@@ -593,11 +683,21 @@ def _ingest_edge_list(
 
         # create edge per layer (or default)
         if not layers:
-            eid = G.add_edge(u, v, directed=directed, weight=w, layer=default_layer, propagate="none", **pure_attrs)
+            eid = G.add_edge(
+                u,
+                v,
+                directed=directed,
+                weight=w,
+                layer=default_layer,
+                propagate="none",
+                **pure_attrs,
+            )
         else:
             eid = None
             for L in layers:
-                eid = G.add_edge(u, v, directed=directed, weight=w, layer=L, propagate="none", **pure_attrs)
+                eid = G.add_edge(
+                    u, v, directed=directed, weight=w, layer=L, propagate="none", **pure_attrs
+                )
                 # per-layer override columns like weight:Layer
                 for c in df.columns:
                     if c.lower().startswith("weight:"):
@@ -629,8 +729,14 @@ def _ingest_hyperedge(
     attrs_cols = _attr_columns(df, [c for c in [mcol, hcol, tcol, wcol, lcol] if c])
 
     for row in df.iter_rows(named=True):
-        weight = float(row[wcol]) if (wcol and row[wcol] is not None and str(row[wcol]).strip() != "") else default_weight
-        layer = _split_layers(row[lcol]) if lcol else ([] if default_layer is None else [default_layer])
+        weight = (
+            float(row[wcol])
+            if (wcol and row[wcol] is not None and str(row[wcol]).strip() != "")
+            else default_weight
+        )
+        layer = (
+            _split_layers(row[lcol]) if lcol else ([] if default_layer is None else [default_layer])
+        )
         if not layer:
             layer = [default_layer] if default_layer else [None]
 
@@ -641,14 +747,18 @@ def _ingest_hyperedge(
             for ent in members:
                 G.add_vertex(ent)
             for L in layer:
-                G.add_hyperedge(members=members, layer=L, directed=False, weight=weight, **pure_attrs)
+                G.add_hyperedge(
+                    members=members, layer=L, directed=False, weight=weight, **pure_attrs
+                )
         else:
             head = _split_set(row[hcol]) if hcol else set()
             tail = _split_set(row[tcol]) if tcol else set()
             for ent in head | tail:
                 G.add_vertex(ent)
             for L in layer:
-                G.add_hyperedge(head=head, tail=tail, layer=L, directed=True, weight=weight, **pure_attrs)
+                G.add_hyperedge(
+                    head=head, tail=tail, layer=L, directed=True, weight=weight, **pure_attrs
+                )
 
 
 def _ingest_incidence(
@@ -681,8 +791,8 @@ def _ingest_incidence(
         if not nz_idx:
             continue
         # map row index -> entity id
-        ents = [ _norm(df.get_column(idcol)[i]) for i in nz_idx ]
-        vals = [ float(values[i]) for i in nz_idx ]
+        ents = [_norm(df.get_column(idcol)[i]) for i in nz_idx]
+        vals = [float(values[i]) for i in nz_idx]
 
         pos = [ents[i] for i, x in enumerate(vals) if x > 0]
         neg = [ents[i] for i, x in enumerate(vals) if x < 0]
@@ -690,16 +800,32 @@ def _ingest_incidence(
         # Determine kind
         if len(pos) == 1 and len(neg) == 1:
             # directed binary
-            G.add_edge(pos[0], neg[0], directed=True, weight=abs(vals[0]) if len(vals) >= 1 else default_weight, layer=default_layer)
+            G.add_edge(
+                pos[0],
+                neg[0],
+                directed=True,
+                weight=abs(vals[0]) if len(vals) >= 1 else default_weight,
+                layer=default_layer,
+            )
         elif len(pos) == 2 and len(neg) == 0:
             # undirected binary (two + entries)
-            G.add_edge(pos[0], pos[1], directed=False, weight=abs(vals[0]) if len(vals) >= 1 else default_weight, layer=default_layer)
+            G.add_edge(
+                pos[0],
+                pos[1],
+                directed=False,
+                weight=abs(vals[0]) if len(vals) >= 1 else default_weight,
+                layer=default_layer,
+            )
         else:
             # hyperedge
             if neg and pos:
-                G.add_hyperedge(head=set(pos), tail=set(neg), directed=True, weight=1.0, layer=default_layer)
+                G.add_hyperedge(
+                    head=set(pos), tail=set(neg), directed=True, weight=1.0, layer=default_layer
+                )
             else:
-                G.add_hyperedge(members=set(pos or neg), directed=False, weight=1.0, layer=default_layer)
+                G.add_hyperedge(
+                    members=set(pos or neg), directed=False, weight=1.0, layer=default_layer
+                )
 
 
 def _ingest_adjacency(
@@ -734,7 +860,7 @@ def _ingest_adjacency(
         raise ValueError("Adjacency ingest: number of rows must equal number of columns.")
 
     # Map col index -> vertex id
-    col_ids = [ _norm(c) for c in mat_cols ]
+    col_ids = [_norm(c) for c in mat_cols]
 
     directed = default_directed
     if directed is None:
@@ -787,9 +913,15 @@ def _ingest_lil(
             continue
         G.add_vertex(u)
         nbrs = _split_set(row[ncol])
-        w_default = float(row[wcol]) if (wcol and row[wcol] is not None and str(row[wcol]).strip() != "") else default_weight
+        w_default = (
+            float(row[wcol])
+            if (wcol and row[wcol] is not None and str(row[wcol]).strip() != "")
+            else default_weight
+        )
         directed = _truthy(row[dcol]) if dcol else default_directed
-        layers = _split_layers(row[lcol]) if lcol else ([] if default_layer is None else [default_layer])
+        layers = (
+            _split_layers(row[lcol]) if lcol else ([] if default_layer is None else [default_layer])
+        )
 
         pure_attrs = {k: row[k] for k in attrs_cols if row[k] is not None}
 
@@ -798,7 +930,9 @@ def _ingest_lil(
                 continue
             G.add_vertex(v)
             if not layers:
-                G.add_edge(u, v, directed=directed, weight=w_default, layer=default_layer, **pure_attrs)
+                G.add_edge(
+                    u, v, directed=directed, weight=w_default, layer=default_layer, **pure_attrs
+                )
             else:
                 for L in layers:
                     G.add_edge(u, v, directed=directed, weight=w_default, layer=L, **pure_attrs)

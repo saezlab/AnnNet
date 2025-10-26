@@ -1,7 +1,6 @@
 # tests/test_adapters.py
 import unittest
 import warnings
-import re
 
 # Silence noisy NumPy longdouble warning seen on some builds
 warnings.filterwarnings(
@@ -11,8 +10,9 @@ warnings.filterwarnings(
     module=r"numpy\._core\.getlimits",
 )
 
-import sys
 import os
+import sys
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from graphglue.core.graph import Graph
 
@@ -53,15 +53,15 @@ def _build_graph() -> Graph:
 class TestIgraphAdapter(unittest.TestCase):
     @unittest.skipUnless(HAS_IG, "python-igraph not installed")
     def test_to_igraph_export_and_roundtrip(self):
-        from graphglue.adapters.igraph_adapter import to_igraph, from_igraph  # adapter under test
+        from graphglue.adapters.igraph_adapter import from_igraph, to_igraph  # adapter under test
 
         g = _build_graph()
 
         igG, manifest = to_igraph(
             g,
             directed=True,
-            hyperedge_mode="skip",   # if supported similarly
-            public_only=True
+            hyperedge_mode="skip",  # if supported similarly
+            public_only=True,
         )
 
         # --- Export checks
@@ -78,7 +78,8 @@ class TestIgraphAdapter(unittest.TestCase):
             self.assertIn(eid, g2.edge_weights)
         self.assertAlmostEqual(
             g2.get_effective_edge_weight(list(manifest["layers"]["Lw"])[0], layer="Lw"),
-            5.0, places=7
+            5.0,
+            places=7,
         )
 
     @unittest.skipUnless(HAS_IG, "python-igraph not installed")

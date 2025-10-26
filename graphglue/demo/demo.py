@@ -1,5 +1,6 @@
 import graphglue as gg
 
+
 def main():
     G = gg.Graph()
 
@@ -7,19 +8,19 @@ def main():
 
     # Add people and relationships
     relationships = [
-        ('Alice', 'Bob', 'mentor', 1.0),
-        ('Bob', 'Charlie', 'colleague', 1.2),
-        ('Alice', 'Dana', 'manager', 2.0),
-        ('Charlie', 'Eve', 'colleague', 1.5),
-        ('Dana', 'Eve', 'mentor', 2.2),
-        ('Alice', 'Eve', 'mentor', 2.8),
-        ('Eve', 'Frank', 'colleague', 1.3),
-        ('Frank', 'Grace', 'colleague', 1.1),
-        ('Grace', 'Heidi', 'mentor', 1.7),
-        ('Heidi', 'Ivan', 'colleague', 1.4),
-        ('Ivan', 'Judy', 'colleague', 1.6),
-        ('Judy', 'Bob', 'colleague', 1.8),
-        ('Charlie', 'Grace', 'colleague', 2.0),
+        ("Alice", "Bob", "mentor", 1.0),
+        ("Bob", "Charlie", "colleague", 1.2),
+        ("Alice", "Dana", "manager", 2.0),
+        ("Charlie", "Eve", "colleague", 1.5),
+        ("Dana", "Eve", "mentor", 2.2),
+        ("Alice", "Eve", "mentor", 2.8),
+        ("Eve", "Frank", "colleague", 1.3),
+        ("Frank", "Grace", "colleague", 1.1),
+        ("Grace", "Heidi", "mentor", 1.7),
+        ("Heidi", "Ivan", "colleague", 1.4),
+        ("Ivan", "Judy", "colleague", 1.6),
+        ("Judy", "Bob", "colleague", 1.8),
+        ("Charlie", "Grace", "colleague", 2.0),
     ]
 
     for src, dst, kind, cost in relationships:
@@ -53,13 +54,13 @@ def main():
         print(f"  ⚠️ PageRank failed: {e}")
 
     print("\n🧭 Shortest paths from Alice:")
-    shortest_paths = dict(G.nx.shortest_path_length('Alice'))
+    shortest_paths = dict(G.nx.shortest_path_length("Alice"))
     for target, length in shortest_paths.items():
         print(f"  Alice -> {target}: {length}")
 
     # --- Mutate the graph: should invalidate cache ---
     print("\n✏️ Mutating graph (adding Judy -> Alice)...")
-    G.add_edge('Judy', 'Alice', kind='feedback', cost=2.5)
+    G.add_edge("Judy", "Alice", kind="feedback", cost=2.5)
 
     print("📉 Recalculating degree centrality (triggers re-conversion):")
     new_deg_cent = G.nx.degree_centrality()
@@ -77,6 +78,7 @@ def main():
 
     # Plot the graph
     G.plot()
+
 
 if __name__ == "__main__":
     main()

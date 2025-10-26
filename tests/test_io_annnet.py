@@ -2,18 +2,20 @@
 import json
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-import sys, os
-sys.path.insert(0, os.path.abspath(".")) 
-# Test imports (package layout)
-from graphglue.core.graph import Graph
-from graphglue.io.io_annnet import write as annnet_write, read as annnet_read
 
+sys.path.insert(0, os.path.abspath("."))
+# Test imports (package layout)
+import numpy as np
 import polars as pl
 import zarr
-import numpy as np
+
+from graphglue.core.graph import Graph
+from graphglue.io.io_annnet import read as annnet_read
+from graphglue.io.io_annnet import write as annnet_write
 
 
 class TestAnnNetIO(unittest.TestCase):
@@ -40,14 +42,16 @@ class TestAnnNetIO(unittest.TestCase):
         G.graph_attributes["tags"] = ["io", "annnet"]
 
         # Add a nested history row to ensure audit/JSON stringify path is exercised
-        G._history.append({
-            "ts": "2025-10-23T00:00:00Z",
-            "action": "create",
-            "payload": {"nested": {"x": [1, 2, 3]}},
-            "notes": ["a", "b"],
-            "arr": np.array([1, 2, 3]),
-            "maybe_empty": {},
-        })
+        G._history.append(
+            {
+                "ts": "2025-10-23T00:00:00Z",
+                "action": "create",
+                "payload": {"nested": {"x": [1, 2, 3]}},
+                "notes": ["a", "b"],
+                "arr": np.array([1, 2, 3]),
+                "maybe_empty": {},
+            }
+        )
 
         self.G = G
         self.tmpdir = tempfile.mkdtemp()
@@ -87,9 +91,10 @@ class TestAnnNetIO(unittest.TestCase):
         # Layers: same edge sets, vertex sets
         for lid in self.G._layers:
             self.assertEqual(self.G._layers[lid]["vertices"], G2._layers[lid]["vertices"])
-            self.assertEqual(self.G._layers[lid]["edges"],    G2._layers[lid]["edges"])
-            self.assertEqual(self.G.layer_edge_weights.get(lid, {}),
-                             G2.layer_edge_weights.get(lid, {}))
+            self.assertEqual(self.G._layers[lid]["edges"], G2._layers[lid]["edges"])
+            self.assertEqual(
+                self.G.layer_edge_weights.get(lid, {}), G2.layer_edge_weights.get(lid, {})
+            )
 
     def test_manifest_and_layout(self):
         self._roundtrip()
@@ -177,9 +182,7 @@ class TestAnnNetIO(unittest.TestCase):
         self.assertIn("edge_id", df.columns)
         self.assertIn("directed", df.columns)
         # at least one of members/head/tail exists (depending on directed flag)
-        self.assertTrue(
-            any(c in df.columns for c in ("members", "head", "tail"))
-        )
+        self.assertTrue(any(c in df.columns for c in ("members", "head", "tail")))
 
     def test_audit_and_uns_written(self):
         self._roundtrip()

@@ -1,6 +1,4 @@
-
-"""
-SBML (Systems Biology Markup Language) → Graph adapter
+"""SBML (Systems Biology Markup Language) → Graph adapter
 ------------------------------------------------------
 Targets the provided `Graph` API.
 
@@ -13,21 +11,22 @@ stoichiometric coefficients are stored under an edge attribute `stoich` (lossy b
 """
 
 from __future__ import annotations
-from typing import Iterable, Sequence, Optional, Dict, Any, Tuple, List
+
 import types
+import warnings
+from typing import Dict, Iterable, Optional, Sequence
+
 import numpy as np
 
-import warnings
 warnings.filterwarnings("ignore", message="Signature .*numpy.longdouble.*")
 
 from ..core.graph import Graph
 
-
 # ----------------------- utilities -----------------------
 
+
 def _monkeypatch_set_hyperedge_coeffs(G) -> bool:
-    """
-    Add `set_hyperedge_coeffs(edge_id, coeffs)` to Graph instance if missing.
+    """Add `set_hyperedge_coeffs(edge_id, coeffs)` to Graph instance if missing.
     Writes per-vertex coefficients into the incidence column (DOK [Dictionary Of Keys]).
     Returns True if patch was applied, False if already available.
     """
@@ -43,16 +42,20 @@ def _monkeypatch_set_hyperedge_coeffs(G) -> bool:
     G.set_hyperedge_coeffs = types.MethodType(set_hyperedge_coeffs, G)  # type: ignore
     return True
 
+
 def _ensure_vertices(G, vertices: Iterable[str], layer: Optional[str]) -> None:
     # `add_vertices_bulk` exists and handles missing vertices efficiently.
     G.add_vertices_bulk(list(vertices), layer=layer)
 
+
 BOUNDARY_SOURCE = "__BOUNDARY_SOURCE__"
-BOUNDARY_SINK   = "__BOUNDARY_SINK__"
+BOUNDARY_SINK = "__BOUNDARY_SINK__"
+
 
 def _ensure_boundary_vertices(G, layer: str):
     # idempotent – Graph.add_vertices_bulk ignores existing ids
     G.add_vertices_bulk([BOUNDARY_SOURCE, BOUNDARY_SINK], layer=layer)
+
 
 def _graph_from_stoich(
     S: np.ndarray,
@@ -62,7 +65,7 @@ def _graph_from_stoich(
     *,
     layer: str = "default",
     preserve_stoichiometry: bool = True,
-) -> "Graph":
+) -> 'Graph':
     if graph is None:
         if Graph is None:
             raise RuntimeError("Graph class not importable; pass `graph=` explicitly.")
@@ -100,7 +103,7 @@ def _graph_from_stoich(
             head = [BOUNDARY_SINK]
             boundary = ("sink", BOUNDARY_SINK)
             # keep column balanced if we write per-vertex coefficients
-            sink_coeff = float(sum(-v for v in col if v < 0))   # sum of absolute reactants
+            sink_coeff = float(sum(-v for v in col if v < 0))  # sum of absolute reactants
             coeffs[BOUNDARY_SINK] = sink_coeff
 
         elif not tail:
@@ -135,15 +138,15 @@ def _graph_from_stoich(
 
 # ---------------- COBRA-based import ----------------
 
+
 def from_cobra_model(
     model,
     graph: Optional["Graph"] = None,
     *,
     layer: str = "default",
     preserve_stoichiometry: bool = True,
-) -> "Graph":
-    """
-    Convert a COBRApy model to Graph. Requires cobra.util.array.create_stoichiometric_matrix.
+) -> 'Graph':
+    """Convert a COBRApy model to Graph. Requires cobra.util.array.create_stoichiometric_matrix.
     Edge attributes added: name, default_lb, default_ub, gpr (Gene-Protein-Reaction rule [GPR]).
     """
     try:
@@ -155,7 +158,9 @@ def from_cobra_model(
     rxn_ids = [rxn.id for rxn in model.reactions]
     met_ids = [met.id for met in model.metabolites]
 
-    G = _graph_from_stoich(S, met_ids, rxn_ids, graph=graph, layer=layer, preserve_stoichiometry=preserve_stoichiometry)
+    G = _graph_from_stoich(
+        S, met_ids, rxn_ids, graph=graph, layer=layer, preserve_stoichiometry=preserve_stoichiometry
+    )
 
     # Attach per-reaction metadata via set_edge_attrs (Graph API)
     for rxn in model.reactions:
@@ -173,6 +178,7 @@ def from_cobra_model(
 
     return G
 
+
 def from_sbml(
     path: str,
     graph: Optional["Graph"] = None,
@@ -180,9 +186,8 @@ def from_sbml(
     layer: str = "default",
     preserve_stoichiometry: bool = True,
     quiet: bool = True,
-) -> "Graph":
-    """
-    Read SBML using COBRApy if available; falls back to python-libsbml (if you extend this file).
+) -> 'Graph':
+    """Read SBML using COBRApy if available; falls back to python-libsbml (if you extend this file).
     """
     try:
         from cobra.io import read_sbml_model  # type: ignore
@@ -190,4 +195,6 @@ def from_sbml(
         raise ImportError("COBRApy not installed; install cobra to read SBML.") from e
 
     model = read_sbml_model(path)
-    return from_cobra_model(model, graph=graph, layer=layer, preserve_stoichiometry=preserve_stoichiometry)
+    return from_cobra_model(
+        model, graph=graph, layer=layer, preserve_stoichiometry=preserve_stoichiometry
+    )

@@ -1,6 +1,6 @@
 # tests/test_plotting.py
-import unittest
 import re
+import unittest
 import warnings
 
 import numpy as np
@@ -12,8 +12,9 @@ warnings.filterwarnings(
     category=UserWarning,
     module=r"numpy\._core\.getlimits",
 )
-import sys
 import os
+import sys
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from graphglue.core.graph import Graph
 from graphglue.utils import plotting
@@ -90,11 +91,13 @@ class TestBackends(unittest.TestCase):
         # optional deps
         try:
             import graphviz  # noqa: F401
+
             cls.HAS_GRAPHVIZ = True
         except Exception:
             cls.HAS_GRAPHVIZ = False
         try:
             import pydot  # noqa: F401
+
             cls.HAS_PYDOT = True
         except Exception:
             cls.HAS_PYDOT = False
@@ -129,19 +132,19 @@ class TestBackends(unittest.TestCase):
     def test_plot_graphviz_and_labels_when_available(self):
         if not self.HAS_GRAPHVIZ:
             self.skipTest("graphviz package not installed")
-        Gv = plotting.plot(self.g, backend="graphviz",
-                           show_vertex_labels=True, show_edge_labels=True)
+        Gv = plotting.plot(
+            self.g, backend="graphviz", show_vertex_labels=True, show_edge_labels=True
+        )
         src = Gv.source
-        self.assertRegex(src, r'\bA\s*\[label=A\b')
-        self.assertRegex(src, r'\bB\s*\[label=B\b')
-        self.assertRegex(src, r'\bC\s*\[label=C\b')
+        self.assertRegex(src, r"\bA\s*\[label=A\b")
+        self.assertRegex(src, r"\bB\s*\[label=B\b")
+        self.assertRegex(src, r"\bC\s*\[label=C\b")
         self.assertRegex(src, r"->")  # edges present
 
     def test_plot_pydot_and_labels_when_available(self):
         if not self.HAS_PYDOT:
             self.skipTest("pydot package not installed")
-        Gd = plotting.plot(self.g, backend="pydot",
-                           show_vertex_labels=True, show_edge_labels=True)
+        Gd = plotting.plot(self.g, backend="pydot", show_vertex_labels=True, show_edge_labels=True)
         labels = [e.get("label") for e in Gd.get_edges()]
         self.assertTrue(any(lbl and re.search(r"w=", lbl) for lbl in labels))
 

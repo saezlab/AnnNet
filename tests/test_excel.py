@@ -1,32 +1,34 @@
+import os
 import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import unittest
-import tempfile
-import os
-import io
-import json
-import re
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Hard dependency for this adapter:
 import importlib.util
+import json
+import os
+import re
+import tempfile
+import unittest
+
 _PANDAS_AVAILABLE = importlib.util.find_spec("pandas") is not None
 
 if _PANDAS_AVAILABLE:
     import pandas as pd
 
 
-from graphglue.core.graph import Graph
-from graphglue.io.excel import load_excel_to_graph
-
 # Utilities for robust assertions
 import polars as pl
+
+from graphglue.io.excel import load_excel_to_graph
+
 
 def _colmap(df: pl.DataFrame):
     return {c.lower(): c for c in df.columns}
 
+
 _SEP = re.compile(r"[|,; ]+")
+
 
 def _explode_cell(x):
     """Return list of tokens from members/head/tail cell (handles Series/list/JSON/string)."""
@@ -48,10 +50,8 @@ def _explode_cell(x):
 
 @unittest.skipUnless(_PANDAS_AVAILABLE, "pandas is required to read/write Excel for this adapter")
 class TestExcelIO(unittest.TestCase):
-
     def _write_excel_temp(self, df_map, suffix=".xlsx"):
-        """
-        df_map: dict[str, pandas.DataFrame]  (sheet_name -> DF)
+        """df_map: dict[str, pandas.DataFrame]  (sheet_name -> DF)
         Returns path to a temporary Excel file. Caller removes it.
         """
         # Try engines in order; if none available, skip
@@ -61,7 +61,11 @@ class TestExcelIO(unittest.TestCase):
             try:
                 tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
                 tmp.close()  # we'll write using pandas
-                with pd.ExcelWriter(tmp.name, engine=eng) if eng else pd.ExcelWriter(tmp.name) as writer:
+                with (
+                    pd.ExcelWriter(tmp.name, engine=eng)
+                    if eng
+                    else pd.ExcelWriter(tmp.name) as writer
+                ):
                     for sheet, df in df_map.items():
                         df.to_excel(writer, sheet_name=sheet, index=False)
                 return tmp.name
@@ -80,7 +84,10 @@ class TestExcelIO(unittest.TestCase):
                 "source": ["A", "B"],
                 "target": ["B", "C"],
                 "weight": [1.0, 2.0],
-                "directed": [True, False],  # importer may coerce; we won't assert exact directedness
+                "directed": [
+                    True,
+                    False,
+                ],  # importer may coerce; we won't assert exact directedness
                 "layer": ["L1", "L1"],
             }
         )
@@ -142,7 +149,9 @@ class TestExcelIO(unittest.TestCase):
                 t_raw = ev.select(tail).to_series()[0]
                 parts = set(_explode_cell(h_raw)) | set(_explode_cell(t_raw))
             else:
-                self.fail("No hyperedge columns ('members' or 'head'/'tail') found in edges_view().")
+                self.fail(
+                    "No hyperedge columns ('members' or 'head'/'tail') found in edges_view()."
+                )
 
             self.assertEqual(parts, {"A", "B", "C"})
         finally:
@@ -184,7 +193,6 @@ class TestExcelIO(unittest.TestCase):
             self.assertEqual(tup, ("P", "Q"))
         finally:
             os.unlink(path)
-
 
 
 if __name__ == "__main__":

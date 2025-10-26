@@ -1,7 +1,9 @@
 from __future__ import annotations
-import tempfile
+
 import pathlib
+import tempfile
 from typing import Optional, Union
+
 
 def load_excel_to_graph(
     path: Union[str, pathlib.Path],
@@ -13,8 +15,7 @@ def load_excel_to_graph(
     default_weight: float = 1.0,
     **kwargs,
 ):
-    """
-    Load an Excel (.xlsx/.xls) file by converting it internally to CSV, then building a graph.
+    """Load an Excel (.xlsx/.xls) file by converting it internally to CSV, then building a graph.
 
     Parameters
     ----------
@@ -45,6 +46,7 @@ def load_excel_to_graph(
     - This function **does not require `fastexcel` or `openpyxl`**.
     - The Excel is read once into memory and written to a temporary CSV, then processed with the CSV loader.
     - Supported formats and schemas are identical to `load_csv_to_graph`.
+
     """
     path = pathlib.Path(path)
 
@@ -76,9 +78,9 @@ def load_excel_to_graph(
         tmp_path = pathlib.Path(tmp.name)
         df.to_csv(tmp_path, index=False)
 
-
     # Pass the temporary CSV into the existing loader
     from .csv import load_csv_to_graph
+
     G = load_csv_to_graph(
         tmp_path,
         graph=graph,

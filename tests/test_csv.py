@@ -1,16 +1,17 @@
-import sys
 import os
+import sys
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import unittest
 import io
 import json
 import re
+import unittest
+
 import polars as pl
 
 from graphglue.core.graph import Graph
 from graphglue.io import csv as csv_io
-
 
 
 def _colmap(df: pl.DataFrame):
@@ -107,7 +108,12 @@ class TestCSVIO(unittest.TestCase):
         members = cols.get("members")
         head = cols.get("head")
         tail = cols.get("tail")
-        wcol = cols.get("effective_weight") or cols.get("global_weight") or cols.get("weight") or cols.get("w")
+        wcol = (
+            cols.get("effective_weight")
+            or cols.get("global_weight")
+            or cols.get("weight")
+            or cols.get("w")
+        )
         self.assertIsNotNone(wcol)
 
         if members:
@@ -148,4 +154,3 @@ class TestCSVIO(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -1,12 +1,20 @@
-import sys, pathlib
+import pathlib
+import sys
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
 
-import pytest
-from graphglue.adapters.json_adapter import to_json, from_json  # JSON (JavaScript Object Notation)
-from graphglue.adapters.GraphDir_Parquet_adapter import write_parquet_graphdir, read_parquet_graphdir  # Parquet (columnar storage)
-from graphglue.adapters.dataframe_adapter import to_dataframes, from_dataframes  # DF (DataFrame)
 import time
+
+import pytest
+
+from graphglue.adapters.dataframe_adapter import from_dataframes, to_dataframes  # DF (DataFrame)
+from graphglue.adapters.GraphDir_Parquet_adapter import (
+    read_parquet_graphdir,
+    write_parquet_graphdir,
+)  # Parquet (columnar storage)
+from graphglue.adapters.json_adapter import from_json, to_json  # JSON (JavaScript Object Notation)
+
 
 class TestPerformance:
     """Optional performance comparison tests."""
@@ -18,19 +26,19 @@ class TestPerformance:
         start = time.time()
         to_json(G, tmpdir_fixture / "perf.json")
         from_json(tmpdir_fixture / "perf.json")
-        results['JSON'] = time.time() - start
+        results["JSON"] = time.time() - start
 
         start = time.time()
         write_parquet_graphdir(G, tmpdir_fixture / "perf_dir")
         H = read_parquet_graphdir(tmpdir_fixture / "perf_dir")
         # optional sanity:
         assert H.number_of_edges() == G.number_of_edges()
-        results['Parquet'] = time.time() - start
+        results["Parquet"] = time.time() - start
 
         start = time.time()
         dfs = to_dataframes(G)
         from_dataframes(**dfs)
-        results['DataFrame'] = time.time() - start
+        results["DataFrame"] = time.time() - start
 
         print("\nAdapter Performance (seconds):")
         for adapter, elapsed in sorted(results.items(), key=lambda x: x[1]):

@@ -1,6 +1,6 @@
+from . import io as io
 from ._version import __version__
 from .core.graph import Graph
-from . import io as io
 
 __all__ = [
     "__version__",

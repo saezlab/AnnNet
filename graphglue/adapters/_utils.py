@@ -1,6 +1,7 @@
 # ---- robust helpers (keep in sync across adapters) ----
 import json as _json
 
+
 def _is_directed_eid(graph, eid):
     """Best-effort directedness probe; default True."""
     try:
@@ -13,9 +14,9 @@ def _is_directed_eid(graph, eid):
     except Exception:
         return True
 
+
 def _coerce_coeff_mapping(val):
-    """
-    Normalize endpoint-coeff containers into {vertex: {__value: float}|float}.
+    """Normalize endpoint-coeff containers into {vertex: {__value: float}|float}.
     Accepts dict | list | list-of-dicts | list-of-pairs | JSON string.
     """
     if val is None:
@@ -42,9 +43,9 @@ def _coerce_coeff_mapping(val):
         return out
     return {}
 
+
 def _endpoint_coeff_map(edge_attrs, private_key, endpoint_set):
-    """
-    Return {vertex: float_coeff} for the given endpoint_set.
+    """Return {vertex: float_coeff} for the given endpoint_set.
     Reads from edge_attrs[private_key], which may be serialized in multiple shapes.
     Missing endpoints default to 1.0.
     """
