@@ -1,7 +1,6 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from ..core.graph import Graph
 
 import sys
 from datetime import UTC, datetime, timezone
@@ -10,6 +9,18 @@ from pathlib import Path
 import numpy as np
 import scipy as scipy
 import scipy.sparse as sp
+
+if TYPE_CHECKING:
+    from ..core.graph import Graph
+
+try:
+    _write_cache  # type: ignore[name-defined]
+except NameError:
+    def _write_cache(*args, **kwargs):  # type: ignore[no-redef]
+        raise NotImplementedError(
+            "_write_cache() was referenced but is not defined. "
+            "Replace this call with the actual writer function for AnnNet IO."
+        )
 
 ANNNET_EXT = "graph.annnet"
 

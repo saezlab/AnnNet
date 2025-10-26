@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 try:
     import igraph as ig
 except ModuleNotFoundError as e:
@@ -7,14 +8,15 @@ except ModuleNotFoundError as e:
         "Install with: pip install graphglue[igraph]"
     ) from e
 from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from ..core.graph import Graph
+
 import json
 from enum import Enum
 from typing import Any
 
 from ._utils import _endpoint_coeff_map, _is_directed_eid
 
+if TYPE_CHECKING:
+    from ..core.graph import Graph
 
 def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
     """Returns:
@@ -159,7 +161,7 @@ def _attrs_to_dict(attrs_dict: dict) -> dict:
 
 
 def _export_legacy(
-    graph: "Graph",
+    graph: Graph,
     *,
     directed: bool = True,
     skip_hyperedges: bool = True,
@@ -419,7 +421,7 @@ def _coeff_from_obj(obj) -> float:
 
 
 def to_igraph(
-    graph: "Graph",
+    graph: Graph,
     directed=True,
     hyperedge_mode="skip",
     layer=None,
@@ -834,7 +836,7 @@ def from_igraph(
     he_node_flag: str = "is_hyperedge",
     he_id_attr: str = "eid",
     reify_prefix: str = "he::",
-) -> "Graph":
+) -> Graph:
     """Reconstruct a Graph from igraph.Graph + manifest.
 
     hyperedge: "none" (default) | "reified"

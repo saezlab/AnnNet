@@ -1,12 +1,14 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+
 import json
 import math
 from pathlib import Path
-if TYPE_CHECKING:
-    from ..core.graph import Graph
+from typing import TYPE_CHECKING
+
 import polars as pl
 
+if TYPE_CHECKING:
+    from ..core.graph import Graph
 
 def _strip_nulls(d: dict):
     # remove keys whose value is None or NaN

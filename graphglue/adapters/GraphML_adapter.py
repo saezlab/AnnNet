@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 import json
 import math
 import os
 import re
 from typing import TYPE_CHECKING
+
 import networkx as nx
+
 if TYPE_CHECKING:
     from ..core.graph import Graph
 from .networkx_adapter import from_nx, from_nx_only, to_nx
@@ -102,11 +105,11 @@ def from_graphml(path, *, hyperedge="reified"):
     return from_nx_only(G, hyperedge=("reified" if hyperedge == "reified" else "none"))
 
 
-def to_gexf(graph: "Graph", path, *, directed=True, hyperedge_mode="reify", public_only=False):
+def to_gexf(graph: Graph, path, *, directed=True, hyperedge_mode="reify", public_only=False):
     G, _m = to_nx(graph, directed=directed, hyperedge_mode=hyperedge_mode, public_only=public_only)
     nx.write_gexf(G, path)
 
 
-def from_gexf(path, *, hyperedge="reified") -> "Graph":
+def from_gexf(path, *, hyperedge="reified") -> Graph:
     G = nx.read_gexf(path)
     return from_nx_only(G, hyperedge=("reified" if hyperedge == "reified" else "none"))

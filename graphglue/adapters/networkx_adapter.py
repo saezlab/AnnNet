@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 try:
     import networkx as nx
 except ModuleNotFoundError as e:
@@ -5,8 +7,9 @@ except ModuleNotFoundError as e:
         "Optional dependency 'networkx' is not installed. "
         "Install with: pip install graphglue[networkx]"
     ) from e
-from __future__ import annotations
+
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from ..core.graph import Graph
 import json
@@ -37,7 +40,7 @@ def _attrs_to_dict(attrs_dict: dict) -> dict:
 
 
 def _export_legacy(
-    graph: "Graph",
+    graph: Graph,
     *,
     directed: bool = True,
     skip_hyperedges: bool = True,
@@ -167,7 +170,7 @@ def _coeff_from_obj(obj) -> float:
 
 
 def to_nx(
-    graph: "Graph",
+    graph: Graph,
     directed=True,
     hyperedge_mode="skip",
     layer=None,
@@ -681,7 +684,7 @@ def from_nx(
     coeff_attr="coeff",
     membership_attr="membership_of",
     reify_prefix="he::",
-) -> "Graph":
+) -> Graph:
     """Reconstruct a Graph from NetworkX graph + manifest.
 
     hyperedge: "none" (default) | "reified"
