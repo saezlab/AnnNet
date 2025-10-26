@@ -25,6 +25,11 @@ jobs:
         -   uses: ./.github/actions/setup
             with:
                 python-version: ${{ matrix.python-version }}
+        -   name: Install optional test dependencies
+            shell: bash
+            run: |
+                source .venv/bin/activate
+                uv pip install networkx zarr numcodecs pyarrow python-igraph
         -   name: Run tests with coverage
             run: |
                 source .venv/bin/activate
@@ -32,5 +37,5 @@ jobs:
         -   name: Upload coverage report
             uses: actions/upload-artifact@v4
             with:
-                name: coverage-report
+                name: coverage-report-${{ matrix.python-version }}
                 path: .coverage*

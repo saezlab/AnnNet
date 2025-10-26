@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from typing import Dict, List, Optional, Tuple, Union
 
 try:
     from ..core.graph import Graph

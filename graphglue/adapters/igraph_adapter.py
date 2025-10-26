@@ -1,17 +1,8 @@
 from __future__ import annotations
 
-try:
-    import igraph as ig
-except ModuleNotFoundError as e:
-    raise ModuleNotFoundError(
-        "Optional dependency 'python-igraph' is not installed. "
-        "Install with: pip install graphglue[igraph]"
-    ) from e
-from typing import TYPE_CHECKING
-
 import json
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ._utils import _endpoint_coeff_map, _is_directed_eid
 

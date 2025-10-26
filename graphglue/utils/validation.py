@@ -2,7 +2,7 @@ import hashlib
 import json
 from collections.abc import Callable, Iterable
 from itertools import filterfalse
-from typing import Any, Optional, Set, TypeVar
+from typing import Any, TypeVar
 
 T = TypeVar("T")
 

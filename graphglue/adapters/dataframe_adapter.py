@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict, Optional
-
 import polars as pl
 
 if __name__ == "__main__":

@@ -15,7 +15,6 @@ from __future__ import annotations
 import types
 import warnings
 from collections.abc import Iterable, Sequence
-from typing import Dict, Optional
 
 import numpy as np
 

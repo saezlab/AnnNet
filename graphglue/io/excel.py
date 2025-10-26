@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pathlib
 import tempfile
-from typing import Optional, Union
 
 
 def load_excel_to_graph(

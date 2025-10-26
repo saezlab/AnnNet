@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import json
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..core.graph import Graph

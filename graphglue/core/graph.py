@@ -2,7 +2,7 @@ import inspect
 import math
 import time
 from collections import defaultdict
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from functools import wraps
 
@@ -7634,7 +7634,7 @@ class Graph:
             Snapshot metadata
 
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         if label is None:
             label = f'snapshot_{len(self._snapshots)}_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
