@@ -15,11 +15,13 @@ if TYPE_CHECKING:
 try:
     _write_cache  # type: ignore[name-defined]
 except NameError:
+
     def _write_cache(*args, **kwargs):  # type: ignore[no-redef]
         raise NotImplementedError(
             "_write_cache() was referenced but is not defined. "
             "Replace this call with the actual writer function for AnnNet IO."
         )
+
 
 ANNNET_EXT = "graph.annnet"
 

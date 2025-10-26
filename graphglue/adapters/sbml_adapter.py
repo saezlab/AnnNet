@@ -187,8 +187,7 @@ def from_sbml(
     preserve_stoichiometry: bool = True,
     quiet: bool = True,
 ) -> Graph:
-    """Read SBML using COBRApy if available; falls back to python-libsbml (if you extend this file).
-    """
+    """Read SBML using COBRApy if available; falls back to python-libsbml (if you extend this file)."""
     try:
         from cobra.io import read_sbml_model  # type: ignore
     except Exception as e:  # pragma: no cover

@@ -10,6 +10,7 @@ import polars as pl
 if TYPE_CHECKING:
     from ..core.graph import Graph
 
+
 def _strip_nulls(d: dict):
     # remove keys whose value is None or NaN
     clean = {}
@@ -193,8 +194,7 @@ def write_parquet_graphdir(graph: Graph, path):
 
 
 def read_parquet_graphdir(path) -> Graph:
-    """Read GraphDir (lossless vs write_parquet_graphdir()).
-    """
+    """Read GraphDir (lossless vs write_parquet_graphdir())."""
     from ..core.graph import Graph
 
     path = Path(path)

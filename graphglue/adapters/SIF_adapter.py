@@ -137,7 +137,7 @@ def to_sif(
                         "directed": directed,
                     }
 
-                    if weight != 1.0 or all_attrs or eid != f'edge_{len(manifest["binary_edges"])}':
+                    if weight != 1.0 or all_attrs or eid != f"edge_{len(manifest['binary_edges'])}":
                         manifest["edge_metadata"][eid] = {
                             "weight": weight,
                             "attrs": all_attrs,

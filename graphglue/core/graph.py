@@ -435,7 +435,7 @@ class LayerManager:
 
         for i, (layer_id, info) in enumerate(stats.items()):
             prefix = "├─" if i < len(stats) - 1 else "└─"
-            lines.append(f'{prefix} {layer_id}: {info["vertices"]} vertices, {info["edges"]} edges')
+            lines.append(f"{prefix} {layer_id}: {info['vertices']} vertices, {info['edges']} edges")
 
         return "\n".join(lines)
 
@@ -548,8 +548,7 @@ class IndexManager:
 
 
 class CacheManager:
-    """Cache manager for materialized views (CSR/CSC).
-    """
+    """Cache manager for materialized views (CSR/CSC)."""
 
     def __init__(self, graph):
         self._G = graph
@@ -1147,7 +1146,7 @@ class GraphView:
             filters.append("predicate=<function>")
 
         if filters:
-            lines.append(f'Filters: {", ".join(filters)}')
+            lines.append(f"Filters: {', '.join(filters)}")
         else:
             lines.append("Filters: None (full graph)")
 
@@ -1195,7 +1194,7 @@ class GraphDiff:
     def summary(self):
         """Human-readable summary of differences."""
         lines = [
-            f'Diff: {self.snapshot_a["label"]} → {self.snapshot_b["label"]}',
+            f"Diff: {self.snapshot_a['label']} → {self.snapshot_b['label']}",
             "",
             f"Vertices: {len(self.vertices_added):+d} added, {len(self.vertices_removed)} removed",
             f"Edges: {len(self.edges_added):+d} added, {len(self.edges_removed)} removed",
@@ -4753,26 +4752,22 @@ class Graph:
 
     @property
     def num_vertices(self):
-        """Total number of vertices (vertices) in the graph.
-        """
+        """Total number of vertices (vertices) in the graph."""
         return self.number_of_vertices()
 
     @property
     def num_edges(self):
-        """Total number of edges in the graph.
-        """
+        """Total number of edges in the graph."""
         return self.number_of_edges()
 
     @property
     def nv(self):
-        """Shorthand for num_vertices.
-        """
+        """Shorthand for num_vertices."""
         return self.num_vertices
 
     @property
     def ne(self):
-        """Shorthand for num_edges.
-        """
+        """Shorthand for num_edges."""
         return self.num_edges
 
     @property
@@ -6801,7 +6796,6 @@ class Graph:
             simple: bool,
             edge_aggs: dict | None,
         ):
-
             from ..adapters import networkx_adapter as _gg_nx  # graphglue.adapters.networkx_adapter
 
             nxG, manifest = _gg_nx.to_nx(
@@ -7637,7 +7631,7 @@ class Graph:
         from datetime import datetime
 
         if label is None:
-            label = f'snapshot_{len(self._snapshots)}_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+            label = f"snapshot_{len(self._snapshots)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         snapshot = {
             "label": label,

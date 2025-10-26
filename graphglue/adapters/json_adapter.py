@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..core.graph import Graph
 
+
 def _is_directed_eid(graph, eid):
     try:
         return bool(getattr(graph, "edge_directed", {}).get(eid, True))
@@ -240,8 +241,7 @@ def to_json(graph: Graph, path, *, public_only: bool = False, indent: int = 0):
 
 
 def from_json(path) -> Graph:
-    """Load Graph from node-link JSON + x-extensions (lossless wrt schema above).
-    """
+    """Load Graph from node-link JSON + x-extensions (lossless wrt schema above)."""
     from ..core.graph import Graph
 
     with open(path, encoding="utf-8") as f:

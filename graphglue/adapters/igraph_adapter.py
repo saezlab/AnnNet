@@ -9,6 +9,7 @@ from ._utils import _endpoint_coeff_map, _is_directed_eid
 if TYPE_CHECKING:
     from ..core.graph import Graph
 
+
 def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
     """Returns:
       layers_section: {layer_id: [edge_id, ...]}
@@ -594,7 +595,6 @@ def to_igraph(
 
     # -------------- REIFY: add HE nodes + membership edges to igG --------------
     if hyperedge_mode == "reify":
-
         # allowed HE set under layer filter (None => all)
         allowed = None
         if requested_lids:
