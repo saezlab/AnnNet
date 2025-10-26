@@ -2,7 +2,7 @@ import inspect
 import math
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
 from functools import wraps
 
@@ -6335,7 +6335,7 @@ class Graph:
     # History and Timeline
 
     def _utcnow_iso(self) -> str:
-        return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
     def _jsonify(self, x):
         # Make args/return JSON-safe & compact.
@@ -7642,7 +7642,7 @@ class Graph:
         snapshot = {
             "label": label,
             "version": self._version,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "counts": {
                 "vertices": self.number_of_vertices(),
                 "edges": self.number_of_edges(),

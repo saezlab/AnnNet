@@ -1,7 +1,8 @@
 import hashlib
 import json
+from collections.abc import Callable, Iterable
 from itertools import filterfalse
-from typing import Any, Callable, Iterable, Optional, Set, TypeVar
+from typing import Any, Optional, Set, TypeVar
 
 T = TypeVar("T")
 
@@ -50,9 +51,9 @@ def obj_canonicalized_hash(obj) -> str:
     return hash_obj.hexdigest()
 
 
-def unique_iter(iterable: Iterable[T], key: Optional[Callable[[T], Any]] = None) -> Iterable[T]:
+def unique_iter(iterable: Iterable[T], key: Callable[[T], Any] | None = None) -> Iterable[T]:
     # Based on https://iteration-utilities.readthedocs.io/en/latest/generated/unique_everseen.html
-    seen: Set[Any] = set()
+    seen: set[Any] = set()
     seen_add = seen.add
     if key is None:
         for element in filterfalse(seen.__contains__, iterable):

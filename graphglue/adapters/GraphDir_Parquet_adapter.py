@@ -1,9 +1,10 @@
 from __future__ import annotations
-
+from typing import TYPE_CHECKING
 import json
 import math
 from pathlib import Path
-
+if TYPE_CHECKING:
+    from ..core.graph import Graph
 import polars as pl
 
 
@@ -40,7 +41,7 @@ def _coerce_coeff_mapping(val):
         return {}
     if isinstance(val, str):
         try:
-            return _coerce_coeff_mapping(_json.loads(val))
+            return _coerce_coeff_mapping(json.loads(val))
         except Exception:
             return {}
     if isinstance(val, dict):
@@ -81,7 +82,7 @@ def _endpoint_coeff_map(edge_attrs, private_key, endpoint_set):
     return out
 
 
-def write_parquet_graphdir(graph: 'Graph', path):
+def write_parquet_graphdir(graph: Graph, path):
     """Write lossless GraphDir:
       vertices.parquet, edges.parquet, layers.parquet, edge_layers.parquet, manifest.json
     Wide tables (attrs as columns). Hyperedges stored with 'kind' and head/tail/members lists.
@@ -189,7 +190,7 @@ def write_parquet_graphdir(graph: 'Graph', path):
     (path / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
 
-def read_parquet_graphdir(path) -> 'Graph':
+def read_parquet_graphdir(path) -> Graph:
     """Read GraphDir (lossless vs write_parquet_graphdir()).
     """
     from ..core.graph import Graph

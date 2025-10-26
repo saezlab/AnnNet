@@ -17,13 +17,13 @@ except ImportError:
 
 
 def to_dataframes(
-    graph: 'Graph',
+    graph: Graph,
     *,
     include_layers: bool = True,
     include_hyperedges: bool = True,
     explode_hyperedges: bool = False,
     public_only: bool = True,
-) -> Dict[str, pl.DataFrame]:
+) -> dict[str, pl.DataFrame]:
     """Export graph to Polars DataFrames.
 
     Returns a dictionary of DataFrames representing different aspects of the graph:
@@ -266,15 +266,15 @@ def to_dataframes(
 
 
 def from_dataframes(
-    nodes: Optional[pl.DataFrame] = None,
-    edges: Optional[pl.DataFrame] = None,
-    hyperedges: Optional[pl.DataFrame] = None,
-    layers: Optional[pl.DataFrame] = None,
-    layer_weights: Optional[pl.DataFrame] = None,
+    nodes: pl.DataFrame | None = None,
+    edges: pl.DataFrame | None = None,
+    hyperedges: pl.DataFrame | None = None,
+    layers: pl.DataFrame | None = None,
+    layer_weights: pl.DataFrame | None = None,
     *,
-    directed: Optional[bool] = None,
+    directed: bool | None = None,
     exploded_hyperedges: bool = False,
-) -> 'Graph':
+) -> Graph:
     """Import graph from Polars DataFrames.
 
     Accepts DataFrames in the format produced by to_dataframes():

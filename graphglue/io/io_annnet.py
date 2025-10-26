@@ -1,7 +1,10 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..core.graph import Graph
 
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -44,7 +47,7 @@ def write(graph, path: str | Path, *, compression="zstd", overwrite=False):
     manifest = {
         "format": "annnet",
         "version": "1.0.0",
-        "created": datetime.now(timezone.utc).isoformat(),
+        "created": datetime.now(UTC).isoformat(),
         "annnet_version": "0.1.0",
         "graph_version": graph._version,
         "directed": graph.directed,
@@ -309,7 +312,7 @@ def _write_audit(graph, path: Path, compression: str):
         history_df.write_parquet(path / "history.parquet", compression=compression)
     # Provenance
     provenance = {
-        "created": datetime.now(timezone.utc).isoformat(),
+        "created": datetime.now(UTC).isoformat(),
         "annnet_version": "0.1.0",
         "python_version": sys.version,
         "dependencies": {
@@ -339,7 +342,7 @@ def _write_uns(graph, path: Path):
     (path / "results").mkdir(exist_ok=True)
 
 
-def read(path: str | Path, *, lazy: bool = False) -> 'Graph':
+def read(path: str | Path, *, lazy: bool = False) -> Graph:
     """Load graph from disk with zero loss.
 
     Parameters

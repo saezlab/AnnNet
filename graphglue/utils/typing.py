@@ -5,7 +5,7 @@ from typing import Any, FrozenSet, Optional, Tuple
 # Basic Type Definitions
 # ------------------------------------------------------------------------------
 
-Edge = Tuple[FrozenSet[Any], FrozenSet[Any]]
+Edge = tuple[frozenset[Any], frozenset[Any]]
 
 
 class Attr(str, Enum):
@@ -86,7 +86,7 @@ class Attributes(dict):
         v = value if not isinstance(value, Enum) else value.value
         self.__setitem__(key.value, v)
 
-    def has_attr(self, key: Attr, value: Optional[Any] = None) -> bool:
+    def has_attr(self, key: Attr, value: Any | None = None) -> bool:
         """Check if a given attribute exists in the dictionary, optionally with a specific value.
 
         Args:

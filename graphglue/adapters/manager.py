@@ -15,7 +15,7 @@ def get_adapter(name: str):
     return load_adapter(name)
 
 
-def get_proxy(backend_name: str, graph: 'Graph') -> BackendProxy:
+def get_proxy(backend_name: str, graph: Graph) -> BackendProxy:
     """Return a lazy proxy so users can write `G.nx.<algo>()` etc."""
     if backend_name not in ("networkx", "igraph"):
         raise ValueError(f"No backend '{backend_name}' registered")
@@ -27,7 +27,7 @@ def _backend_import_name(name: str) -> str:
     return "igraph" if name == "igraph" else "networkx"
 
 
-def ensure_materialized(backend_name: str, graph: 'Graph') -> dict:
+def ensure_materialized(backend_name: str, graph: Graph) -> dict:
     """Convert (or re-convert) *graph* into the requested backend object and
     cache the result on the graph’s private state object. Returns:
       {"module": <backend module>, "graph": <backend graph>, "version": int}

@@ -1,10 +1,12 @@
+from __future__ import annotations
 import json
 import math
 import os
 import re
-
+from typing import TYPE_CHECKING
 import networkx as nx
-
+if TYPE_CHECKING:
+    from ..core.graph import Graph
 from .networkx_adapter import from_nx, from_nx_only, to_nx
 
 _BOOL = {"true": True, "false": False}
@@ -92,7 +94,7 @@ def from_graphml(path, *, hyperedge="reified"):
     _restore_types_graphml_inplace(G)
     mpath = str(path) + ".manifest.json"
     if os.path.exists(mpath):
-        with open(mpath, "r", encoding="utf-8") as f:
+        with open(mpath, encoding="utf-8") as f:
             manifest = json.load(f)
         # Rebuild exactly from the manifest (lossless), ignoring GraphML-added noise
         return from_nx(G, manifest, hyperedge=("reified" if hyperedge == "reified" else "none"))

@@ -5,7 +5,10 @@ except ModuleNotFoundError as e:
         "Optional dependency 'networkx' is not installed. "
         "Install with: pip install graphglue[networkx]"
     ) from e
-
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..core.graph import Graph
 import json
 from enum import Enum
 from typing import Any

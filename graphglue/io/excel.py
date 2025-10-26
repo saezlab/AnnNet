@@ -6,10 +6,10 @@ from typing import Optional, Union
 
 
 def load_excel_to_graph(
-    path: Union[str, pathlib.Path],
+    path: str | pathlib.Path,
     graph=None,
     schema: str = "auto",
-    sheet: Optional[str] = None,
+    sheet: str | None = None,
     default_layer=None,
     default_directed=None,
     default_weight: float = 1.0,

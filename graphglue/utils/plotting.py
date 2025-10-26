@@ -3,7 +3,8 @@ from __future__ import annotations
 import contextlib
 import io
 import math
-from typing import Any, Dict, Iterable, List, Literal, Optional
+from collections.abc import Iterable
+from typing import Any, Dict, List, Literal, Optional
 
 import numpy as np
 
@@ -53,8 +54,8 @@ def _suppress_repr_warnings(g: Any) -> None:
 # Label builders
 
 
-def build_vertex_labels(graph, key: Optional[str] = None) -> Dict[str, str]:
-    labels: Dict[str, str] = {}
+def build_vertex_labels(graph, key: str | None = None) -> dict[str, str]:
+    labels: dict[str, str] = {}
     for vid in graph.vertices():
         if key is None:
             labels[vid] = str(vid)
@@ -67,14 +68,14 @@ def build_edge_labels(
     graph,
     *,
     use_weight: bool = True,
-    extra_keys: Optional[List[str]] = None,
-    layer: Optional[str] = None,
-) -> Dict[int, str]:
+    extra_keys: list[str] | None = None,
+    layer: str | None = None,
+) -> dict[int, str]:
     extra_keys = extra_keys or []
-    labels: Dict[int, str] = {}
+    labels: dict[int, str] = {}
     for j in range(graph.number_of_edges()):
         eid = graph.idx_to_edge[j]
-        parts: List[str] = []
+        parts: list[str] = []
         if use_weight:
             try:
                 w = graph.get_effective_edge_weight(eid, layer=layer)
@@ -96,11 +97,11 @@ def build_edge_labels(
 def edge_style_from_weights(
     graph,
     *,
-    layer: Optional[str] = None,
+    layer: str | None = None,
     min_width: float = 0.5,
     max_width: float = 5.0,
     color_mode: Literal["greys", "signed"] = "greys",
-) -> Dict[int, Dict[str, str]]:
+) -> dict[int, dict[str, str]]:
     """Compute visual edge styles (pen width and color) from effective weights.
 
     Parameters
@@ -133,7 +134,7 @@ def edge_style_from_weights(
 
     """
     eidxs = list(range(graph.number_of_edges()))
-    raw_vals: List[float] = []
+    raw_vals: list[float] = []
     for j in eidxs:
         eid = graph.idx_to_edge[j]
         try:
@@ -142,7 +143,7 @@ def edge_style_from_weights(
             raw_vals.append(1.0)
 
     x = _normalize(raw_vals)
-    styles: Dict[int, Dict[str, str]] = {}
+    styles: dict[int, dict[str, str]] = {}
     for j, xv in zip(eidxs, x):
         pen = min_width + float(xv) * (max_width - min_width)
         if color_mode == "signed":
@@ -162,7 +163,7 @@ def edge_style_from_weights(
 
 
 def _add_nodes_graphviz(
-    Gv, node_names: Iterable[str], custom_vertex_attr: Optional[Dict[str, Dict[str, str]]] = None
+    Gv, node_names: Iterable[str], custom_vertex_attr: dict[str, dict[str, str]] | None = None
 ):
     custom_vertex_attr = custom_vertex_attr or {}
     for v in node_names:
@@ -172,7 +173,7 @@ def _add_nodes_graphviz(
 
 
 def _add_nodes_pydot(
-    Gd, node_names: Iterable[str], custom_vertex_attr: Optional[Dict[str, Dict[str, str]]] = None
+    Gd, node_names: Iterable[str], custom_vertex_attr: dict[str, dict[str, str]] | None = None
 ):
     import pydot
 
@@ -187,12 +188,12 @@ def to_graphviz(
     graph,
     *,
     layout: str = "dot",
-    graph_attr: Optional[Dict[str, str]] = None,
-    node_attr: Optional[Dict[str, str]] = None,
-    edge_attr: Optional[Dict[str, str]] = None,
-    custom_edge_attr: Optional[Dict[int, Dict[str, str]]] = None,
-    custom_vertex_attr: Optional[Dict[str, Dict[str, str]]] = None,
-    edge_indexes: Optional[List[int]] = None,
+    graph_attr: dict[str, str] | None = None,
+    node_attr: dict[str, str] | None = None,
+    edge_attr: dict[str, str] | None = None,
+    custom_edge_attr: dict[int, dict[str, str]] | None = None,
+    custom_vertex_attr: dict[str, dict[str, str]] | None = None,
+    edge_indexes: list[int] | None = None,
     orphan_edges: bool = True,
     suppress_warnings: bool = True,
 ):
@@ -278,12 +279,12 @@ def to_pydot(
     graph,
     *,
     layout: str = "dot",  # kept for API parity; pydot doesn't use engine here
-    graph_attr: Optional[Dict[str, str]] = None,
-    node_attr: Optional[Dict[str, str]] = None,
-    edge_attr: Optional[Dict[str, str]] = None,
-    custom_edge_attr: Optional[Dict[int, Dict[str, str]]] = None,
-    custom_vertex_attr: Optional[Dict[str, Dict[str, str]]] = None,
-    edge_indexes: Optional[List[int]] = None,
+    graph_attr: dict[str, str] | None = None,
+    node_attr: dict[str, str] | None = None,
+    edge_attr: dict[str, str] | None = None,
+    custom_edge_attr: dict[int, dict[str, str]] | None = None,
+    custom_vertex_attr: dict[str, dict[str, str]] | None = None,
+    edge_indexes: list[int] | None = None,
     orphan_edges: bool = True,
 ):
     import pydot
@@ -363,11 +364,11 @@ def plot(
     *,
     backend: Literal["graphviz", "pydot"] = "graphviz",
     layout: str = "dot",
-    layer: Optional[str] = None,
+    layer: str | None = None,
     show_edge_labels: bool = False,
-    edge_label_keys: Optional[List[str]] = None,
+    edge_label_keys: list[str] | None = None,
     show_vertex_labels: bool = True,
-    vertex_label_key: Optional[str] = None,
+    vertex_label_key: str | None = None,
     use_weight_style: bool = True,
     orphan_edges: bool = True,
     suppress_warnings: bool = True,
@@ -419,12 +420,12 @@ def plot(
 
     """
     # edge styles
-    custom_edge_attr: Dict[int, Dict[str, str]] = {}
+    custom_edge_attr: dict[int, dict[str, str]] = {}
     if use_weight_style:
         custom_edge_attr = edge_style_from_weights(graph, layer=layer)
 
     # vertex labels (set via custom_vertex_attr)
-    custom_vertex_attr: Optional[Dict[str, Dict[str, str]]] = None
+    custom_vertex_attr: dict[str, dict[str, str]] | None = None
     if show_vertex_labels:
         vlabels = build_vertex_labels(graph, key=vertex_label_key)
         custom_vertex_attr = {k: {"label": v} for k, v in vlabels.items()}

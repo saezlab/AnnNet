@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from collections.abc import Iterable
+from typing import Dict, List, Optional, Tuple, Union
 
 try:
     from ..core.graph import Graph
@@ -9,7 +10,7 @@ except Exception:
     from graphglue.core.graph import Graph
 
 
-def _split_sif_line(line: str, delimiter: Optional[str]) -> List[str]:
+def _split_sif_line(line: str, delimiter: str | None) -> list[str]:
     if delimiter is not None:
         return [t for t in line.rstrip("\n\r").split(delimiter) if t != ""]
     if "\t" in line:
@@ -17,14 +18,14 @@ def _split_sif_line(line: str, delimiter: Optional[str]) -> List[str]:
     return line.strip().split()
 
 
-def _safe_vertex_attr_table(graph: 'Graph'):
+def _safe_vertex_attr_table(graph: Graph):
     va = getattr(graph, "vertex_attributes", None)
     if va is None:
         return None
     return va if hasattr(va, "columns") and hasattr(va, "to_dicts") else None
 
 
-def _get_all_edge_attrs(graph: 'Graph', edge_id: str):
+def _get_all_edge_attrs(graph: Graph, edge_id: str):
     ea = getattr(graph, "edge_attributes", None)
     if (
         ea is not None
@@ -44,7 +45,7 @@ def _get_all_edge_attrs(graph: 'Graph', edge_id: str):
     return {}
 
 
-def _get_edge_weight(graph: 'Graph', edge_id: str, default=1.0):
+def _get_edge_weight(graph: Graph, edge_id: str, default=1.0):
     ew = getattr(graph, "edge_weights", None)
     if ew is not None and hasattr(ew, "get"):
         try:
@@ -56,16 +57,16 @@ def _get_edge_weight(graph: 'Graph', edge_id: str, default=1.0):
 
 
 def to_sif(
-    graph: 'Graph',
-    path: Optional[str] = None,
+    graph: Graph,
+    path: str | None = None,
     *,
     relation_attr: str = "relation",
     default_relation: str = "interacts_with",
     write_nodes: bool = True,
-    nodes_path: Optional[str] = None,
+    nodes_path: str | None = None,
     lossless: bool = False,
-    manifest_path: Optional[str] = None,
-) -> Union[None, Tuple[None, Dict]]:
+    manifest_path: str | None = None,
+) -> None | tuple[None, dict]:
     """Export graph to SIF format.
 
     Standard mode (lossless=False):
@@ -149,7 +150,7 @@ def to_sif(
                 nf.write("# nodes sidecar for SIF; format: <vertex_id>\tkey=value ...\n")
 
                 vtable = _safe_vertex_attr_table(graph)
-                vmap: Dict[str, Dict[str, object]] = {}
+                vmap: dict[str, dict[str, object]] = {}
 
                 if vtable is not None:
                     try:
@@ -262,16 +263,16 @@ def to_sif(
 def from_sif(
     path: str,
     *,
-    manifest: Optional[Union[str, Dict]] = None,
+    manifest: str | dict | None = None,
     directed: bool = True,
     relation_attr: str = "relation",
     default_relation: str = "interacts_with",
     read_nodes_sidecar: bool = True,
-    nodes_path: Optional[str] = None,
+    nodes_path: str | None = None,
     encoding: str = "utf-8",
-    delimiter: Optional[str] = None,
+    delimiter: str | None = None,
     comment_prefixes: Iterable[str] = ("#", "!"),
-) -> 'Graph':
+) -> Graph:
     """Import graph from SIF (Simple Interaction Format).
 
     Standard mode (manifest=None):
@@ -325,7 +326,7 @@ def from_sif(
     """
 
     if manifest is not None and not isinstance(manifest, dict):
-        with open(str(manifest), "r", encoding="utf-8") as mf:
+        with open(str(manifest), encoding="utf-8") as mf:
             manifest = json.load(mf)
 
     if manifest and "binary_edges" in manifest:
@@ -360,7 +361,7 @@ def from_sif(
         import os
 
         if os.path.exists(sidecar):
-            with open(sidecar, "r", encoding=encoding) as nf:
+            with open(sidecar, encoding=encoding) as nf:
                 for raw in nf:
                     s = raw.rstrip("\n\r")
                     if not s or any(s.lstrip().startswith(pfx) for pfx in comment_prefixes):
@@ -377,7 +378,7 @@ def from_sif(
                     H.add_vertex(vid)
 
                     if len(toks) > 1:
-                        kvs: Dict[str, object] = {}
+                        kvs: dict[str, object] = {}
                         for t in toks[1:]:
                             k, v = _parse_node_kv(t)
                             if k is not None:
@@ -392,7 +393,7 @@ def from_sif(
 
     edge_mapping = {}
 
-    with open(path, "r", encoding=encoding) as f:
+    with open(path, encoding=encoding) as f:
         for raw in f:
             if not raw:
                 continue

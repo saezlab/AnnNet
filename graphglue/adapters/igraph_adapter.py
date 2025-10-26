@@ -1,3 +1,4 @@
+from __future__ import annotations
 try:
     import igraph as ig
 except ModuleNotFoundError as e:
@@ -5,7 +6,9 @@ except ModuleNotFoundError as e:
         "Optional dependency 'python-igraph' is not installed. "
         "Install with: pip install graphglue[igraph]"
     ) from e
-
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..core.graph import Graph
 import json
 from enum import Enum
 from typing import Any

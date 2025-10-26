@@ -34,7 +34,8 @@ from __future__ import annotations
 import json
 import math
 import re
-from typing import Any, Iterable, List, Optional, Set
+from collections.abc import Iterable
+from typing import Any, List, Optional, Set
 
 import numpy as np
 import polars as pl
@@ -91,7 +92,7 @@ def _norm(s: Any) -> str:
     return str(s).strip()
 
 
-def _truthy(x: Any) -> Optional[bool]:
+def _truthy(x: Any) -> bool | None:
     if x is None:
         return None
     if isinstance(x, (bool, np.bool_)):
@@ -106,7 +107,7 @@ def _truthy(x: Any) -> Optional[bool]:
     return None
 
 
-def _split_layers(cell: Any) -> List[str]:
+def _split_layers(cell: Any) -> list[str]:
     if cell is None:
         return []
     if isinstance(cell, str):
@@ -131,7 +132,7 @@ def _split_layers(cell: Any) -> List[str]:
     return [str(cell)]
 
 
-def _split_set(cell: Any) -> Set[str]:
+def _split_set(cell: Any) -> set[str]:
     if cell is None:
         return set()
     if isinstance(cell, str):
@@ -150,7 +151,7 @@ def _split_set(cell: Any) -> Set[str]:
     return {str(cell)}
 
 
-def _pick_first(df: pl.DataFrame, candidates: List[str]) -> Optional[str]:
+def _pick_first(df: pl.DataFrame, candidates: list[str]) -> str | None:
     cols_lower = {c.lower(): c for c in df.columns}
     for k in candidates:
         if k in cols_lower:
@@ -173,7 +174,7 @@ def _is_numeric_series(s: pl.Series) -> bool:
     )
 
 
-def _attr_columns(df: pl.DataFrame, exclude: Iterable[str]) -> List[str]:
+def _attr_columns(df: pl.DataFrame, exclude: Iterable[str]) -> list[str]:
     excl = {c.lower() for c in exclude}
     return [c for c in df.columns if c.lower() not in excl]
 
@@ -235,14 +236,14 @@ def _detect_schema(df: pl.DataFrame) -> str:
 def load_csv_to_graph(
     path: str,
     *,
-    graph: Optional["Graph"] = None,
+    graph: Graph | None = None,
     schema: str = "auto",
-    default_layer: Optional[str] = None,
-    default_directed: Optional[bool] = None,
+    default_layer: str | None = None,
+    default_directed: bool | None = None,
     default_weight: float = 1.0,
     infer_schema_length: int = 10000,
-    encoding: Optional[str] = None,
-    null_values: Optional[List[str]] = None,
+    encoding: str | None = None,
+    null_values: list[str] | None = None,
     low_memory: bool = True,
     **kwargs: Any,
 ):
@@ -308,10 +309,10 @@ def load_csv_to_graph(
 def from_dataframe(
     df: pl.DataFrame,
     *,
-    graph: Optional["Graph"] = None,
+    graph: Graph | None = None,
     schema: str = "auto",
-    default_layer: Optional[str] = None,
-    default_directed: Optional[bool] = None,
+    default_layer: str | None = None,
+    default_directed: bool | None = None,
     default_weight: float = 1.0,
     **kwargs: Any,
 ):
@@ -627,8 +628,8 @@ def export_hyperedge_csv(G, path, layer=None, directed=None):
 def _ingest_edge_list(
     df: pl.DataFrame,
     G,
-    default_layer: Optional[str],
-    default_directed: Optional[bool],
+    default_layer: str | None,
+    default_directed: bool | None,
     default_weight: float,
 ):
     """Parse edge-list-like tables (incl. COO/DOK)."""
@@ -716,7 +717,7 @@ def _ingest_edge_list(
 def _ingest_hyperedge(
     df: pl.DataFrame,
     G,
-    default_layer: Optional[str],
+    default_layer: str | None,
     default_weight: float,
 ):
     """Parse hyperedge tables (members OR head/tail)."""
@@ -764,7 +765,7 @@ def _ingest_hyperedge(
 def _ingest_incidence(
     df: pl.DataFrame,
     G,
-    default_layer: Optional[str],
+    default_layer: str | None,
     default_weight: float,
 ):
     """Parse incidence matrices (first col = entity id, remaining numeric edge columns)."""
@@ -787,7 +788,7 @@ def _ingest_incidence(
             continue
         values = col.fill_null(0)
         # collect nonzero indices
-        nz_idx: List[int] = [i for i, v in enumerate(values) if float(v or 0) != 0.0]
+        nz_idx: list[int] = [i for i, v in enumerate(values) if float(v or 0) != 0.0]
         if not nz_idx:
             continue
         # map row index -> entity id
@@ -831,14 +832,14 @@ def _ingest_incidence(
 def _ingest_adjacency(
     df: pl.DataFrame,
     G,
-    default_layer: Optional[str],
-    default_directed: Optional[bool],
+    default_layer: str | None,
+    default_directed: bool | None,
     default_weight: float,
 ):
     """Parse adjacency matrices (square). If first column is non-numeric, treat as row labels."""
     # Determine if first column holds row labels
-    row_labels: List[str]
-    mat_cols: List[str]
+    row_labels: list[str]
+    mat_cols: list[str]
 
     if df.width >= 2 and not _is_numeric_series(df.get_column(df.columns[0])):
         row_labels = [_norm(x) for x in df.get_column(df.columns[0]).to_list()]
@@ -891,8 +892,8 @@ def _ingest_adjacency(
 def _ingest_lil(
     df: pl.DataFrame,
     G,
-    default_layer: Optional[str],
-    default_directed: Optional[bool],
+    default_layer: str | None,
+    default_directed: bool | None,
     default_weight: float,
 ):
     """Parse LIL-style neighbor tables: one row per vertex with a neighbors column."""

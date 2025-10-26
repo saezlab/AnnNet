@@ -1,0 +1,16 @@
+target-version = "py311"
+line-length = 100
+extend-exclude = ["docs/**","site/**","dist/**","build/**",".venv/**","**/*.ipynb"]
+
+[lint]
+# Start with only the truly-dangerous stuff + import order:
+# E9,F63,F7,F82 = syntax/undefined names; I = import sorting; UP = safe pyupgrade
+select = ["E9","F63","F7","F82","I","UP"]
+# Don’t break on long lines yet
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# Re-exports are fine here
+"graphglue/__init__.py" = ["F401"]
+# Tests are messy by design
+"tests/**" = ["E402","F401","F841"]

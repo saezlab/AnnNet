@@ -1,5 +1,7 @@
 from __future__ import annotations
-
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..core.graph import Graph
 import json
 
 
@@ -76,7 +78,7 @@ def _endpoint_coeff_map(edge_attrs, private_key, endpoint_set):
     return out
 
 
-def to_json(graph: 'Graph', path, *, public_only: bool = False, indent: int = 0):
+def to_json(graph: Graph, path, *, public_only: bool = False, indent: int = 0):
     """Node-link JSON with x-extensions (layers, edge_layers, hyperedges).
     Lossless vs your core (IDs, attrs, parallel, hyperedges, layers).
     """
@@ -236,12 +238,12 @@ def to_json(graph: 'Graph', path, *, public_only: bool = False, indent: int = 0)
         json.dump(doc, f, ensure_ascii=False, indent=indent)
 
 
-def from_json(path) -> 'Graph':
+def from_json(path) -> Graph:
     """Load Graph from node-link JSON + x-extensions (lossless wrt schema above).
     """
     from ..core.graph import Graph
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         doc = json.load(f)
     H = Graph()
 
@@ -339,7 +341,7 @@ def from_json(path) -> 'Graph':
     return H
 
 
-def write_ndjson(graph: 'Graph', dir_path):
+def write_ndjson(graph: Graph, dir_path):
     """Write nodes.ndjson, edges.ndjson, hyperedges.ndjson, layers.ndjson, edge_layers.ndjson.
     Each line is one JSON object. Lossless wrt to_json schema.
     """

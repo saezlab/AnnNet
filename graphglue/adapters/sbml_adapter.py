@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import types
 import warnings
-from typing import Dict, Iterable, Optional, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Dict, Optional
 
 import numpy as np
 
@@ -33,7 +34,7 @@ def _monkeypatch_set_hyperedge_coeffs(G) -> bool:
     if hasattr(G, "set_hyperedge_coeffs"):
         return False  # already there
 
-    def set_hyperedge_coeffs(self, edge_id: str, coeffs: Dict[str, float]) -> None:
+    def set_hyperedge_coeffs(self, edge_id: str, coeffs: dict[str, float]) -> None:
         col = self.edge_to_idx[edge_id]
         for vid, coeff in coeffs.items():
             row = self.entity_to_idx[vid]
@@ -43,7 +44,7 @@ def _monkeypatch_set_hyperedge_coeffs(G) -> bool:
     return True
 
 
-def _ensure_vertices(G, vertices: Iterable[str], layer: Optional[str]) -> None:
+def _ensure_vertices(G, vertices: Iterable[str], layer: str | None) -> None:
     # `add_vertices_bulk` exists and handles missing vertices efficiently.
     G.add_vertices_bulk(list(vertices), layer=layer)
 
@@ -61,11 +62,11 @@ def _graph_from_stoich(
     S: np.ndarray,
     metabolite_ids: Sequence[str],
     reaction_ids: Sequence[str],
-    graph: Optional["Graph"] = None,
+    graph: Graph | None = None,
     *,
     layer: str = "default",
     preserve_stoichiometry: bool = True,
-) -> 'Graph':
+) -> Graph:
     if graph is None:
         if Graph is None:
             raise RuntimeError("Graph class not importable; pass `graph=` explicitly.")
@@ -141,11 +142,11 @@ def _graph_from_stoich(
 
 def from_cobra_model(
     model,
-    graph: Optional["Graph"] = None,
+    graph: Graph | None = None,
     *,
     layer: str = "default",
     preserve_stoichiometry: bool = True,
-) -> 'Graph':
+) -> Graph:
     """Convert a COBRApy model to Graph. Requires cobra.util.array.create_stoichiometric_matrix.
     Edge attributes added: name, default_lb, default_ub, gpr (Gene-Protein-Reaction rule [GPR]).
     """
@@ -181,12 +182,12 @@ def from_cobra_model(
 
 def from_sbml(
     path: str,
-    graph: Optional["Graph"] = None,
+    graph: Graph | None = None,
     *,
     layer: str = "default",
     preserve_stoichiometry: bool = True,
     quiet: bool = True,
-) -> 'Graph':
+) -> Graph:
     """Read SBML using COBRApy if available; falls back to python-libsbml (if you extend this file).
     """
     try:
