@@ -1,5 +1,4 @@
-"""Shared fixtures and helpers for adapter tests.
-"""
+"""Shared fixtures and helpers for adapter tests."""
 
 import pathlib
 import shutil
@@ -192,5 +191,5 @@ def assert_edge_attrs_equal(G1, G2, edge_id, ignore_none=True, ignore_private=Fa
 def pytest_configure(config):
     """Configure pytest with custom markers."""
     config.addinivalue_line(
-        "markers", 'slow: marks tests as slow (deselect with \'-m "not slow"\')'
+        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
     )

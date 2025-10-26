@@ -64,3 +64,6 @@ ENV/
 build/
 dist/
 *.egg-info/
+test_venv/
+*venv*/
+test_venv/

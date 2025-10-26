@@ -105,8 +105,7 @@ class TestNetworkXAdapter(unittest.TestCase):
         self.assertEqual(w_eff, 5.0)
 
     def test_layer_filters_single(self):
-        """Export only a single layer ('Lw'); manifest should only include that layer.
-        """
+        """Export only a single layer ('Lw'); manifest should only include that layer."""
         g = _BUILD_GRAPH()
 
         nxG, manifest = to_nx(g, directed=True, hyperedge_mode="skip", layer="Lw", public_only=True)
@@ -118,8 +117,7 @@ class TestNetworkXAdapter(unittest.TestCase):
         self.assertTrue(set(manifest.get("layer_weights", {}).keys()) <= {"Lw"})
 
     def test_layer_filters_multi(self):
-        """Export a union of layers, e.g., ['default', 'Lw'].
-        """
+        """Export a union of layers, e.g., ['default', 'Lw']."""
         g = _BUILD_GRAPH()
 
         nxG, manifest = to_nx(
@@ -160,8 +158,7 @@ class TestNetworkXAdapter(unittest.TestCase):
         self.assertGreaterEqual(nxG_expand.number_of_edges(), nxG_skip.number_of_edges())
 
     def test_public_only_strips_private_attrs(self):
-        """Attributes beginning with '__' should not appear in the manifest or nx graph data.
-        """
+        """Attributes beginning with '__' should not appear in the manifest or nx graph data."""
         g = _BUILD_GRAPH()
 
         # Inject a private attribute on a vertex and edge if builder supports it
@@ -192,8 +189,7 @@ class TestNetworkXAdapter(unittest.TestCase):
         self.assertFalse(any(_has_private(eattrs.get(e, {})) for e in eattrs))
 
     def test_graph_type_matches_directed_flag(self):
-        """Sanity check: directed=True should yield a directed MultiGraph; directed=False an undirected MultiGraph.
-        """
+        """Sanity check: directed=True should yield a directed MultiGraph; directed=False an undirected MultiGraph."""
         g = _BUILD_GRAPH()
         nxG_dir, _ = to_nx(g, directed=True, hyperedge_mode="skip", public_only=True)
         self.assertTrue(getattr(nxG_dir, "is_directed", lambda: True)())
