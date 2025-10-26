@@ -165,5 +165,5 @@ GraphGlue vis designed with these principles in mind:
 ---
 
 ## 📜 License
-GraphGlue is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+GraphGlue is licensed under the BSD-3 License. See the [LICENSE](LICENSE) file for details.
 
