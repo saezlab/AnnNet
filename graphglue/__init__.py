@@ -1,5 +1,6 @@
 # graphglue/__init__.py
 """graphglue: single import, full API."""
+
 from __future__ import annotations
 
 from importlib import import_module
@@ -27,38 +28,38 @@ _lazy_submodules = {
     # io modules
     "csvio": "graphglue.io.csv",
     "excelio": "graphglue.io.excel",
-    "annnet" : "graphglue.io.io_annnet"
+    "annnet": "graphglue.io.io_annnet",
 }
 
 # Curated top-level symbols (lazy). name -> (module, attribute)
 _lazy_symbols: dict[str, tuple[str, str]] = {
     # Core
     "Graph": ("graphglue.core.graph", "Graph"),
-
     # Stdlib JSON I/O
     "to_json": ("graphglue.adapters.json_adapter", "to_json"),
     "from_json": ("graphglue.adapters.json_adapter", "from_json"),
-
     # NetworkX adapter (optional dependency)
     "to_nx": ("graphglue.adapters.networkx_adapter", "to_nx"),
     "from_nx": ("graphglue.adapters.networkx_adapter", "from_nx"),
     "from_nx_only": ("graphglue.adapters.networkx_adapter", "from_nx_only"),
-
     # GraphML
     "to_graphml": ("graphglue.adapters.GraphML_adapter", "to_graphml"),
     "from_graphml": ("graphglue.adapters.GraphML_adapter", "from_graphml"),
-
     # SIF
     "to_sif": ("graphglue.adapters.SIF_adapter", "to_sif"),
     "from_sif": ("graphglue.adapters.SIF_adapter", "from_sif"),
-
     # SBML (common direction)
     "from_sbml": ("graphglue.adapters.sbml_adapter", "from_sbml"),
     # If you add export later: "to_sbml": ("graphglue.adapters.sbml_adapter", "to_sbml"),
-
     # Parquet GraphDir
-    "write_parquet_graphdir": ("graphglue.adapters.GraphDir_Parquet_adapter", "write_parquet_graphdir"),
-    "read_parquet_graphdir": ("graphglue.adapters.GraphDir_Parquet_adapter", "read_parquet_graphdir"),
+    "write_parquet_graphdir": (
+        "graphglue.adapters.GraphDir_Parquet_adapter",
+        "write_parquet_graphdir",
+    ),
+    "read_parquet_graphdir": (
+        "graphglue.adapters.GraphDir_Parquet_adapter",
+        "read_parquet_graphdir",
+    ),
 }
 
 __all__ = sorted(set(list(_lazy_submodules) + list(_lazy_symbols)))
