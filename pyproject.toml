@@ -165,6 +165,13 @@ exclude = [
   "**/.ipynb_checkpoints/**"
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["graphglue"]
+
+[tool.hatch.build.targets.sdist]
+include = ["graphglue", "pyproject.toml", "README.md", "LICENSE"]
+
+
 [project.scripts]
 gg = "graphglue:main"
 gg-demo = "graphglue.demo.demo:main"
