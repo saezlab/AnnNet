@@ -1,37 +1,37 @@
-graphglue.io package
+annnet.io package
 ====================
 
 Submodules
 ----------
 
-graphglue.io.csv module
+annnet.io.csv module
 -----------------------
 
-.. automodule:: graphglue.io.csv
+.. automodule:: annnet.io.csv
    :members:
    :show-inheritance:
    :undoc-members:
 
-graphglue.io.json module
+annnet.io.json module
 ------------------------
 
-.. automodule:: graphglue.io.json
+.. automodule:: annnet.io.json
    :members:
    :show-inheritance:
    :undoc-members:
 
-graphglue.io.registry module
+annnet.io.registry module
 ----------------------------
 
-.. automodule:: graphglue.io.registry
+.. automodule:: annnet.io.registry
    :members:
    :show-inheritance:
    :undoc-members:
 
-graphglue.io.utils module
+annnet.io.utils module
 -------------------------
 
-.. automodule:: graphglue.io.utils
+.. automodule:: annnet.io.utils
    :members:
    :show-inheritance:
    :undoc-members:
@@ -39,7 +39,7 @@ graphglue.io.utils module
 Module contents
 ---------------
 
-.. automodule:: graphglue.io
+.. automodule:: annnet.io
    :members:
    :show-inheritance:
    :undoc-members:

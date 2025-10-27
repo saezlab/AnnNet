@@ -13,9 +13,9 @@ import numpy as np
 import polars as pl
 import zarr
 
-from graphglue.core.graph import Graph
-from graphglue.io.io_annnet import read as annnet_read
-from graphglue.io.io_annnet import write as annnet_write
+from annnet.core.graph import Graph
+from annnet.io.io_annnet import read as annnet_read
+from annnet.io.io_annnet import write as annnet_write
 
 
 class TestAnnNetIO(unittest.TestCase):

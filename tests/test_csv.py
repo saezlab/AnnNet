@@ -10,8 +10,8 @@ import unittest
 
 import polars as pl
 
-from graphglue.core.graph import Graph
-from graphglue.io import csv as csv_io
+from annnet.core.graph import Graph
+from annnet.io import csv as csv_io
 
 
 def _colmap(df: pl.DataFrame):

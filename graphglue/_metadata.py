@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 #
-# This file is part of the `graphglue` Python module
+# This file is part of the `annnet` Python module
 #
 # Copyright 2025
 # Heidelberg University Hospital

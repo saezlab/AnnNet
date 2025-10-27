@@ -1,29 +1,29 @@
-graphglue.core package
+annnet.core package
 ======================
 
 Submodules
 ----------
 
-graphglue.core.metadata module
+annnet.core.metadata module
 ------------------------------
 
-.. automodule:: graphglue.core.metadata
+.. automodule:: annnet.core.metadata
    :members:
    :show-inheritance:
    :undoc-members:
 
-graphglue.core.structure module
+annnet.core.structure module
 -------------------------------
 
-.. automodule:: graphglue.core.structure
+.. automodule:: annnet.core.structure
    :members:
    :show-inheritance:
    :undoc-members:
 
-graphglue.core.views module
+annnet.core.views module
 ---------------------------
 
-.. automodule:: graphglue.core.views
+.. automodule:: annnet.core.views
    :members:
    :show-inheritance:
    :undoc-members:
@@ -31,7 +31,7 @@ graphglue.core.views module
 Module contents
 ---------------
 
-.. automodule:: graphglue.core
+.. automodule:: annnet.core
    :members:
    :show-inheritance:
    :undoc-members:

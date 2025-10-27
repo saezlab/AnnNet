@@ -8,7 +8,7 @@ import unittest
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from networkx.algorithms import bipartite as nxb
 
-from graphglue.core.graph import Graph
+from annnet.core.graph import Graph
 
 # --------------------------- helper to fetch backend ---------------------------
 

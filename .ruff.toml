@@ -11,6 +11,6 @@ ignore = ["E501"]
 
 [lint.per-file-ignores]
 # Re-exports are fine here
-"graphglue/__init__.py" = ["F401"]
+"annnet/__init__.py" = ["F401"]
 # Tests are messy by design
 "tests/**" = ["E402","F401","F841"]

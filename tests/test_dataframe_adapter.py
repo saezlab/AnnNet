@@ -6,8 +6,8 @@ import polars as pl  # PL (Polars)
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
-from graphglue.adapters.dataframe_adapter import from_dataframes, to_dataframes
-from graphglue.core.graph import Graph
+from annnet.adapters.dataframe_adapter import from_dataframes, to_dataframes
+from annnet.core.graph import Graph
 
 from .helpers import assert_edge_attrs_equal, assert_graphs_equal, assert_vertex_attrs_equal
 

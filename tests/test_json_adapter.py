@@ -3,7 +3,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
-from graphglue.adapters.json_adapter import (
+from annnet.adapters.json_adapter import (
     from_json,
     to_json,
     write_ndjson,

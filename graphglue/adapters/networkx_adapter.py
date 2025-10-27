@@ -5,7 +5,7 @@ try:
 except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
         "Optional dependency 'networkx' is not installed. "
-        "Install with: pip install graphglue[networkx]"
+        "Install with: pip install annnet[networkx]"
     ) from e
 
 from typing import TYPE_CHECKING

@@ -1,4 +1,4 @@
-Welcome to the graphglue community! We follow open-source principles and
+Welcome to the annnet community! We follow open-source principles and
 encourage any sort of contribution. We communicate on GitHub, where we also
 organise our projects.
 
@@ -18,8 +18,8 @@ organise our projects.
 
 ## Contributing Guidelines GitHub Links
 
-- [Contribution guidelines](https://github.com/graphglue/graphglue/blob/main/CONTRIBUTING.md)
+- [Contribution guidelines](https://github.com/annnet/annnet/blob/main/CONTRIBUTING.md)
 
-- [Code of Conduct](https://github.com/graphglue/graphglue/blob/main/CODE_OF_CONDUCT.md)
+- [Code of Conduct](https://github.com/annnet/annnet/blob/main/CODE_OF_CONDUCT.md)
 
-- [Developer Guide](https://github.com/graphglue/graphglue/blob/main/DEVELOPER.md)
+- [Developer Guide](https://github.com/annnet/annnet/blob/main/DEVELOPER.md)

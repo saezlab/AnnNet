@@ -1,4 +1,4 @@
-graphglue package
+annnet package
 =================
 
 Subpackages
@@ -7,16 +7,16 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
-   graphglue.adapters
-   graphglue.algorithms
-   graphglue.core
-   graphglue.demo
-   graphglue.io
+   annnet.adapters
+   annnet.algorithms
+   annnet.core
+   annnet.demo
+   annnet.io
 
 Module contents
 ---------------
 
-.. automodule:: graphglue
+.. automodule:: annnet
    :members:
    :show-inheritance:
    :undoc-members:

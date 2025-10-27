@@ -20,7 +20,7 @@ if _PANDAS_AVAILABLE:
 # Utilities for robust assertions
 import polars as pl
 
-from graphglue.io.excel import load_excel_to_graph
+from annnet.io.excel import load_excel_to_graph
 
 
 def _colmap(df: pl.DataFrame):

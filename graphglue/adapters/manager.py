@@ -36,7 +36,7 @@ def ensure_materialized(backend_name: str, graph: Graph) -> dict:
     if util.find_spec(modname) is None:
         raise ModuleNotFoundError(
             f"Optional backend '{backend_name}' is not installed. "
-            f"Install with `pip install graphglue[{backend_name}]`."
+            f"Install with `pip install annnet[{backend_name}]`."
         )
 
     cache = graph._state._backend_cache

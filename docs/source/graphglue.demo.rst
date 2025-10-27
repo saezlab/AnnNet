@@ -1,13 +1,13 @@
-graphglue.demo package
+annnet.demo package
 ======================
 
 Submodules
 ----------
 
-graphglue.demo.demo module
+annnet.demo.demo module
 --------------------------
 
-.. automodule:: graphglue.demo.demo
+.. automodule:: annnet.demo.demo
    :members:
    :show-inheritance:
    :undoc-members:
@@ -15,7 +15,7 @@ graphglue.demo.demo module
 Module contents
 ---------------
 
-.. automodule:: graphglue.demo
+.. automodule:: annnet.demo
    :members:
    :show-inheritance:
    :undoc-members:

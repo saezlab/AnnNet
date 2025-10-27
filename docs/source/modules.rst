@@ -1,7 +1,7 @@
-graphglue
+annnet
 =========
 
 .. toctree::
    :maxdepth: 4
 
-   graphglue
+   annnet

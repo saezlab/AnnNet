@@ -1,4 +1,4 @@
-import graphglue as gg
+import annnet as gg
 
 
 def main():

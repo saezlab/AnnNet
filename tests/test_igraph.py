@@ -14,7 +14,7 @@ import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from graphglue.core.graph import Graph
+from annnet.core.graph import Graph
 
 # Optional deps presence
 HAS_IG = True
@@ -53,7 +53,7 @@ def _build_graph() -> Graph:
 class TestIgraphAdapter(unittest.TestCase):
     @unittest.skipUnless(HAS_IG, "python-igraph not installed")
     def test_to_igraph_export_and_roundtrip(self):
-        from graphglue.adapters.igraph_adapter import from_igraph, to_igraph  # adapter under test
+        from annnet.adapters.igraph_adapter import from_igraph, to_igraph  # adapter under test
 
         g = _build_graph()
 
@@ -84,7 +84,7 @@ class TestIgraphAdapter(unittest.TestCase):
 
     @unittest.skipUnless(HAS_IG, "python-igraph not installed")
     def test_to_igraph_labels_and_attrs(self):
-        from graphglue.adapters.igraph_adapter import to_igraph
+        from annnet.adapters.igraph_adapter import to_igraph
 
         g = _build_graph()
         igG, manifest = to_igraph(g, directed=True, hyperedge_mode="skip", public_only=True)

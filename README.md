@@ -1,12 +1,12 @@
 ## Description
 
-**GraphGlue** is a lightweight, flexible, minimal-dependencies Python package for creating, manipulating, and interoperating with diverse graph data structures. It aims to be the connective tissue ("glue") between multiple graph ecosystems (NetworkX, igraph, graph-tool, etc.) while maintaining a clean and general-purpose internal representation.
+**annnet** is a lightweight, flexible, minimal-dependencies Python package for creating, manipulating, and interoperating with diverse graph data structures. It aims to be the connective tissue ("glue") between multiple graph ecosystems (NetworkX, igraph, graph-tool, etc.) while maintaining a clean and general-purpose internal representation.
 
 ---
 
 ## 📌 Description
 
-GraphGlue provides a unified interface for:
+annnet provides a unified interface for:
 
 - Building general-purpose graphs (simple, directed, hyper, signed, etc.)
 - Managing node/edge annotations
@@ -50,7 +50,7 @@ centrality = G.nx.degree_centrality()
 ```
 **How it works:**
 
-1. GraphGlue converts `G` to a NetworkX object on demand, abstracting away all the non-needed attributes.
+1. annnet converts `G` to a NetworkX object on demand, abstracting away all the non-needed attributes.
 2. Runs the algorithm _as-is_.
 3. Returns results directly, syncing any graph changes back to the internal representation of the `gg.Graph`.
 
@@ -59,18 +59,18 @@ This allows you to access the full power of NetworkX algorithms with zero boiler
 ---
 
 ## 🛠️ Installation
-To install GraphGlue, you can use pip:
+To install annnet, you can use pip:
 
 ```bash
-pip install graphglue
+pip install annnet
 ```
 
 Optional dependencies for extended functionality:
 
 ```bash
-pip install graphglue[networkx,igraph]
-pip install graphglue[graph-tool]
-pip install graphglue[corneto]
+pip install annnet[networkx,igraph]
+pip install annnet[graph-tool]
+pip install annnet[corneto]
 ```
 
 ---
@@ -78,7 +78,7 @@ pip install graphglue[corneto]
 ## 🚀 Quick Start
 
 ```python
-import graphglue as gg
+import annnet as gg
 
 # Create a new graph
 G = gg.Graph(directed=True, backend="corneto")
@@ -101,7 +101,7 @@ G.to_json("graph.json")
 The package is organized to separate core functionality, I/O operations, adapters for external libraries, and algorithms. This modular design allows for easy extension and maintenance.
 
 ```
-graphglue/
+annnet/
 │
 ├── __init__.py                # Public API surface, version, re-exports
 ├── _version.py                # Single source of truth for __version__
@@ -145,7 +145,7 @@ graphglue/
 ---
 
 ## ⚙️ Internal Design
-GraphGlue intelligently adapts its internal representation for performance and compatibility:
+annnet intelligently adapts its internal representation for performance and compatibility:
 
 - Chooses between edge lists, incidence matrices, and adjacency dicts automatically
 - Keeps metadata (node/edge attributes) separate from core structure
@@ -155,7 +155,7 @@ GraphGlue intelligently adapts its internal representation for performance and c
 ---
 
 ## 🧭  Philosophy
-GraphGlue vis designed with these principles in mind:
+annnet vis designed with these principles in mind:
 
 - **Simple**, consistent interface for all graph types
 - **Interoperability-first**: integrate, don’t replace
@@ -165,5 +165,5 @@ GraphGlue vis designed with these principles in mind:
 ---
 
 ## 📜 License
-GraphGlue is licensed under the BSD-3 License. See the [LICENSE](LICENSE) file for details.
+annnet is licensed under the BSD-3 License. See the [LICENSE](LICENSE) file for details.
 

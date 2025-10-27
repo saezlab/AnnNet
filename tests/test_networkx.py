@@ -14,7 +14,7 @@ warnings.filterwarnings(
 
 # Make project importable when tests run from /tests
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from graphglue.core.graph import Graph
+from annnet.core.graph import Graph
 
 # --- Optional deps gates ------------------------------------------------------
 try:
@@ -26,7 +26,7 @@ except Exception:
 
 # Try to import the adapter under test
 
-from graphglue.adapters.networkx_adapter import from_nx, to_nx  # type: ignore
+from annnet.adapters.networkx_adapter import from_nx, to_nx  # type: ignore
 
 # Reuse the same graph builder as igraph tests
 

@@ -12,15 +12,15 @@ form fully to ensure others and the core development team can fully understand
 the scope of the issue. If your category is not listed, you can create a blank
 issue.
 
-The issue will then show up to the graphglue community and be open to
+The issue will then show up to the annnet community and be open to
 comments/ideas from others.
 
 ### Categories
 
-- [Bug Report](https://www.google.com): Report incorrect behavior in the graphglue library
-- [Register New Component](https://www.google.com): Register a new component in the graphglue ecosystem, either one you have created, or one that you would like to see added
+- [Bug Report](https://www.google.com): Report incorrect behavior in the annnet library
+- [Register New Component](https://www.google.com): Register a new component in the annnet ecosystem, either one you have created, or one that you would like to see added
 - Documentation Improvement: Report wrong or missing documentation
-- Feature Request: Suggest an idea for graphglue
+- Feature Request: Suggest an idea for annnet
 
 ## :octicons-checklist-24:{ .lg .middle } Detailed Guides
 

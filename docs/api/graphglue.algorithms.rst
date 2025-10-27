@@ -1,13 +1,13 @@
-graphglue.algorithms package
+annnet.algorithms package
 ============================
 
 Submodules
 ----------
 
-graphglue.algorithms.traversal module
+annnet.algorithms.traversal module
 -------------------------------------
 
-.. automodule:: graphglue.algorithms.traversal
+.. automodule:: annnet.algorithms.traversal
    :members:
    :show-inheritance:
    :undoc-members:
@@ -15,7 +15,7 @@ graphglue.algorithms.traversal module
 Module contents
 ---------------
 
-.. automodule:: graphglue.algorithms
+.. automodule:: annnet.algorithms
    :members:
    :show-inheritance:
    :undoc-members:

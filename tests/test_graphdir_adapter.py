@@ -3,7 +3,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
-from graphglue.adapters.GraphDir_Parquet_adapter import (
+from annnet.adapters.GraphDir_Parquet_adapter import (
     read_parquet_graphdir,
     write_parquet_graphdir,
 )  # Parquet (columnar storage)

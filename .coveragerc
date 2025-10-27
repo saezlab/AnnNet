@@ -1,12 +1,12 @@
 [paths]
 source =
     project_name
-    */site-packages/graphglue
+    */site-packages/annnet
 
 [run]
 branch = true
 parallel = true
-source = graphglue
+source = annnet
 omit = */__init__.py
 
 [report]

@@ -188,7 +188,7 @@ def write_parquet_graphdir(graph: Graph, path):
         "format_version": 1,
         "counts": {"V": len(v_rows), "E": len(e_rows), "layers": len(L)},
         "schema": {"edges.kind": ["binary", "hyper"]},
-        "provenance": {"package": "graphglue"},
+        "provenance": {"package": "annnet"},
     }
     (path / "manifest.json").write_text(json.dumps(manifest, indent=2))
 

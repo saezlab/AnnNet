@@ -6796,7 +6796,7 @@ class Graph:
             simple: bool,
             edge_aggs: dict | None,
         ):
-            from ..adapters import networkx_adapter as _gg_nx  # graphglue.adapters.networkx_adapter
+            from ..adapters import networkx_adapter as _gg_nx  # annnet.adapters.networkx_adapter
 
             nxG, manifest = _gg_nx.to_nx(
                 self._G,
@@ -7237,7 +7237,7 @@ class Graph:
         ):
             # try both adapter entry points: to_ig / to_igraph
 
-            from ..adapters import igraph_adapter as _gg_ig  # graphglue.adapters.igraph_adapter
+            from ..adapters import igraph_adapter as _gg_ig  # annnet.adapters.igraph_adapter
 
             conv = None
             for cand in ("to_ig", "to_igraph"):

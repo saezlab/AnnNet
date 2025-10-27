@@ -9,7 +9,7 @@ if __name__ == "__main__":
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 try:
-    from graphglue.core.graph import Graph
+    from annnet.core.graph import Graph
 except ImportError:
     from ..core.graph import Graph
 

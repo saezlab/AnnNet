@@ -16,8 +16,8 @@ import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from graphglue.core.graph import Graph
-from graphglue.utils import plotting
+from annnet.core.graph import Graph
+from annnet.utils import plotting
 
 
 class TestHelpers(unittest.TestCase):

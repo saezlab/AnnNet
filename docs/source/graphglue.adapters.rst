@@ -1,45 +1,45 @@
-graphglue.adapters package
+annnet.adapters package
 ==========================
 
 Submodules
 ----------
 
-graphglue.adapters.corneto module
+annnet.adapters.corneto module
 ---------------------------------
 
-.. automodule:: graphglue.adapters.corneto
+.. automodule:: annnet.adapters.corneto
    :members:
    :show-inheritance:
    :undoc-members:
 
-graphglue.adapters.graphtool module
+annnet.adapters.graphtool module
 -----------------------------------
 
-.. automodule:: graphglue.adapters.graphtool
+.. automodule:: annnet.adapters.graphtool
    :members:
    :show-inheritance:
    :undoc-members:
 
-graphglue.adapters.igraph module
+annnet.adapters.igraph module
 --------------------------------
 
-.. automodule:: graphglue.adapters.igraph
+.. automodule:: annnet.adapters.igraph
    :members:
    :show-inheritance:
    :undoc-members:
 
-graphglue.adapters.manager module
+annnet.adapters.manager module
 ---------------------------------
 
-.. automodule:: graphglue.adapters.manager
+.. automodule:: annnet.adapters.manager
    :members:
    :show-inheritance:
    :undoc-members:
 
-graphglue.adapters.networkx module
+annnet.adapters.networkx module
 ----------------------------------
 
-.. automodule:: graphglue.adapters.networkx
+.. automodule:: annnet.adapters.networkx
    :members:
    :show-inheritance:
    :undoc-members:
@@ -47,7 +47,7 @@ graphglue.adapters.networkx module
 Module contents
 ---------------
 
-.. automodule:: graphglue.adapters
+.. automodule:: annnet.adapters
    :members:
    :show-inheritance:
    :undoc-members:

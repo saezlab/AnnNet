@@ -4,15 +4,15 @@
   "checkout": null,
   "context": {
     "cookiecutter": {
-      "project_name": "graphglue",
-      "project_slug": "graphglue",
-      "package_name": "graphglue",
+      "project_name": "annnet",
+      "project_slug": "annnet",
+      "package_name": "annnet",
       "short_description": "Lightweight, flexible, minimal-dependencies Python package for creating, manipulating, and interoperating with diverse graph data structures.",
       "readme": "Lightweight, flexible, minimal-dependencies Python package for creating, manipulating, and interoperating with diverse graph data structures.",
       "author_full_name": "Daniele Bottazzi",
       "author_email": "daniele.bottazzi@mail.polimi.it",
       "github_organization": "saezlab",
-      "project_repo": "https://github.com/saezlab/graphglue",
+      "project_repo": "https://github.com/saezlab/annnet",
       "license": "MIT License",
       "_license": {
         "MIT License": {

@@ -3,7 +3,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
-from graphglue.adapters.SIF_adapter import from_sif, to_sif  # SIF (Simple Interaction Format)
+from annnet.adapters.SIF_adapter import from_sif, to_sif  # SIF (Simple Interaction Format)
 
 from .helpers import assert_edge_attrs_equal, assert_graphs_equal, assert_vertex_attrs_equal
 
@@ -56,7 +56,7 @@ class TestSIFAdapter:
         assert any(a.get("interaction_type") == "phosphorylation" for a in attrs)
 
     def test_mixed_directedness(self, tmpdir_fixture):
-        from graphglue.core.graph import Graph
+        from annnet.core.graph import Graph
 
         G = Graph(directed=None)
         G.add_vertex("A")

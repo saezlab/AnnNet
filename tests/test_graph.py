@@ -8,7 +8,7 @@ import polars as pl
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import warnings
 
-from graphglue.core.graph import Graph
+from annnet.core.graph import Graph
 
 warnings.filterwarnings(
     "ignore",

@@ -8,13 +8,13 @@ import sys
 
 sys.path.insert(0, os.path.abspath("."))
 sys.path.insert(0, os.path.abspath(os.path.join("..", "..")))
-sys.path.insert(0, os.path.abspath("../../src/graphglue"))
-sys.path.insert(0, os.path.abspath("../../src/graphglue/demo"))
+sys.path.insert(0, os.path.abspath("../../src/annnet"))
+sys.path.insert(0, os.path.abspath("../../src/annnet/demo"))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "GraphGlue"
+project = "annnet"
 copyright = "2025, Bottazzi Daniele"
 author = "Bottazzi Daniele"
 release = "0.0.1"

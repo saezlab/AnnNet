@@ -6,7 +6,7 @@ from collections.abc import Iterable
 try:
     from ..core.graph import Graph
 except Exception:
-    from graphglue.core.graph import Graph
+    from annnet.core.graph import Graph
 
 
 def _split_sif_line(line: str, delimiter: str | None) -> list[str]:

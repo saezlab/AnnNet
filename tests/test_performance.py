@@ -8,12 +8,12 @@ import time
 
 import pytest
 
-from graphglue.adapters.dataframe_adapter import from_dataframes, to_dataframes  # DF (DataFrame)
-from graphglue.adapters.GraphDir_Parquet_adapter import (
+from annnet.adapters.dataframe_adapter import from_dataframes, to_dataframes  # DF (DataFrame)
+from annnet.adapters.GraphDir_Parquet_adapter import (
     read_parquet_graphdir,
     write_parquet_graphdir,
 )  # Parquet (columnar storage)
-from graphglue.adapters.json_adapter import from_json, to_json  # JSON (JavaScript Object Notation)
+from annnet.adapters.json_adapter import from_json, to_json  # JSON (JavaScript Object Notation)
 
 
 class TestPerformance:

@@ -38,7 +38,7 @@ If you want to fix dependency issues, please do so in the Poetry
 framework. If Poetry does not work for you for some reason, please let us know.
 
 The Poetry dependencies are organized in groups. There are groups with
-dependencies needed for running graphglue (`[tool.poetry.dependencies]` with the
+dependencies needed for running annnet (`[tool.poetry.dependencies]` with the
 group name `main`) and a group with dependencies needed for development
 (`[tool.poetry.group.dev.dependencies]` with the group name `dev`).
 
@@ -102,7 +102,7 @@ code conforms to the formatting rules.
 
 The project uses [pytest](https://docs.pytest.org/en/stable/) for testing. To
 run the tests, please run `pytest` in the root directory of the project. We are
-developing graphglue using test-driven development. Please make sure that you
+developing annnet using test-driven development. Please make sure that you
 add tests for your code before submitting a pull request.
 
 The existing tests can also help you to understand how the code works. If you
@@ -132,7 +132,7 @@ pull requests by default.
 
 ## Finding an issue to contribute to
 
-If you are brand new to graphglue or open-source development, we recommend
+If you are brand new to annnet or open-source development, we recommend
 searching the GitHub "Issues" tab to find issues that interest you. Unassigned
 issues labeled `Docs` and `good first` are typically good for newer contributors.
 
@@ -159,7 +159,7 @@ To improve the chances of your pull request being reviewed, you should:
 
 ### Version control, Git, and GitHub
 
-graphglue is hosted on GitHub, and to contribute, you will need to sign up for a
+annnet is hosted on GitHub, and to contribute, you will need to sign up for a
 [free GitHub account](https://github.com/signup/free). We use
 [Git](https://git-scm.com/) for version control to allow many people to work
 together on the project.
@@ -204,28 +204,28 @@ installing git, setting up your SSH key, and configuring git. All these steps
 need to be completed before you can work seamlessly between your local
 repository and GitHub.
 
-### Create a fork of graphglue
+### Create a fork of annnet
 
-You will need your own fork of graphgluein order to eventually open a Pull
-Request. Go to the graphglue project page and hit the Fork button. Please
+You will need your own fork of annnetin order to eventually open a Pull
+Request. Go to the annnet project page and hit the Fork button. Please
 uncheck the box to copy only the main branch before selecting Create Fork. You
 will then want to clone your fork to your machine.
 
 ```bash
-git clone https://github.com/your-user-name/graphglue.git
-cd graphglue
-git remote add upstream https://github.com/graphglue/graphglue.git
+git clone https://github.com/your-user-name/annnet.git
+cd annnet
+git remote add upstream https://github.com/annnet/annnet.git
 git fetch upstream
 ```
 
-This creates the directory `graphglue` and connects your repository to the
-upstream (main project) *graphglue* repository. They have the same name, but
+This creates the directory `annnet` and connects your repository to the
+upstream (main project) *annnet* repository. They have the same name, but
 your local repository and fork are separate from the upstream repository.
 
 ### Creating a feature branch
 
-Your local `main` branch should always reflect the current state of graphglue
-repository. First ensure it's up-to-date with the main graphglue repository.
+Your local `main` branch should always reflect the current state of annnet
+repository. First ensure it's up-to-date with the main annnet repository.
 
 ```bash
 git checkout main
@@ -233,15 +233,15 @@ git pull upstream main --ff-only
 ```
 
 Then, create a feature branch for making your changes. For example, we are going
-to create a branch called `my-new-feature-for-graphglue`
+to create a branch called `my-new-feature-for-annnet`
 
 ```bash
-git checkout -b my-new-feature-for-graphglue
+git checkout -b my-new-feature-for-annnet
 ```
 
 This changes your working branch from `main` to the
-`my-new-feature-for-graphglue` branch. Keep any changes in this branch specific
-to one bug or feature so it is clear what the branch brings to *graphglue*. You
+`my-new-feature-for-annnet` branch. Keep any changes in this branch specific
+to one bug or feature so it is clear what the branch brings to *annnet*. You
 can have many feature branches and switch between them using the `git
 checkout` command.
 
@@ -250,7 +250,7 @@ checkout` command.
 Before modifying any code, ensure you follow the contributing environment
 guidelines to set up an appropriate development environment.
 
-When making changes, follow these graphglue-specific guidelines:
+When making changes, follow these annnet-specific guidelines:
 
 1. Keep changes of that branch/PR focused on a single feature or bug fix.
 
@@ -263,7 +263,7 @@ appear publicly on your GitHub page, you can
 [push](https://git-scm.com/docs/git-push) your forked feature branch's commits
 to your forked repository on GitHub.
 
-Now your code is on GitHub, but it is not yet a part of the graphglue project.
+Now your code is on GitHub, but it is not yet a part of the annnet project.
 For that to happen, a Pull Request (PR) needs to be submitted.
 
 ### Opening a Pull Request (PR)
@@ -279,7 +279,7 @@ next release. To submit a Pull Request:
 
 1. You can then click on Commits and Files Changed to make sure everything looks okay one last time.
 
-1. Write a descriptive title that includes prefixes. graphglue uses a convention for title prefixes, most commonly, `feat:` for features, `fix:` for bug fixes, and `refactor:` for refactoring.
+1. Write a descriptive title that includes prefixes. annnet uses a convention for title prefixes, most commonly, `feat:` for features, `fix:` for bug fixes, and `refactor:` for refactoring.
 
 1. Write a description of your changes in the `Preview Discussion` tab. This description will inform the reviewers about the changes you made, so please include all relevant information, including the motivation, implementation details, and references to any issues that you are addressing.
 
@@ -301,11 +301,11 @@ feedback and update your pull request.
 
 In case of simultaneous changes to the upstream code, it is important that
 these changes are reflected in your pull request. To update your feature
-branch with changes in the graphglue `main` branch, run:
+branch with changes in the annnet `main` branch, run:
 
 ```shell
 
-    git checkout my-new-feature-for-graphglue
+    git checkout my-new-feature-for-annnet
     git fetch upstream
     git merge upstream/main
 ```
@@ -326,7 +326,7 @@ After the feature branch has been updated locally, you can now update your pull
 request by pushing to the branch on GitHub:
 
 ```shell
-    git push origin my-new-feature-for-graphglue
+    git push origin my-new-feature-for-annnet
 ```
 
 Any `git push` will automatically update your pull request with your branch's changes

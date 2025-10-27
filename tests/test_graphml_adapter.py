@@ -3,7 +3,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
-from graphglue.adapters.GraphML_adapter import (
+from annnet.adapters.GraphML_adapter import (
     from_graphml,
     to_graphml,
 )  # GraphML (Graph Markup Language)
@@ -35,7 +35,7 @@ class TestGraphMLAdapter:
         assert_graphs_equal(G, G2, check_layers=True, check_hyperedges=True)
 
     def test_attribute_type_preservation(self, tmpdir_fixture):
-        from graphglue.core.graph import Graph
+        from annnet.core.graph import Graph
 
         G = Graph()
         G.add_vertex("A")

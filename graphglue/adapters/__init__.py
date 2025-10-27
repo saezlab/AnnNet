@@ -24,7 +24,7 @@ def load_adapter(name: str, *args, **kwargs):
     if not _is_installed(name, modname):
         raise ModuleNotFoundError(
             f"Optional backend '{name}' is not installed. "
-            f"Install with `pip install graphglue[{name}]`."
+            f"Install with `pip install annnet[{name}]`."
         )
     mod = import_module(__name__ + submod)
     return getattr(mod, cls)(*args, **kwargs)

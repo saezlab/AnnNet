@@ -1,7 +1,7 @@
-site_name: 'graphglue'
-site_url: https://saezlab.github.io/graphglue
-repo_url: https://github.com/saezlab/graphglue
-repo_name: saezlab/graphglue
+site_name: 'annnet'
+site_url: https://saezlab.github.io/annnet
+repo_url: https://github.com/saezlab/annnet
+repo_name: saezlab/annnet
 theme:
     name: material
     font:
@@ -32,9 +32,9 @@ nav:
 -   Home: index.md
 
 -   About:
-    -   Project: 'graphglue-project/project.md'
-    -   Design philosophy: 'graphglue-project/design-philosophy.md'
-    -   Use Cases: 'graphglue-project/use-cases.md'
+    -   Project: 'annnet-project/project.md'
+    -   Design philosophy: 'annnet-project/design-philosophy.md'
+    -   Use Cases: 'annnet-project/use-cases.md'
     -   About: about.md
 
 -   Get Started:
@@ -56,8 +56,8 @@ nav:
 -   Reference:
     -   API Reference (mkdocstrings): reference/api.md
     -   API Documentation:
-        -   'graphglue':
-            -   _metadata: reference/source/graphglue/_metadata-docs.md
+        -   'annnet':
+            -   _metadata: reference/source/annnet/_metadata-docs.md
 -   Community:
     -   Join Us: community/index.md
     -   Where to Start: community/contribute.md

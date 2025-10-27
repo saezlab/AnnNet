@@ -4,19 +4,19 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
 
-from graphglue.adapters.GraphDir_Parquet_adapter import (
+from annnet.adapters.GraphDir_Parquet_adapter import (
     read_parquet_graphdir,
     write_parquet_graphdir,
 )  # Parquet (columnar storage)
-from graphglue.adapters.json_adapter import from_json, to_json  # JSON (JavaScript Object Notation)
-from graphglue.adapters.SIF_adapter import from_sif, to_sif  # SIF (Simple Interaction Format)
+from annnet.adapters.json_adapter import from_json, to_json  # JSON (JavaScript Object Notation)
+from annnet.adapters.SIF_adapter import from_sif, to_sif  # SIF (Simple Interaction Format)
 
 
 class TestEdgeCases:
     """Edge cases and error handling."""
 
     def test_empty_graph_all_adapters(self, tmpdir_fixture):
-        from graphglue.core.graph import Graph
+        from annnet.core.graph import Graph
 
         G = Graph()
         to_json(G, tmpdir_fixture / "empty.json")
@@ -27,14 +27,14 @@ class TestEdgeCases:
         G_parquet = read_parquet_graphdir(tmpdir_fixture / "empty_dir")
         assert len(list(G_parquet.vertices())) == 0
 
-        from graphglue.adapters.dataframe_adapter import from_dataframes, to_dataframes
+        from annnet.adapters.dataframe_adapter import from_dataframes, to_dataframes
 
         dfs = to_dataframes(G)
         G_df = from_dataframes(**dfs)
         assert len(list(G_df.vertices())) == 0
 
     def test_special_characters_in_ids(self, tmpdir_fixture):
-        from graphglue.core.graph import Graph
+        from annnet.core.graph import Graph
 
         G = Graph()
         special_ids = [
@@ -59,7 +59,7 @@ class TestEdgeCases:
         assert set(G.vertices()) == set(G_parquet.vertices())
 
     def test_large_weights_and_extreme_values(self, tmpdir_fixture):
-        from graphglue.core.graph import Graph
+        from annnet.core.graph import Graph
 
         G = Graph()
         G.add_vertex("A")
@@ -74,7 +74,7 @@ class TestEdgeCases:
         assert abs(G_json.edge_weights.get("e3", 1) - 0.0) < 1e-10
 
     def test_self_loops(self, tmpdir_fixture):
-        from graphglue.core.graph import Graph
+        from annnet.core.graph import Graph
 
         G = Graph()
         G.add_vertex("A")
@@ -97,7 +97,7 @@ class TestEdgeCases:
         assert "loop" in G_sif.edge_to_idx
 
     def test_parallel_edges(self, tmpdir_fixture):
-        from graphglue.core.graph import Graph
+        from annnet.core.graph import Graph
 
         G = Graph()
         G.add_vertex("A")
@@ -113,7 +113,7 @@ class TestEdgeCases:
         assert G_json.number_of_edges() == 3
 
     def test_null_and_none_handling(self, tmpdir_fixture):
-        from graphglue.core.graph import Graph
+        from annnet.core.graph import Graph
 
         G = Graph()
         G.add_vertex("A")
@@ -128,7 +128,7 @@ class TestEdgeCases:
     def test_very_large_graph(self, tmpdir_fixture):
         import random
 
-        from graphglue.core.graph import Graph
+        from annnet.core.graph import Graph
 
         G = Graph()
         n_vertices = 1000

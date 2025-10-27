@@ -7,8 +7,8 @@ import numpy as np
 ROOT = pathlib.Path(__file__).resolve().parents[1]  # project root
 sys.path.insert(0, str(ROOT))
 
-from graphglue.adapters.sbml_adapter import _graph_from_stoich, from_cobra_model
-from graphglue.core import Graph
+from annnet.adapters.sbml_adapter import _graph_from_stoich, from_cobra_model
+from annnet.core import Graph
 
 
 class TestSBMLAdapter(unittest.TestCase):
@@ -85,7 +85,7 @@ class TestSBMLAdapter(unittest.TestCase):
     def test_boundary_reactions(self):
         import numpy as np
 
-        from graphglue.adapters.sbml_adapter import (
+        from annnet.adapters.sbml_adapter import (
             BOUNDARY_SINK,
             BOUNDARY_SOURCE,
             _graph_from_stoich,

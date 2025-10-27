@@ -48,7 +48,7 @@ force-sort-within-sections = true
 force-wrap-aliases = true
 include-trailing-comma = true
 indent = "    "
-known-first-party = ["graphglue"]
+known-first-party = ["annnet"]
 known-third-party = ["numpy", "pandas"]
 length-sort = true
 lines-after-imports = 1
@@ -103,7 +103,7 @@ license = "GPL-3.0-or-later"
 maintainers = [
     {name = "Bottazzi Daniele", email = "daniele.bottazzi@mail.polimi.it"}
 ]
-name = "graphglue"
+name = "annnet"
 readme = "README.md"
 requires-python = ">=3.10"
 version = "0.0.1"
@@ -112,7 +112,7 @@ version = "0.0.1"
 networkx = ["networkx>=3.3"]
 igraph   = ["python-igraph>=0.11"]
 pandas = ["pandas>=2.0.3"]
-excel    = ["openpyxl>=3.1"]          # used by graphglue/io/excel.py
+excel    = ["openpyxl>=3.1"]          # used by annnet/io/excel.py
 sbml     = ["lxml>=5"]                # used by sbml_adapter.py
 parquet  = ["pyarrow>=14"]            # used by GraphDir_Parquet_adapter.py
 zarr_io  = ["zarr>=2.18", "numcodecs>=0.12"]  # used by io_annnet.py
@@ -166,33 +166,33 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["graphglue"]
+packages = ["annnet"]
 
 [tool.hatch.build.targets.sdist]
-include = ["graphglue", "pyproject.toml", "README.md", "LICENSE"]
+include = ["annnet", "pyproject.toml", "README.md", "LICENSE"]
 
 
 [project.scripts]
-gg = "graphglue:main"
-gg-demo = "graphglue.demo.demo:main"
+gg = "annnet:main"
+gg-demo = "annnet.demo.demo:main"
 
 [project.urls]
-Documentation = "https://graphglue.readthedocs.io/"
-Homepage = "https://github.com/saezlab/graphglue"
-Issues = "https://github.com/saezlab/graphglue/issues"
-Repository = "https://github.com/saezlab/graphglue"
+Documentation = "https://annnet.readthedocs.io/"
+Homepage = "https://github.com/saezlab/annnet"
+Issues = "https://github.com/saezlab/annnet/issues"
+Repository = "https://github.com/saezlab/annnet"
 
 [tool.coverage.run]
 omit = [
     "**/test_*.py"
 ]
-source = ["graphglue"]
+source = ["annnet"]
 
 [tool.cruft]
 skip = [
     "tests",
-    "graphglue/__init__.py",
-    "graphglue/_metadata.py",
+    "annnet/__init__.py",
+    "annnet/_metadata.py",
     "docs/api.md",
     "docs/changelog.md",
     "docs/references.bib",
