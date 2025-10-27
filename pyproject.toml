@@ -80,7 +80,9 @@ inline-quotes = "single"
 
 [project]
 authors = [
-    {name = "Bottazzi Daniele", email = "daniele.bottazzi@mail.polimi.it"}
+    { name = "Youssef Zerta", email = "youssef.zerta@biomedtech.ueuromed.org" },
+    { name = "Bottazzi Daniele", email = "daniele.bottazzi@mail.polimi.it" },
+    { name = "Denes Turei", email = "turei.denes@gmail.com" }
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -101,7 +103,8 @@ dependencies = [
 description = "A Python tool to build, manipulate, and interoperate with flexible graph structures"
 license = "GPL-3.0-or-later"
 maintainers = [
-    {name = "Bottazzi Daniele", email = "daniele.bottazzi@mail.polimi.it"}
+    { name = "Bottazzi Daniele", email = "daniele.bottazzi@mail.polimi.it" },
+    { name = "Youssef Zerta", email = "youssef.zerta@biomedtech.ueuromed.org" }
 ]
 name = "annnet"
 readme = "README.md"
