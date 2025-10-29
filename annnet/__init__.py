@@ -35,6 +35,7 @@ _lazy_submodules = {
 _lazy_symbols: dict[str, tuple[str, str]] = {
     # Core
     "Graph": ("annnet.core.graph", "Graph"),
+    "graph": ("annnet.core.graph", "Graph"),
     # Stdlib JSON I/O
     "to_json": ("annnet.adapters.json_adapter", "to_json"),
     "from_json": ("annnet.adapters.json_adapter", "from_json"),
