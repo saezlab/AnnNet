@@ -255,45 +255,37 @@ def _write_layers(graph, path: Path, compression: str):
 def _write_audit(graph, path: Path, compression: str):
     """Write history, snapshots, provenance."""
     import json
+    import sys
+    from datetime import datetime
+    try:
+        from datetime import UTC  # Py3.11+
+    except Exception:  # fallback for <3.11
+        from datetime import timezone as _tz
+        UTC = _tz.utc
 
     import numpy as np
     import polars as pl
+    import scipy
 
     path.mkdir(parents=True, exist_ok=True)
 
     # History log
     if graph._history:
-        history_df = pl.DataFrame(graph._history)
+        rows = list(graph._history)
 
-        # detect columns that can hold nested containers/objects
-        def is_nested(col: pl.Series) -> bool:
-            sample = col.head(32).to_list()
-            for v in sample:
-                if isinstance(v, (dict, list, set, tuple)):
-                    return True
-                # numpy arrays or polars series inside cells
-                if isinstance(v, np.ndarray):
-                    return True
-                try:
-                    # Some objects expose a '.to_list()' or are Arrow-ish; treat as nested
-                    if hasattr(v, "to_list") and callable(v.to_list):
-                        return True
-                except Exception:
-                    pass
-            return False
-
-        nested_cols = [c for c in history_df.columns if is_nested(history_df[c])]
-
-        # robust JSON encoder for nested cell values
-        def _jsonify_cell(v):
+        # normalize per-cell to avoid mixed dtypes at DataFrame construction
+        def _norm(v):
             if v is None:
                 return None
-            # polars Series inside a cell -> list
+            # numpy scalar -> python scalar
+            if isinstance(v, np.generic):
+                v = v.item()
+            # pl.Series/arrow-ish -> list
             if hasattr(v, "to_list") and callable(getattr(v, "to_list", None)):
                 try:
                     v = v.to_list()
                 except Exception:
-                    v = str(v)
+                    return str(v)
             # numpy arrays -> list
             if isinstance(v, np.ndarray):
                 v = v.tolist()
@@ -305,7 +297,73 @@ def _write_audit(graph, path: Path, compression: str):
                     v = list(v)
             elif isinstance(v, tuple):
                 v = list(v)
-            # finally, dump to JSON (fallback to str for anything exotic)
+            # datetimes/dates -> ISO 8601
+            try:
+                from datetime import datetime as _dt_datetime, date as _dt_date
+                if isinstance(v, (_dt_datetime, _dt_date)):
+                    return v.isoformat()
+            except Exception:
+                pass
+            # basic scalars pass through; everything else -> JSON string
+            if isinstance(v, (int, float, bool, str)):
+                return v
+            try:
+                return json.dumps(v, default=str)
+            except Exception:
+                return str(v)
+
+        keys = sorted({k for r in rows for k in r.keys()})
+        cols = {k: [_norm(r.get(k)) for r in rows] for k in keys}
+
+        # choose stable dtypes per column
+        def _dtype(vals):
+            nonnull = [x for x in vals if x is not None]
+            if nonnull and all(isinstance(x, bool) for x in nonnull):
+                return pl.Boolean
+            if nonnull and all(isinstance(x, int) for x in nonnull):
+                return pl.Int64
+            if nonnull and all(isinstance(x, (int, float)) for x in nonnull):
+                return pl.Float64
+            return pl.Utf8  # mixed or textual
+
+        schema_overrides = {k: _dtype(vs) for k, vs in cols.items()}
+        history_df = pl.DataFrame(cols, schema_overrides=schema_overrides, strict=False)
+
+        # detect columns that can hold nested containers/objects (should be rare after _norm)
+        def is_nested(col: pl.Series) -> bool:
+            sample = col.head(32).to_list()
+            for v in sample:
+                if isinstance(v, (dict, list, set, tuple)):
+                    return True
+                if isinstance(v, np.ndarray):
+                    return True
+                try:
+                    if hasattr(v, "to_list") and callable(v.to_list):
+                        return True
+                except Exception:
+                    pass
+            return False
+
+        nested_cols = [c for c in history_df.columns if is_nested(history_df[c])]
+
+        # robust JSON encoder for any remaining nested cell values
+        def _jsonify_cell(v):
+            if v is None:
+                return None
+            if hasattr(v, "to_list") and callable(getattr(v, "to_list", None)):
+                try:
+                    v = v.to_list()
+                except Exception:
+                    v = str(v)
+            if isinstance(v, np.ndarray):
+                v = v.tolist()
+            if isinstance(v, set):
+                try:
+                    v = sorted(v)
+                except Exception:
+                    v = list(v)
+            elif isinstance(v, tuple):
+                v = list(v)
             try:
                 return json.dumps(v, default=str)
             except Exception:
@@ -314,21 +372,20 @@ def _write_audit(graph, path: Path, compression: str):
         if nested_cols:
             history_df = history_df.with_columns(
                 *[
-                    pl.col(c)
-                    .map_elements(_jsonify_cell, return_dtype=pl.Utf8)  # declare return dtype
-                    .alias(c)
+                    pl.col(c).map_elements(_jsonify_cell, return_dtype=pl.Utf8).alias(c)
                     for c in nested_cols
                 ]
             )
 
         history_df.write_parquet(path / "history.parquet", compression=compression)
+
     # Provenance
     provenance = {
         "created": datetime.now(UTC).isoformat(),
         "annnet_version": "0.1.0",
         "python_version": sys.version,
         "dependencies": {
-            "scipy": scipy.__version__,  # <-- use scipy.__version__
+            "scipy": scipy.__version__,
             "numpy": np.__version__,
             "polars": pl.__version__,
         },
@@ -337,7 +394,6 @@ def _write_audit(graph, path: Path, compression: str):
 
     # Snapshots directory (if any)
     (path / "snapshots").mkdir(exist_ok=True)
-
 
 def _write_uns(graph, path: Path):
     """Write unstructured metadata and results."""
