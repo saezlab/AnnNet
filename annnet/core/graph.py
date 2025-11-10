@@ -1313,6 +1313,15 @@ class Graph:
         self.edge_weights = {}  # edge_id -> weight
         self.edge_directed = {}  # Per-edge directedness; edge_id -> bool  (None = Mixed, True=directed, False=undirected)
 
+        # flexible-direction behavior
+        self.edge_direction_policy = {}  # eid -> policy dict
+        # ensure 'flexible' isn’t stored as an attribute column
+        if not hasattr(self, "_EDGE_RESERVED"):
+            self._EDGE_RESERVED = set()
+        else:
+            self._EDGE_RESERVED = set(self._EDGE_RESERVED)
+        self._EDGE_RESERVED.update({"flexible"})
+
         # Composite vertex key (tuple-of-attrs) support
         self._vertex_key_fields = None            # tuple[str,...] or None
         self._vertex_key_index = {}               # dict[tuple, vertex_id]
@@ -1903,6 +1912,14 @@ class Graph:
                 source = self.get_or_create_vertex_by_attrs(layer=layer, **source)
             if isinstance(target, dict):
                 target = self.get_or_create_vertex_by_attrs(layer=layer, **target)
+        
+        flexible = attributes.pop("flexible", None)
+        if flexible is not None:
+            if not isinstance(flexible, dict) or "var" not in flexible or "threshold" not in flexible:
+                raise ValueError("flexible must be a dict with keys {'var','threshold'[,'scope','above','tie']}")
+            tie = flexible.get("tie", "keep")
+            if tie not in {"keep","undirected","s->t","t->s"}:
+                raise ValueError("flexible['tie'] must be one of {'keep','undirected','s->t','t->s'}")
 
         # normalize endpoints: accept str OR iterable; route hyperedges
         def _to_tuple(x):
@@ -2085,9 +2102,16 @@ class Graph:
         elif propagate == "all":
             self._propagate_to_all_layers(edge_id, source, target)
 
+        if flexible is not None:
+            self.edge_directed[edge_id] = True         # always directed; orientation is controlled
+            self.edge_direction_policy[edge_id] = flexible
+
         # attributes
         if attributes:
             self.set_edge_attrs(edge_id, **attributes)
+
+        if flexible is not None:
+            self._apply_flexible_direction(edge_id)
 
         return edge_id
 
@@ -3537,6 +3561,11 @@ class Graph:
         # Write attributes
         self.vertex_attributes = self._upsert_row(self.vertex_attributes, vertex_id, clean)
 
+        watched = self._variables_watched_by_vertices()
+        if watched and any(k in watched for k in clean):
+            for eid in self._incident_flexible_edges(vertex_id):
+                self._apply_flexible_direction(eid)
+
         # Update index AFTER successful write
         if self._vertex_key_enabled():
             new_key = self._current_key_of_vertex(vertex_id)
@@ -3619,6 +3648,9 @@ class Graph:
         clean = {k: v for k, v in attrs.items() if k not in self._EDGE_RESERVED}
         if clean:
             self.edge_attributes = self._upsert_row(self.edge_attributes, edge_id, clean)
+        pol = self.edge_direction_policy.get(edge_id)
+        if pol and pol.get("scope", "edge") == "edge" and pol["var"] in clean:
+            self._apply_flexible_direction(edge_id)
 
     def get_attr_edge(self, edge_id, key, default=None):
         """Get a single edge attribute (scalar) or default if missing.
@@ -4158,6 +4190,71 @@ class Graph:
             pass
 
         return new_df
+
+    def _variables_watched_by_vertices(self):
+        # set of vertex-attribute names used by vertex-scope policies
+        return {p["var"] for p in self.edge_direction_policy.values()
+                if p.get("scope", "edge") == "vertex"}
+
+    def _incident_flexible_edges(self, v):
+        # naive scan; optimize later with an index if needed
+        out = []
+        for eid, (s, t, _kind) in self.edge_definitions.items():
+            if eid in self.edge_direction_policy and (s == v or t == v):
+                out.append(eid)
+        return out
+
+    def _apply_flexible_direction(self, edge_id):
+        pol = self.edge_direction_policy.get(edge_id)
+        if not pol: return
+
+        src, tgt, _ = self.edge_definitions[edge_id]
+        col = self.edge_to_idx[edge_id]
+        w   = float(self.edge_weights.get(edge_id, 1.0))
+
+        var  = pol["var"];  T = float(pol["threshold"])
+        scope = pol.get("scope", "edge")   # 'edge'|'vertex'
+        above = pol.get("above", "s->t")   # 's->t'|'t->s'
+        tie   = pol.get("tie", "keep")     # default behavior
+
+        # decide condition and detect tie
+        tie_case = False
+        if scope == "edge":
+            x = self.get_attr_edge(edge_id, var, None)
+            if x is None: return
+            if x == T: tie_case = True
+            cond = (x > T)
+        else:
+            xs = self.get_attr_vertex(src, var, None)
+            xt = self.get_attr_vertex(tgt, var, None)
+            if xs is None or xt is None: return
+            if xs == xt: tie_case = True
+            cond = (xs - xt) > 0
+
+        M  = self._matrix
+        si = self.entity_to_idx[src]; ti = self.entity_to_idx[tgt]
+
+        if tie_case:
+            if tie == "keep":
+                # do nothing → previous signs remain (default)
+                return
+            if tie == "undirected":
+                # force (+w,+w) while equality holds
+                M[(si, col)] = +w
+                if src != tgt: M[(ti, col)] = +w
+                return
+            # force a direction at equality
+            cond = True if tie == "s->t" else False
+
+        # rewrite as directed per 'above'
+        M[(si, col)] = 0; M[(ti, col)] = 0
+        src_to_tgt = cond if above == "s->t" else (not cond)
+        if src_to_tgt:
+            M[(si, col)] = +w
+            if src != tgt: M[(ti, col)] = -w
+        else:
+            M[(si, col)] = -w
+            if src != tgt: M[(ti, col)] = +w
 
     ## Full attribute dict for a single entity
 
