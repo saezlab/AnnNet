@@ -1313,6 +1313,10 @@ class Graph:
         self.edge_weights = {}  # edge_id -> weight
         self.edge_directed = {}  # Per-edge directedness; edge_id -> bool  (None = Mixed, True=directed, False=undirected)
 
+        # Composite vertex key (tuple-of-attrs) support
+        self._vertex_key_fields = None            # tuple[str,...] or None
+        self._vertex_key_index = {}               # dict[tuple, vertex_id]
+
         # Sparse incidence matrix
         self._matrix = sp.dok_matrix((0, 0), dtype=np.float32)
         self._num_entities = 0
@@ -1628,6 +1632,32 @@ class Graph:
         except Exception:
             pass
 
+    def _vertex_key_enabled(self) -> bool:
+        return bool(self._vertex_key_fields)
+
+    def _build_key_from_attrs(self, attrs: dict) -> tuple | None:
+        """Return tuple of field values in declared order, or None if any missing."""
+        if not self._vertex_key_fields:
+            return None
+        vals = []
+        for f in self._vertex_key_fields:
+            if f not in attrs or attrs[f] is None:
+                return None  # incomplete — not indexable
+            vals.append(attrs[f])
+        return tuple(vals)
+
+    def _current_key_of_vertex(self, vertex_id) -> tuple | None:
+        """Read the current key tuple of a vertex from vertex_attributes (None if incomplete)."""
+        if not self._vertex_key_fields:
+            return None
+        cur = {f: self.get_attr_vertex(vertex_id, f, None) for f in self._vertex_key_fields}
+        return self._build_key_from_attrs(cur)
+
+    def _gen_vertex_id_from_key(self, key_tuple: tuple) -> str:
+        """Deterministic, human-readable vertex_id from a composite key."""
+        parts = [f"{f}={repr(v)}" for f, v in zip(self._vertex_key_fields, key_tuple)]
+        return "kv:" + "|".join(parts)
+
     # Build graph
 
     def add_vertex(self, vertex_id, layer=None, **attributes):
@@ -1867,6 +1897,13 @@ class Graph:
         if edge_type is None:
             edge_type = "regular"
 
+        # Resolve dict endpoints via composite key (if enabled)
+        if self._vertex_key_enabled():
+            if isinstance(source, dict):
+                source = self.get_or_create_vertex_by_attrs(layer=layer, **source)
+            if isinstance(target, dict):
+                target = self.get_or_create_vertex_by_attrs(layer=layer, **target)
+
         # normalize endpoints: accept str OR iterable; route hyperedges
         def _to_tuple(x):
             if isinstance(x, (str, bytes)):
@@ -2104,6 +2141,16 @@ class Graph:
         - **Directed**: pass ``head`` and ``tail`` (both non-empty, disjoint).
         Head gets ``+weight``; tail gets ``-weight``.
         """
+        # Map dict endpoints to vertex_id when composite keys are enabled
+        if self._vertex_key_enabled():
+            def _map(x): 
+                return self.get_or_create_vertex_by_attrs(layer=layer, **x) if isinstance(x, dict) else x
+            if members is not None:
+                members = [_map(u) for u in members]
+            else:
+                head = [_map(u) for u in head]
+                tail = [_map(v) for v in tail]
+
         # validate form
         if members is None and (head is None or tail is None):
             raise ValueError("Provide members (undirected) OR head+tail (directed).")
@@ -3032,6 +3079,49 @@ class Graph:
                 df = self._upsert_row(df, eid, attrs)
         self.vertex_attributes = df
 
+    def set_vertex_key(self, *fields: str):
+        """Declare composite key fields (order matters). Rebuilds the uniqueness index.
+
+        - Raises ValueError if duplicates exist among already-populated vertices.
+        - Vertices missing some key fields are skipped during indexing.
+        """
+        if not fields:
+            raise ValueError("set_vertex_key requires at least one field")
+        self._vertex_key_fields = tuple(str(f) for f in fields)
+        self._vertex_key_index.clear()
+
+        df = self.vertex_attributes
+        if not isinstance(df, pl.DataFrame) or df.height == 0:
+            return  # nothing to index yet
+
+        missing = [f for f in self._vertex_key_fields if f not in df.columns]
+        if missing:
+            # ok to skip; those rows simply won't be indexable until fields appear
+            pass
+
+        # Rebuild index, enforcing uniqueness only for fully-populated tuples
+        try:
+            for row in df.iter_rows(named=True):
+                vid = row.get("vertex_id")
+                key = tuple(row.get(f) for f in self._vertex_key_fields)
+                if any(v is None for v in key):
+                    continue
+                owner = self._vertex_key_index.get(key)
+                if owner is not None and owner != vid:
+                    raise ValueError(f"Composite key conflict for {key}: {owner} vs {vid}")
+                self._vertex_key_index[key] = vid
+        except Exception:
+            # Fallback if iter_rows misbehaves
+            for vid in df.get_column("vertex_id").to_list():
+                cur = {f: self.get_attr_vertex(vid, f, None) for f in self._vertex_key_fields}
+                key = self._build_key_from_attrs(cur)
+                if key is None:
+                    continue
+                owner = self._vertex_key_index.get(key)
+                if owner is not None and owner != vid:
+                    raise ValueError(f"Composite key conflict for {key}: {owner} vs {vid}")
+                self._vertex_key_index[key] = vid
+
     # Remove / mutate down
 
     def remove_edge(self, edge_id):
@@ -3425,19 +3515,37 @@ class Graph:
         return self.graph_attributes.get(key, default)
 
     def set_vertex_attrs(self, vertex_id, **attrs):
-        """Upsert pure vertex attributes (non-structural) into the vertex DF.
-
-        Parameters
-        ----------
-        vertex_id : str
-        **attrs
-            Key/value attributes. Structural keys are ignored.
-
-        """
-        # keep attributes table pure
+        """Upsert pure vertex attributes (non-structural) into the vertex DF [DataFrame]."""
         clean = {k: v for k, v in attrs.items() if k not in self._vertex_RESERVED}
-        if clean:
-            self.vertex_attributes = self._upsert_row(self.vertex_attributes, vertex_id, clean)
+        if not clean:
+            return
+
+        # If composite-key is active, validate prospective key BEFORE writing
+        if self._vertex_key_enabled():
+            old_key = self._current_key_of_vertex(vertex_id)
+            # prospective values = old values overridden by incoming clean attrs
+            merged = {f: (clean[f] if f in clean else self.get_attr_vertex(vertex_id, f, None))
+                    for f in self._vertex_key_fields}
+            new_key = self._build_key_from_attrs(merged)
+            if new_key is not None:
+                owner = self._vertex_key_index.get(new_key)
+                if owner is not None and owner != vertex_id:
+                    raise ValueError(
+                        f"Composite key collision on {self._vertex_key_fields}: {new_key} owned by {owner}"
+                    )
+
+        # Write attributes
+        self.vertex_attributes = self._upsert_row(self.vertex_attributes, vertex_id, clean)
+
+        # Update index AFTER successful write
+        if self._vertex_key_enabled():
+            new_key = self._current_key_of_vertex(vertex_id)
+            old_key = old_key if 'old_key' in locals() else None
+            if old_key != new_key:
+                if old_key is not None and self._vertex_key_index.get(old_key) == vertex_id:
+                    self._vertex_key_index.pop(old_key, None)
+                if new_key is not None:
+                    self._vertex_key_index[new_key] = vertex_id
 
     def get_attr_vertex(self, vertex_id, key, default=None):
         """Get a single vertex attribute (scalar) or default if missing.
@@ -4725,6 +4833,38 @@ class Graph:
             else:
                 if (S | T) & V:
                     yield j, (S, T)
+
+    def get_or_create_vertex_by_attrs(self, layer=None, **attrs) -> str:
+        """Return vertex_id for the given composite-key attributes, creating the vertex if needed.
+
+        - Requires set_vertex_key(...) to have been called.
+        - All key fields must be present and non-null in attrs.
+        """
+        if not self._vertex_key_fields:
+            raise RuntimeError("Call set_vertex_key(...) before using get_or_create_vertex_by_attrs")
+
+        key = self._build_key_from_attrs(attrs)
+        if key is None:
+            missing = [f for f in self._vertex_key_fields if f not in attrs or attrs[f] is None]
+            raise ValueError(f"Missing composite key fields: {missing}")
+
+        # Existing?
+        owner = self._vertex_key_index.get(key)
+        if owner is not None:
+            return owner
+
+        # Create new vertex
+        vid = self._gen_vertex_id_from_key(key)
+        # No need to pre-check entity_to_idx here; ids are namespaced by 'kv:' prefix
+        self.add_vertex(vid, layer=layer, **attrs)
+
+        # Index ownership
+        self._vertex_key_index[key] = vid
+        return vid
+
+    def vertex_key_tuple(self, vertex_id) -> tuple | None:
+        """Return the composite-key tuple for vertex_id (None if incomplete or no key set)."""
+        return self._current_key_of_vertex(vertex_id)
 
     @property
     def V(self):
