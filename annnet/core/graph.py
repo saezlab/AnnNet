@@ -111,12 +111,12 @@ class LayerManager:
         Delegates to Graph.layer_union()
 
         Parameters
-        ----------
+        --
         layer_ids : list[str]
             Layers to union
 
         Returns
-        -------
+        ---
         dict
             {"vertices": set[str], "edges": set[str]}
 
@@ -129,12 +129,12 @@ class LayerManager:
         Delegates to Graph.layer_intersection()
 
         Parameters
-        ----------
+        --
         layer_ids : list[str]
             Layers to intersect
 
         Returns
-        -------
+        ---
         dict
             {"vertices": set[str], "edges": set[str]}
 
@@ -147,14 +147,14 @@ class LayerManager:
         Delegates to Graph.layer_difference()
 
         Parameters
-        ----------
+        --
         layer_a : str
             First layer
         layer_b : str
             Second layer
 
         Returns
-        -------
+        ---
         dict
             {"vertices": set[str], "edges": set[str]}
             Elements in layer_a but not in layer_b
@@ -170,7 +170,7 @@ class LayerManager:
         Combines Graph.layer_union() + Graph.create_layer_from_operation()
 
         Parameters
-        ----------
+        --
         layer_ids : list[str]
             Layers to union
         name : str
@@ -179,7 +179,7 @@ class LayerManager:
             Layer attributes
 
         Returns
-        -------
+        ---
         str
             Created layer ID
 
@@ -193,7 +193,7 @@ class LayerManager:
         Combines Graph.layer_intersection() + Graph.create_layer_from_operation()
 
         Parameters
-        ----------
+        --
         layer_ids : list[str]
             Layers to intersect
         name : str
@@ -202,7 +202,7 @@ class LayerManager:
             Layer attributes
 
         Returns
-        -------
+        ---
         str
             Created layer ID
 
@@ -216,7 +216,7 @@ class LayerManager:
         Combines Graph.layer_difference() + Graph.create_layer_from_operation()
 
         Parameters
-        ----------
+        --
         layer_a : str
             First layer
         layer_b : str
@@ -227,7 +227,7 @@ class LayerManager:
             Layer attributes
 
         Returns
-        -------
+        ---
         str
             Created layer ID
 
@@ -243,7 +243,7 @@ class LayerManager:
         Delegates to Graph.create_aggregated_layer()
 
         Parameters
-        ----------
+        --
         source_layer_ids : list[str]
             Source layers
         target_layer_id : str
@@ -256,7 +256,7 @@ class LayerManager:
             Layer attributes
 
         Returns
-        -------
+        ---
         str
             Created layer ID
 
@@ -273,7 +273,7 @@ class LayerManager:
         Delegates to Graph.layer_statistics()
 
         Returns
-        -------
+        ---
         dict[str, dict]
             {layer_id: {'vertices': int, 'edges': int, 'attributes': dict}}
 
@@ -286,14 +286,14 @@ class LayerManager:
         Delegates to Graph.vertex_presence_across_layers()
 
         Parameters
-        ----------
+        --
         vertex_id : str
             Vertex to search for
         include_default : bool
             Include default layer
 
         Returns
-        -------
+        ---
         list[str]
             Layer IDs containing the vertex
 
@@ -308,7 +308,7 @@ class LayerManager:
         Delegates to Graph.edge_presence_across_layers()
 
         Parameters
-        ----------
+        --
         edge_id : str, optional
             Edge ID to search for
         source : str, optional
@@ -321,7 +321,7 @@ class LayerManager:
             Allow symmetric matches
 
         Returns
-        -------
+        ---
         list[str] or dict[str, list[str]]
             If edge_id: list of layer IDs
             If source/target: {layer_id: [edge_ids]}
@@ -341,7 +341,7 @@ class LayerManager:
         Delegates to Graph.hyperedge_presence_across_layers()
 
         Parameters
-        ----------
+        --
         members : Iterable[str], optional
             Undirected hyperedge members
         head : Iterable[str], optional
@@ -352,7 +352,7 @@ class LayerManager:
             Include default layer
 
         Returns
-        -------
+        ---
         dict[str, list[str]]
             {layer_id: [edge_ids]}
 
@@ -367,14 +367,14 @@ class LayerManager:
         Delegates to Graph.conserved_edges()
 
         Parameters
-        ----------
+        --
         min_layers : int
             Minimum number of layers
         include_default : bool
             Include default layer
 
         Returns
-        -------
+        ---
         dict[str, int]
             {edge_id: layer_count}
 
@@ -387,12 +387,12 @@ class LayerManager:
         Delegates to Graph.layer_specific_edges()
 
         Parameters
-        ----------
+        --
         layer_id : str
             Layer to check
 
         Returns
-        -------
+        ---
         set[str]
             Edge IDs unique to this layer
 
@@ -405,14 +405,14 @@ class LayerManager:
         Delegates to Graph.temporal_dynamics()
 
         Parameters
-        ----------
+        --
         ordered_layers : list[str]
             Layers in chronological order
         metric : {'edge_change', 'vertex_change'}
             What to track
 
         Returns
-        -------
+        ---
         list[dict]
             Per-step changes: [{'added': int, 'removed': int, 'net_change': int}]
 
@@ -425,7 +425,7 @@ class LayerManager:
         """Get human-readable summary of all layers.
 
         Returns
-        -------
+        ---
         str
             Formatted summary
 
@@ -441,6 +441,69 @@ class LayerManager:
 
     def __repr__(self):
         return f"LayerManager({self.count()} layers)"
+
+    # ==================== Multi-aspect awareness ====================
+
+    def aspects(self):
+        """List aspect names."""
+        return list(self._G.aspects)
+
+    def elementary_layers(self):
+        """Dict[aspect -> list of elementary labels]."""
+        return {a: list(v) for a, v in self._G.elem_layers.items()}
+
+    def layer_tuples(self):
+        """List all aspect-tuples (Cartesian product)."""
+        return list(self._G.iter_layers())
+
+    def tuple_id(self, α):
+        """Canonical string id for a layer tuple (matches Graph’s synthetic id)."""
+        α = tuple(α)
+        if len(self._G.aspects) == 1:
+            return α[0]
+        return "×".join(α)
+
+    # ==================== Presence utilities ====================
+
+    def node_layers(self, u: str):
+        """All layer-tuples where node u is present."""
+        return list(self._G.iter_node_layers(u))
+
+    def has_presence(self, u: str, α):
+        """True if (u, α) ∈ V_M."""
+        return self._G.has_presence(u, tuple(α))
+
+    # ==================== Intra/inter/coupling surfacing ====================
+
+    def intra_edges_tuple(self, α):
+        """Edge IDs of intra edges inside tuple-layer α."""
+        α = tuple(α)
+        # intra appear in Graph.edge_kind with edge_layers[eid] == α
+        return {eid for eid, k in self._G.edge_kind.items() if k == "intra" and self._G.edge_layers[eid] == α}
+
+    def inter_edges_between(self, α, β):
+        """Edge IDs of inter edges between tuple-layers α and β."""
+        α = tuple(α); β = tuple(β)
+        return {eid for eid, k in self._G.edge_kind.items() if k == "inter" and self._G.edge_layers[eid] == (α, β)}
+
+    def coupling_edges_between(self, α, β):
+        """Edge IDs of coupling edges connecting same-node (α)↔(β)."""
+        α = tuple(α); β = tuple(β)
+        return {eid for eid, k in self._G.edge_kind.items() if k == "coupling" and self._G.edge_layers[eid] == (α, β)}
+
+    # ==================== Supra / blocks ====================
+
+    def supra_adjacency(self, layers=None):
+        """Proxy to full supra A over selected layer-tuples."""
+        return self._G.supra_adjacency(layers)
+
+    def blocks(self, layers=None):
+        """Return dict of diagonal/off-diagonal blocks."""
+        return {
+            "intra": self._G.build_intra_block(layers),
+            "inter": self._G.build_inter_block(layers),
+            "coupling": self._G.build_coupling_block(layers),
+        }
 
 
 class IndexManager:
@@ -620,7 +683,7 @@ class CacheManager:
         """Invalidate cached formats.
 
         Parameters
-        ----------
+        --
         formats : list[str], optional
             Formats to invalidate ('csr', 'csc', 'adjacency').
             If None, invalidate all.
@@ -644,7 +707,7 @@ class CacheManager:
         """Pre-build specified formats (eager caching).
 
         Parameters
-        ----------
+        --
         formats : list[str], optional
             Formats to build ('csr', 'csc', 'adjacency').
             If None, build all.
@@ -669,7 +732,7 @@ class CacheManager:
         """Get cache status and memory usage.
 
         Returns
-        -------
+        ---
         dict
             Status of each cached format
 
@@ -710,7 +773,7 @@ class GraphView:
     Views can be materialized into concrete subgraphs when needed.
 
     Parameters
-    ----------
+    --
     graph : Graph
         Parent graph instance
     nodes : list[str] | set[str] | callable | None
@@ -1163,7 +1226,7 @@ class GraphDiff:
     """Represents the difference between two graph states.
 
     Attributes
-    ----------
+    --
     vertices_added : set
         Vertices in b but not in a
     vertices_removed : set
@@ -1243,19 +1306,19 @@ class Graph:
     and Polars-backed attribute upserts.
 
     Parameters
-    ----------
+    --
     directed : bool, optional
         Whether edges are directed by default. Individual edges can override this.
 
     Notes
-    -----
+    -
     - Incidence columns encode orientation: +w on source/head, −w on target/tail for
       directed edges; +w on all members for undirected edges/hyperedges.
     - Attributes are **pure**: structural keys are filtered out so attribute tables
       contain only user data.
 
     See Also
-    --------
+    
     add_vertex, add_edge, add_hyperedge, edges_view, vertices_view, layers_view
 
     """
@@ -1284,12 +1347,12 @@ class Graph:
         """Initialize an empty incidence-matrix graph.
 
         Parameters
-        ----------
+        --
         directed : bool, optional
             Global default for edge directionality. Individual edges can override this.
 
         Notes
-        -----
+        -
         - Stores entities (vertices and edge-entities), edges (including parallels), and
         an incidence matrix in DOK (Dictionary Of Keys) sparse format.
         - Attribute tables are Polars DF (DataFrame) with canonical key columns:
@@ -1390,25 +1453,46 @@ class Graph:
         self._install_history_hooks()  # wrap mutating methods
         self._snapshots = []
 
+        # Multi-aspect definition
+        self.aspects: list[str] = []                         # e.g., ["time", "relation"]
+        self.elem_layers: dict[str, list[str]] = {}          # aspect -> elementary labels
+        self._all_layers: tuple[tuple[str, ...], ...] = ()   # cartesian product cache
+
+        # Node and node–layer presence
+        self._V: set[str] = set()                             # node ids (entities of type 'vertex')
+        self._VM: set[tuple[str, tuple[str, ...]]] = set()    # {(u, α_tuple)}
+        self.node_aligned: bool = False                      # if True, VM == V × all_layers
+
+        # Stable indexing for supra rows
+        self._nl_to_row: dict[tuple[str, tuple[str, ...]], int] = {}
+        self._row_to_nl: list[tuple[str, tuple[str, ...]]] = []
+
+        # Legacy 1-aspect shim: when aspects==1 we map layer_id "L" -> ("L",)
+        self._legacy_single_aspect_enabled: bool = True
+        
+        # Multilayer edge bookkeeping (used by supra_adjacency)
+        self.edge_kind = {}     # eid -> {"intra","inter","coupling"}
+        self.edge_layers = {}   # eid -> α   or -> (α,β) for inter/coupling
+
     # Layer basics
 
     def add_layer(self, layer_id, **attributes):
         """Create a new empty layer.
 
         Parameters
-        ----------
+        --
         layer_id : str
             New layer identifier (ID).
         **attributes
             Pure layer attributes to store (non-structural).
 
         Returns
-        -------
+        ---
         str
             The created layer ID.
 
         Raises
-        ------
+        --
         ValueError
             If the layer already exists.
 
@@ -1420,18 +1504,25 @@ class Graph:
         # Persist layer metadata to DF (pure attributes, upsert)
         if attributes:
             self.set_layer_attrs(layer_id, **attributes)
+        # layer_id as an elementary layer of that aspect
+        if len(self.aspects) == 1:
+            a = self.aspects[0]
+            if a in self.elem_layers:
+                if layer_id not in self.elem_layers[a]:
+                    self.elem_layers[a].append(layer_id)
+                    self._rebuild_all_layers_cache()        
         return layer_id
 
     def set_active_layer(self, layer_id):
         """Set the active layer for subsequent operations.
 
         Parameters
-        ----------
+        --
         layer_id : str
             Existing layer ID.
 
         Raises
-        ------
+        --
         KeyError
             If the layer does not exist.
 
@@ -1444,7 +1535,7 @@ class Graph:
         """Get the currently active layer ID.
 
         Returns
-        -------
+        ---
         str
             Active layer ID.
 
@@ -1455,12 +1546,12 @@ class Graph:
         """Get a mapping of layer IDs to their metadata.
 
         Parameters
-        ----------
+        --
         include_default : bool, optional
             Include the internal ``'default'`` layer if True.
 
         Returns
-        -------
+        ---
         dict[str, dict]
             ``{layer_id: {"vertices": set, "edges": set, "attributes": dict}}``.
 
@@ -1473,12 +1564,12 @@ class Graph:
         """List layer IDs.
 
         Parameters
-        ----------
+        --
         include_default : bool, optional
             Include the internal ``'default'`` layer if True.
 
         Returns
-        -------
+        ---
         list[str]
             Layer IDs.
 
@@ -1489,11 +1580,11 @@ class Graph:
         """Check whether a layer exists.
 
         Parameters
-        ----------
+        --
         layer_id : str
 
         Returns
-        -------
+        ---
         bool
 
         """
@@ -1503,7 +1594,7 @@ class Graph:
         """Get the number of layers (including the internal default).
 
         Returns
-        -------
+        ---
         int
 
         """
@@ -1513,16 +1604,16 @@ class Graph:
         """Get a layer's metadata snapshot.
 
         Parameters
-        ----------
+        --
         layer_id : str
 
         Returns
-        -------
+        ---
         dict
             Copy of ``{"vertices": set, "edges": set, "attributes": dict}``.
 
         Raises
-        ------
+        --
         KeyError
             If the layer does not exist.
 
@@ -1531,13 +1622,981 @@ class Graph:
             raise KeyError(f"Layer {layer_id} not found")
         return self._layers[layer_id].copy()
 
+    # Multilayers
+
+    ## Aspects & layers
+
+    def set_aspects(self, aspects: list[str], elem_layers: dict[str, list[str]]):
+        """
+        Define multi-aspect structure.
+        aspects: e.g., ["time","relation"]
+        elem_layers: {"time": ["t1","t2"], "relation": ["F","A"], ...}
+        """
+        if not aspects:
+            raise ValueError("aspects must be a non-empty list")
+        # normalize & copy
+        self.aspects = list(aspects)
+        self.elem_layers = {a: list(elem_layers.get(a, [])) for a in self.aspects}
+        self._rebuild_all_layers_cache()
+
+    def _rebuild_all_layers_cache(self):
+        import itertools
+        if not self.aspects:
+            self._all_layers = ()
+            return
+        # build cartesian product (tuple of tuples)
+        try:
+            spaces = [self.elem_layers[a] for a in self.aspects]
+        except KeyError as e:
+            raise KeyError(f"elem_layers missing for aspect {e!s}")
+        self._all_layers = tuple(itertools.product(*spaces)) if all(spaces) else ()
+
+    ## Presence (V_M)
+    
+    def add_presence(self, u: str, layer_tuple: tuple[str, ...]):
+        """Declare that node u is present in the given multi-aspect layer."""
+        self._validate_layer_tuple(layer_tuple)
+        if self.entity_types.get(u) != "vertex":
+            raise KeyError(f"'{u}' is not a vertex")
+        self._V.add(u)
+        self._VM.add((u, tuple(layer_tuple)))
+
+    def remove_presence(self, u: str, layer_tuple: tuple[str, ...]):
+        """Remove presence (u, α)."""
+        self._validate_layer_tuple(layer_tuple)
+        try:
+            self._VM.remove((u, tuple(layer_tuple)))
+        except KeyError:
+            pass
+
+    def has_presence(self, u: str, layer_tuple: tuple[str, ...]) -> bool:
+        self._validate_layer_tuple(layer_tuple)
+        return (u, tuple(layer_tuple)) in self._VM
+
+    def iter_layers(self):
+        """Iterate over all aspect-tuples (Cartesian product)."""
+        return iter(self._all_layers)
+
+    def iter_node_layers(self, u: str):
+        """Iterate α where (u, α) ∈ V_M."""
+        for (uu, α) in self._VM:
+            if uu == u:
+                yield α
+
+    ## Index for supra rows 
+    def ensure_node_layer_index(self, restrict_layers: list[tuple[str, ...]] | None = None):
+        """
+        Build stable mapping between node–layer tuples and row indices.
+        Sorting: by node_id (lexicographic), then by layer tuple.
+        """
+        if restrict_layers is not None:
+            R = {tuple(x) for x in restrict_layers}
+            vm = [(u, α) for (u, α) in self._VM if α in R]
+        else:
+            vm = list(self._VM)
+        vm.sort(key=lambda x: (x[0], x[1]))
+        self._row_to_nl = vm
+        self._nl_to_row = {nl: i for i, nl in enumerate(vm)}
+        return len(vm)
+
+    def nl_to_row(self, u: str, layer_tuple: tuple[str, ...]) -> int:
+        """Map (u, α) -> row index (after ensure_node_layer_index())."""
+        key = (u, tuple(layer_tuple))
+        if key not in self._nl_to_row:
+            raise KeyError(f"node–layer {key!r} not indexed; call ensure_node_layer_index()")
+        return self._nl_to_row[key]
+
+    def row_to_nl(self, row: int) -> tuple[str, tuple[str, ...]]:
+        """Map row index -> (u, α)."""
+        try:
+            return self._row_to_nl[row]
+        except Exception:
+            raise KeyError(f"row {row} not in node–layer index")
+
+    ## Validation helpers 
+    
+    def _validate_layer_tuple(self, α: tuple[str, ...]):
+        if not self.aspects:
+            raise ValueError("no aspects are configured; call set_aspects(...) first")
+        if len(α) != len(self.aspects):
+            raise ValueError(f"layer tuple rank mismatch: expected {len(self.aspects)}, got {len(α)}")
+        for i, a in enumerate(self.aspects):
+            allowed = self.elem_layers.get(a, [])
+            if α[i] not in allowed:
+                raise KeyError(f"unknown elementary layer {α[i]!r} for aspect {a!r}")
+
+    def layer_id_to_tuple(self, layer_id: str) -> tuple[str, ...]:
+        """
+        Map legacy string layer_id to aspect tuple.
+        Only defined for single-aspect setups.
+        """
+        if len(self.aspects) != 1:
+            raise ValueError("layer_id_to_tuple is only valid when exactly 1 aspect is configured")
+        return (layer_id,)
+
+    ## explicit node–layer edge APIs
+
+    def add_intra_edge(self, u: str, v: str, layer: str, *, weight: float = 1.0, eid: str | None = None):
+        """
+        Legacy single-axis convenience: (u,v) in 'layer' (string).
+        If exactly 1 aspect is configured, this delegates to add_intra_edge_nl with (layer,) tuple.
+        """
+        if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+            α = self.layer_id_to_tuple(layer)
+            return self.add_intra_edge_nl(u, v, α, weight=weight, eid=eid)
+        # Fallback when multi-aspect is not configured: let add_edge handle bookkeeping.
+        eid = eid or f"{u}--{v}@{layer}"
+        self.add_edge(u, v, layer=layer, weight=weight, edge_id=eid)
+        self.edge_kind[eid] = "intra"
+        self.edge_layers[eid] = layer
+        return eid
+
+    def add_intra_edge_nl(self, u: str, v: str, layer_tuple: tuple[str, ...], *,
+                          weight: float = 1.0, eid: str | None = None):
+        """
+        Add (u,v) inside a multi-aspect layer α (tuple). Requires presence (u,α),(v,α) in V_M.
+        """
+        self._validate_layer_tuple(layer_tuple)
+        α = tuple(layer_tuple)
+        self._assert_presence(u, α)
+        self._assert_presence(v, α)      
+        eid = eid or f"{u}--{v}@{'.'.join(α)}"
+        # Use a synthetic layer id for intra edges so existing layer bookkeeping runs.
+        Lid = α[0] if len(self.aspects) == 1 else "×".join(α)
+        self.add_edge(u, v, layer=Lid, weight=weight, edge_id=eid)        
+        self.edge_kind[eid] = "intra"
+        self.edge_layers[eid] = α
+        return eid
+
+    def add_inter_edge_nl(self, u: str, layer_a: tuple[str, ...], v: str, layer_b: tuple[str, ...], *,
+                          weight: float = 1.0, eid: str | None = None):
+        """
+        Add an inter-layer edge between (u, α) and (v, β). Requires presence (u,α),(v,β) in V_M.
+        """
+        self._validate_layer_tuple(layer_a); self._validate_layer_tuple(layer_b)
+        α, β = tuple(layer_a), tuple(layer_b)
+        self._assert_presence(u, α)
+        self._assert_presence(v, β)
+        eid = eid or f"{u}--{v}=={'.'.join(α)}~{'.'.join(β)}"
+        # No single layer applies; just register the edge normally (no 'layer' kw).
+        self.add_edge(u, v, weight=weight, edge_id=eid)        
+        self.edge_kind[eid] = "inter"
+        self.edge_layers[eid] = (α, β)
+        return eid
+
+    def add_coupling_edge_nl(self, u: str, layer_a: tuple[str, ...], layer_b: tuple[str, ...], *,
+                             weight: float = 1.0, eid: str | None = None):
+        """
+        Add a diagonal coupling (u, α) <-> (u, β). Requires presence (u,α),(u,β).
+        """
+        eid2 = self.add_inter_edge_nl(u, layer_a, u, layer_b, weight=weight, eid=eid)
+        # Re-label as coupling so supra_adjacency treats it as off-diagonal coupling
+        self.edge_kind[eid2] = "coupling"
+        return eid2
+    
+    ### Legacy inter-layer convenience (string layers) delegates when 1 aspect:
+
+    def add_inter_edge(self, u: str, v: str, layer_a: str, layer_b: str, *,
+                       weight: float = 1.0, eid: str | None = None):
+        if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+            α, β = self.layer_id_to_tuple(layer_a), self.layer_id_to_tuple(layer_b)
+            return self.add_inter_edge_nl(u, α, v, β, weight=weight, eid=eid)
+        # Fallback in non-multi-aspect mode
+        eid = eid or f"{u}--{v}=={layer_a}~{layer_b}"
+        self.add_edge(u, v, weight=weight, edge_id=eid)
+        self.edge_kind[eid] = "inter"
+        self.edge_layers[eid] = (layer_a, layer_b)
+        return eid
+
+    ## tiny helper
+
+    def _assert_presence(self, u: str, α: tuple[str, ...]):
+        if (u, α) not in self._VM:
+            raise KeyError(f"presence missing: {(u, α)} not in V_M; call add_presence(u, α) first")
+
+    ## Supra_Adjacency
+
+    def supra_adjacency(self, layers: list[str] | None = None):
+        # Map optional legacy 'layers' (strings) to aspect tuples if needed
+        if layers is not None and len(getattr(self, "aspects", [])) == 1 \
+           and getattr(self, "_legacy_single_aspect_enabled", True):
+            layers_t = [self.layer_id_to_tuple(L) for L in layers]
+        else:
+            layers_t = None if layers is None else [tuple(L) for L in layers]
+        self.ensure_node_layer_index(layers_t)
+ 
+        n = len(self._row_to_nl)
+        A = sp.dok_matrix((n, n), dtype=float)
+ 
+        # Fill diagonal blocks from intra-layer edges
+        for eid, kind in self.edge_kind.items():
+            if kind != "intra":
+                continue
+            L = self.edge_layers[eid]
+            # normalize L to tuple
+            if not isinstance(L, tuple):
+                if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+                   L = self.layer_id_to_tuple(L)
+                else:
+                   raise ValueError("intra edge layer is not a tuple; configure aspects or use add_intra_edge_nl")
+            if layers_t is not None and L not in layers_t:
+                continue
+            # resolve endpoints (u,v) in layer L
+            try:
+                u, v, _etype = self.edge_definitions[eid]
+            except KeyError:
+                continue
+            ru = self._nl_to_row.get((u, L))
+            rv = self._nl_to_row.get((v, L))
+            if ru is None or rv is None:
+                continue
+            w = self.edge_weights.get(eid, 1)
+            A[ru, rv] = A.get((ru, rv), 0.0) + w
+            A[rv, ru] = A.get((rv, ru), 0.0) + w  # undirected; adapt if directed
+ 
+        # Fill off-diagonal blocks from inter-layer/coupling edges
+        for eid, kind in self.edge_kind.items():
+            if kind not in {"inter", "coupling"}:
+                continue
+            La, Lb = self.edge_layers[eid]
+            # normalize La/Lb to tuples
+            if not isinstance(La, tuple):
+                if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+                    La = self.layer_id_to_tuple(La)
+                else:
+                    raise ValueError("inter edge layer_a is not a tuple; configure aspects or use add_inter_edge_nl")
+            if not isinstance(Lb, tuple):
+                if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+                    Lb = self.layer_id_to_tuple(Lb)
+                else:
+                    raise ValueError("inter edge layer_b is not a tuple; configure aspects or use add_inter_edge_nl")
+            if layers_t is not None and (La not in layers_t or Lb not in layers_t):
+                 continue
+            # endpoints
+            try:
+                u, v, _etype = self.edge_definitions[eid]
+            except KeyError:
+                continue
+            ru = self._nl_to_row.get((u, La))
+            rv = self._nl_to_row.get((v, Lb))
+            if ru is None or rv is None:
+                continue
+            w = self.edge_weights.get(eid, 1)
+            A[ru, rv] = A.get((ru, rv), 0.0) + w
+            A[rv, ru] = A.get((rv, ru), 0.0) + w  # undirected; adapt if directed
+        return A.tocsr()
+
+    ##  Block partitions & Laplacians
+    
+    def _normalize_layers_arg(self, layers):
+        """
+        Normalize 'layers' argument to a list of aspect tuples or None.
+        Accepts legacy single-aspect string IDs.
+        """
+        if layers is None:
+            return None
+        if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+            return [self.layer_id_to_tuple(L) for L in layers]
+        return [tuple(L) for L in layers]
+
+    def _build_block(self, include_kinds: set[str], layers: list[str] | list[tuple] | None = None):
+        """
+        Internal builder for a supra block that includes only edges with kinds in include_kinds.
+        Kinds: {"intra","inter","coupling"}.
+        """
+        import scipy.sparse as sp
+        layers_t = self._normalize_layers_arg(layers)
+        self.ensure_node_layer_index(layers_t)
+        n = len(self._row_to_nl)
+        A = sp.dok_matrix((n, n), dtype=float)
+
+        # Intra-layer edges (diagonal blocks)
+        if "intra" in include_kinds:
+            for eid, kind in self.edge_kind.items():
+                if kind != "intra":
+                    continue
+                L = self.edge_layers[eid]
+                if not isinstance(L, tuple):
+                    if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+                        L = self.layer_id_to_tuple(L)
+                    else:
+                        continue
+                if layers_t is not None and L not in layers_t:
+                    continue
+                try:
+                    u, v, _etype = self.edge_definitions[eid]
+                except KeyError:
+                    continue
+                ru = self._nl_to_row.get((u, L)); rv = self._nl_to_row.get((v, L))
+                if ru is None or rv is None:
+                    continue
+                w = self.edge_weights.get(eid, 1.0)
+                A[ru, rv] = A.get((ru, rv), 0.0) + w
+                A[rv, ru] = A.get((rv, ru), 0.0) + w
+
+        # Inter/coupling edges (off-diagonal blocks)
+        if include_kinds & {"inter", "coupling"}:
+            for eid, kind in self.edge_kind.items():
+                if kind not in include_kinds:
+                    continue
+                La, Lb = self.edge_layers[eid]
+                if not isinstance(La, tuple):
+                    if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+                        La = self.layer_id_to_tuple(La)
+                    else:
+                        continue
+                if not isinstance(Lb, tuple):
+                    if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+                        Lb = self.layer_id_to_tuple(Lb)
+                    else:
+                        continue
+                if layers_t is not None and (La not in layers_t or Lb not in layers_t):
+                    continue
+                try:
+                    u, v, _etype = self.edge_definitions[eid]
+                except KeyError:
+                    continue
+                ru = self._nl_to_row.get((u, La)); rv = self._nl_to_row.get((v, Lb))
+                if ru is None or rv is None:
+                    continue
+                w = self.edge_weights.get(eid, 1.0)
+                A[ru, rv] = A.get((ru, rv), 0.0) + w
+                A[rv, ru] = A.get((rv, ru), 0.0) + w
+
+        return A.tocsr()
+
+    def build_intra_block(self, layers: list[str] | list[tuple] | None = None):
+        """Supra matrix containing only intra-layer edges (diagonal blocks)."""
+        return self._build_block({"intra"}, layers)
+
+    def build_inter_block(self, layers: list[str] | list[tuple] | None = None):
+        """Supra matrix containing only inter-layer (non-diagonal) edges (excludes coupling)."""
+        return self._build_block({"inter"}, layers)
+
+    def build_coupling_block(self, layers: list[str] | list[tuple] | None = None):
+        """Supra matrix containing only coupling (diagonal same-node cross-layer) edges."""
+        return self._build_block({"coupling"}, layers)
+
+    def supra_degree(self, layers: list[str] | list[tuple] | None = None):
+        """
+        Degree vector over the supra-graph (sum of row of supra adjacency).
+        """
+        import numpy as np
+        A = self.supra_adjacency(layers)
+        # sum over columns per row -> shape (n,1); flatten to 1D
+        deg = np.asarray(A.sum(axis=1)).ravel()
+        return deg
+
+    def supra_laplacian(self, kind: str = "comb", layers: list[str] | list[tuple] | None = None):
+        """
+        Build supra-Laplacian.
+        kind="comb" -> combinatorial L = D - A
+        kind="norm" -> normalized L_sym = I - D^{-1/2} A D^{-1/2}
+        """
+        import numpy as np
+        import scipy.sparse as sp
+        A = self.supra_adjacency(layers)
+        n = A.shape[0]
+        deg = self.supra_degree(layers)
+        if kind == "comb":
+            D = sp.diags(deg, format="csr")
+            return D - A
+        elif kind == "norm":
+            # D^{-1/2}; zero where deg==0
+            invsqrt = np.zeros_like(deg, dtype=float)
+            nz = deg > 0
+            invsqrt[nz] = 1.0 / np.sqrt(deg[nz])
+            Dm12 = sp.diags(invsqrt, format="csr")
+            I = sp.eye(n, format="csr")
+            return I - (Dm12 @ A @ Dm12)
+        else:
+            raise ValueError("kind must be 'comb' or 'norm'")
+
+    ## Coupling generators (node-independent)
+    
+    def _aspect_index(self, aspect: str) -> int:
+        if aspect not in self.aspects:
+            raise KeyError(f"unknown aspect {aspect!r}; known: {self.aspects!r}")
+        return self.aspects.index(aspect)
+
+    def _layer_matches_filter(self, α: tuple[str, ...], layer_filter: dict[str, set]) -> bool:
+        """
+        layer_filter: {aspect_name: {elem1, elem2, ...}}; a layer matches if α[a] ∈ set for all keys.
+        """
+        if not layer_filter:
+            return True
+        for a_name, allowed in layer_filter.items():
+            i = self._aspect_index(a_name)
+            if α[i] not in allowed:
+                return False
+        return True
+
+    def add_layer_coupling_pairs(self, layer_pairs: list[tuple[tuple[str, ...], tuple[str, ...]]],
+                                 *, weight: float = 1.0) -> int:
+        """
+        Generic: for each pair (α, β) in layer_pairs, add diagonal couplings (u,α)<->(u,β) for all u
+        that are present in both layers. Returns number of edges added.
+        """
+        import itertools
+        added = 0
+        # normalize to tuples, validate once
+        norm_pairs = []
+        for (La, Lb) in layer_pairs:
+            La = tuple(La); Lb = tuple(Lb)
+            self._validate_layer_tuple(La); self._validate_layer_tuple(Lb)
+            norm_pairs.append((La, Lb))
+        # Build per-layer presence index to avoid O(|V_M|^2)
+        layer_to_nodes = {}
+        for (u, α) in self._VM:
+            layer_to_nodes.setdefault(α, set()).add(u)
+        for (La, Lb) in norm_pairs:
+            Ua = layer_to_nodes.get(La, set())
+            Ub = layer_to_nodes.get(Lb, set())
+            for u in Ua & Ub:
+                self.add_coupling_edge_nl(u, La, Lb, weight=weight)
+                added += 1
+        return added
+
+    def add_categorical_coupling(self, aspect: str, groups: list[list[str]], *,
+                                 weight: float = 1.0) -> int:
+        """
+        Categorical couplings along one aspect:
+        For each node u and each fixed assignment of the other aspects, fully connect u across
+        the elementary layers in each group on `aspect`.
+        Example: aspect="time", groups=[["t1","t2","t3"]] connects (u,t1,⋅)-(u,t2,⋅)-(u,t3,⋅) per (other aspects).
+        Returns number of edges added.
+        """
+        import itertools
+        ai = self._aspect_index(aspect)
+        added = 0
+        # Map: (u, other_aspects_tuple) -> {elem_on_aspect: full_layer_tuple}
+        buckets = {}
+        for (u, α) in self._VM:
+            other = α[:ai] + α[ai+1:]
+            buckets.setdefault((u, other), {}).setdefault(α[ai], α)
+        for grp in groups:
+            gset = set(grp)
+            for (u, other), mapping in buckets.items():
+                # pick only those α whose aspect element is in this group
+                layers = [mapping[e] for e in mapping.keys() if e in gset]
+                if len(layers) < 2:
+                    continue
+                for La, Lb in itertools.combinations(sorted(layers), 2):
+                    self.add_coupling_edge_nl(u, La, Lb, weight=weight)
+                    added += 1
+        return added
+
+    def add_diagonal_coupling_filter(self, layer_filter: dict[str, set], *,
+                                     weight: float = 1.0) -> int:
+        """
+        Diagonal couplings inside a filtered slice of the layer space:
+        For each node u, connect all (u,α) pairs where α matches `layer_filter`.
+        layer_filter example: {"time": {"t1","t2"}, "rel": {"F"}}.
+        Returns number of edges added.
+        """
+        import itertools
+        added = 0
+        # collect per node the matching layers actually present
+        per_u = {}
+        for (u, α) in self._VM:
+            if self._layer_matches_filter(α, layer_filter):
+                per_u.setdefault(u, []).append(α)
+        for u, layers in per_u.items():
+            if len(layers) < 2:
+                continue
+            for La, Lb in itertools.combinations(sorted(layers), 2):
+                self.add_coupling_edge_nl(u, La, Lb, weight=weight)
+                added += 1
+        return added
+
+    ## Tensor view & flattening map
+    
+    def tensor_index(self, layers: list[str] | list[tuple] | None = None):
+        """
+        Build consistent indices for nodes and layers used in the tensor view.
+        Uses the current node–layer index ordering to ensure round-trip with supra.
+        Returns:
+          nodes: list[str]
+          layers_t: list[tuple[str,...]]
+          node_to_i: dict[node->int]
+          layer_to_i: dict[layer_tuple->int]
+        """
+        layers_t = self._normalize_layers_arg(layers)
+        self.ensure_node_layer_index(layers_t)
+        # collect in the order they appear in the node–layer index: (node major, then layer)
+        nodes = []
+        layers_list = []
+        seen_nodes = set()
+        seen_layers = set()
+        for (u, α) in self._row_to_nl:
+            if u not in seen_nodes:
+                nodes.append(u); seen_nodes.add(u)
+            if α not in seen_layers:
+                layers_list.append(α); seen_layers.add(α)
+        node_to_i = {u: i for i, u in enumerate(nodes)}
+        layer_to_i = {α: i for i, α in enumerate(layers_list)}
+        return nodes, layers_list, node_to_i, layer_to_i
+
+    def adjacency_tensor_view(self, layers: list[str] | list[tuple] | None = None):
+        """
+       Sparse 4-index adjacency view: triplets (ui, ai, vi, bi, w).
+        Returns a dict:
+          {
+            "nodes": list[str],
+            "layers": list[tuple[str,...]],
+            "node_to_i": {...},
+            "layer_to_i": {...},
+            "ui": np.ndarray[int], "ai": np.ndarray[int],
+            "vi": np.ndarray[int], "bi": np.ndarray[int],
+            "w":  np.ndarray[float]
+          }
+        Symmetric entries are emitted once (ui,ai,vi,bi) and once swapped (vi,bi,ui,ai).
+        """
+        import numpy as np
+        nodes, layers_t, node_to_i, layer_to_i = self.tensor_index(layers)
+        ui = []; ai = []; vi = []; bi = []; wv = []
+
+        # Intra edges -> (u,α)↔(v,α)
+        for eid, kind in self.edge_kind.items():
+            if kind != "intra":
+                continue
+            L = self.edge_layers[eid]
+            if not isinstance(L, tuple):
+                if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+                    L = self.layer_id_to_tuple(L)
+                else:
+                    continue
+            if layers is not None and L not in set(layers_t):
+                continue
+            try:
+                u, v, _etype = self.edge_definitions[eid]
+            except KeyError:
+                continue
+            if (u, L) not in self._nl_to_row or (v, L) not in self._nl_to_row:
+                continue
+            w = self.edge_weights.get(eid, 1.0)
+            ui.extend((node_to_i[u], node_to_i[v]))
+            vi.extend((node_to_i[v], node_to_i[u]))
+            a = layer_to_i[L]
+            ai.extend((a, a)); bi.extend((a, a))
+            wv.extend((w, w))
+
+        # Inter / coupling -> (u,α)↔(v,β)
+        for eid, kind in self.edge_kind.items():
+            if kind not in {"inter", "coupling"}:
+                continue
+            La, Lb = self.edge_layers[eid]
+            if not isinstance(La, tuple):
+                if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+                    La = self.layer_id_to_tuple(La)
+                else:
+                    continue
+            if not isinstance(Lb, tuple):
+                if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+                   Lb = self.layer_id_to_tuple(Lb)
+                else:
+                    continue
+            if layers is not None:
+                S = set(layers_t)
+                if La not in S or Lb not in S:
+                    continue
+            try:
+                u, v, _etype = self.edge_definitions[eid]
+            except KeyError:
+                continue
+            if (u, La) not in self._nl_to_row or (v, Lb) not in self._nl_to_row:
+                continue
+            w = self.edge_weights.get(eid, 1.0)
+            ui.extend((node_to_i[u], node_to_i[v]))
+            vi.extend((node_to_i[v], node_to_i[u]))
+            ai.extend((layer_to_i[La], layer_to_i[Lb]))
+            bi.extend((layer_to_i[Lb], layer_to_i[La]))
+            wv.extend((w, w))
+
+        return {
+            "nodes": nodes,
+            "layers": layers_t,
+           "node_to_i": node_to_i,
+            "layer_to_i": layer_to_i,
+            "ui": np.asarray(ui, dtype=int),
+           "ai": np.asarray(ai, dtype=int),
+            "vi": np.asarray(vi, dtype=int),
+            "bi": np.asarray(bi, dtype=int),
+            "w":  np.asarray(wv, dtype=float),
+        }
+
+    def flatten_to_supra(self, tensor_view: dict):
+        """
+        f: 4-index -> supra (CSR). Uses current node–layer index mapping (_nl_to_row).
+        tensor_view: output of adjacency_tensor_view or unflatten_from_supra.
+        """
+        import scipy.sparse as sp
+        # Ensure index reflects current layers subset (tensor_view["layers"])
+        layers_t = tensor_view["layers"] if tensor_view.get("layers", None) else None
+        self.ensure_node_layer_index(layers_t)
+        n = len(self._row_to_nl)
+        A = sp.dok_matrix((n, n), dtype=float)
+        nodes = tensor_view["nodes"]; layers = tensor_view["layers"]
+        ui, ai, vi, bi, w = (tensor_view["ui"], tensor_view["ai"],
+                             tensor_view["vi"], tensor_view["bi"], tensor_view["w"])
+        # Map back from indices to (u,α) rows using current _nl_to_row
+        for k in range(len(w)):
+            u = nodes[int(ui[k])]; α = layers[int(ai[k])]
+            v = nodes[int(vi[k])]; β = layers[int(bi[k])]
+            ru = self._nl_to_row.get((u, α)); rv = self._nl_to_row.get((v, β))
+            if ru is None or rv is None:
+                continue
+            A[ru, rv] = A.get((ru, rv), 0.0) + float(w[k])
+        return A.tocsr()
+
+    def unflatten_from_supra(self, A, layers: list[str] | list[tuple] | None = None):
+        """
+        f^{-1}: supra -> 4-index tensor triplets (same schema as adjacency_tensor_view).
+        """
+        import numpy as np
+        A = A.tocsr()
+        nodes, layers_t, node_to_i, layer_to_i = self.tensor_index(layers)
+        rows, cols = A.nonzero()
+        data = A.data
+        ui = np.empty_like(rows); vi = np.empty_like(cols)
+        ai = np.empty_like(rows); bi = np.empty_like(cols)
+        for k in range(len(rows)):
+            (u, α) = self._row_to_nl[int(rows[k])]
+            (v, β) = self._row_to_nl[int(cols[k])]
+            ui[k] = node_to_i[u]; vi[k] = node_to_i[v]
+            ai[k] = layer_to_i[α]; bi[k] = layer_to_i[β]
+        return {
+            "nodes": nodes, "layers": layers_t,
+            "node_to_i": node_to_i, "layer_to_i": layer_to_i,
+            "ui": ui, "ai": ai, "vi": vi, "bi": bi, "w": data.astype(float, copy=False),
+        }
+
+    ##  Dynamics & spectral probes
+
+    def supra_adjacency_scaled(self, *, coupling_scale: float = 1.0,
+                               include_inter: bool = True,
+                               layers: list[str] | list[tuple] | None = None):
+        """
+        Build supra adjacency with optional scaling of coupling edges and optional
+        inclusion of inter-layer (non-diagonal) edges.
+        A = A_intra + (include_inter ? A_inter : 0) + coupling_scale * A_coupling
+        """
+        import scipy.sparse as sp
+        A_intra = self.build_intra_block(layers)
+        A_coup  = self.build_coupling_block(layers)
+        A_inter = self.build_inter_block(layers) if include_inter else None
+        A = A_intra.copy()
+        if include_inter:
+            A = A + A_inter
+        if coupling_scale != 1.0:
+            A = A + (A_coup * (coupling_scale - 1.0))
+        else:
+            A = A + A_coup
+        return A.tocsr()
+
+    def transition_matrix(self, layers: list[str] | list[tuple] | None = None):
+        """
+        Row-stochastic transition matrix P = D^{-1} A (random walk on supra-graph).
+        Rows with zero degree remain zero.
+        """
+        import numpy as np
+        import scipy.sparse as sp
+        A = self.supra_adjacency(layers).tocsr()
+        deg = self.supra_degree(layers)
+        invdeg = np.zeros_like(deg, dtype=float)
+        nz = deg > 0
+        invdeg[nz] = 1.0 / deg[nz]
+        Dinv = sp.diags(invdeg, format="csr")
+        return Dinv @ A
+
+    def random_walk_step(self, p, layers: list[str] | list[tuple] | None = None):
+        """
+        One step of random walk distribution: p' = p P. Accepts dense 1D array-like (len = |V_M|).
+        """
+        import numpy as np
+        P = self.transition_matrix(layers)
+        p = np.asarray(p, dtype=float).reshape(1, -1)
+        if p.shape[1] != P.shape[0]:
+            raise ValueError(f"p has length {p.shape[1]} but supra has size {P.shape[0]}")
+        return (p @ P).ravel()
+
+    def diffusion_step(self, x, tau: float = 1.0, kind: str = "comb",
+                       layers: list[str] | list[tuple] | None = None):
+        """
+        One explicit Euler step of diffusion on the supra-graph:
+          x' = x - tau * L x   where L is combinatorial (kind='comb') or normalized (kind='norm')
+        """
+        import numpy as np
+        L = self.supra_laplacian(kind=kind, layers=layers)
+        x = np.asarray(x, dtype=float).reshape(-1)
+        if x.shape[0] != L.shape[0]:
+            raise ValueError(f"x has length {x.shape[0]} but supra has size {L.shape[0]}")
+        return x - tau * (L @ x)
+
+    def algebraic_connectivity(self, layers: list[str] | list[tuple] | None = None):
+        """
+        Second-smallest eigenvalue (Fiedler value) of the combinatorial supra-Laplacian.
+        Returns (lambda_2, fiedler_vector) or (0.0, None) if |V_M| < 2.
+        """
+        import numpy as np
+        from scipy.sparse.linalg import eigsh
+        L = self.supra_laplacian(kind="comb", layers=layers).astype(float)
+        n = L.shape[0]
+        if n < 2:
+            return 0.0, None
+        # Compute k=2 smallest eigenvalues of symmetric PSD L
+        vals, vecs = eigsh(L, k=2, which="SM", return_eigenvectors=True)
+        # Sort just in case
+        order = np.argsort(vals)
+        vals = vals[order]; vecs = vecs[:, order]
+        # lambda_0 ~ 0 (within numerical eps); lambda_1 is algebraic connectivity
+        return float(vals[1]), vecs[:, 1]
+
+    def k_smallest_laplacian_eigs(self, k: int = 6, kind: str = "comb",
+                                  layers: list[str] | list[tuple] | None = None):
+        """
+        Convenience: return k smallest eigenvalues/eigenvectors of supra-Laplacian.
+        """
+        from scipy.sparse.linalg import eigsh
+        import numpy as np
+        if k < 1:
+            raise ValueError("k must be >= 1")
+        L = self.supra_laplacian(kind=kind, layers=layers).astype(float)
+        k = min(k, max(1, L.shape[0]-1))
+        vals, vecs = eigsh(L, k=k, which="SM", return_eigenvectors=True)
+        order = np.argsort(vals)
+        return vals[order], vecs[:, order]
+
+    def dominant_rw_eigenpair(self, layers: list[str] | list[tuple] | None = None):
+        """
+        Dominant eigenpair of the random-walk operator P (right eigenvector). Uses eigsh on (P+P^T)/2 fallback if needed.
+        Returns (lambda_max, v). For an irreducible RW, lambda_max≈1.
+        """
+        import numpy as np
+        from scipy.sparse.linalg import eigsh
+        P = self.transition_matrix(layers).tocsr().astype(float)
+        n = P.shape[0]
+        if n == 0:
+            return 0.0, None
+        # Symmetrize for stable eigensolve; still informative about spectral radius.
+        S = (P + P.T) * 0.5
+        vals, vecs = eigsh(S, k=1, which="LA")
+        return float(vals[0]), vecs[:, 0]
+
+    def sweep_coupling_regime(self, scales, metric="algebraic_connectivity",
+                               layers: list[str] | list[tuple] | None = None):
+        """
+        Scan a list/array of coupling scales (omega) and evaluate a metric on the scaled supra graph.
+        metric options:
+          - "algebraic_connectivity"  -> lambda_2(L_comb(A_intra + A_inter + omega A_coup))
+          - callable(A) -> float      -> custom metric that takes a CSR supra matrix
+        Returns list of floats aligned with 'scales'.
+        """
+        results = []
+        if isinstance(metric, str):
+            metric = metric.strip().lower()
+        for ω in scales:
+            Aω = self.supra_adjacency_scaled(coupling_scale=float(ω), include_inter=True, layers=layers)
+            if metric == "algebraic_connectivity":
+                # Compute λ2 of L = D - Aω
+                from scipy.sparse import diags
+                import numpy as np
+                deg = Aω.sum(axis=1).A.ravel()
+                L = diags(deg) - Aω
+                from scipy.sparse.linalg import eigsh
+                if L.shape[0] < 2:
+                    results.append(0.0)
+                    continue
+                vals, _ = eigsh(L.astype(float), k=2, which="SM")
+                vals.sort()
+                results.append(float(vals[1]))
+            elif callable(metric):
+                results.append(float(metric(Aω)))
+            else:
+                raise ValueError("Unknown metric; use 'algebraic_connectivity' or provide a callable(A)->float)")
+        return results
+
+    ## Layer-aware descriptors
+
+    def _rows_for_layer(self, L):
+        """Return row indices in the supra index that belong to aspect-tuple layer L."""
+        if not isinstance(L, tuple):
+            if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
+                L = self.layer_id_to_tuple(L)
+            else:
+                raise ValueError("Layer id must be an aspect tuple")
+        rows = []
+        for i, (u, α) in enumerate(self._row_to_nl):
+            if α == L:
+                rows.append(i)
+        return rows
+
+    def layer_degree_vectors(self, layers: list[str] | list[tuple] | None = None):
+        """
+        Per-layer degree vectors (intra-layer only). Returns:
+          { layer_tuple: (rows_idx_list, deg_vector_np) }
+        """
+        import numpy as np
+        A_intra = self.build_intra_block(layers).tocsr()
+        out = {}
+        # choose layers subset from current index
+        chosen_layers = self._normalize_layers_arg(layers)
+        if chosen_layers is None:
+            # infer from current index
+            chosen_layers = []
+            seen = set()
+            for _, α in self._row_to_nl:
+                if α not in seen:
+                    chosen_layers.append(α); seen.add(α)
+        for L in chosen_layers:
+            rows = self._rows_for_layer(L)
+            if not rows:
+                continue
+            sub = A_intra[rows][:, rows]
+            deg = np.asarray(sub.sum(axis=1)).ravel()
+            out[L] = (rows, deg)
+        return out
+
+    def participation_coefficient(self, layers: list[str] | list[tuple] | None = None):
+        """
+        Participation coefficient per node (Guimerà & Amaral style on multiplex):
+          P_u = 1 - sum_L (k_u^L / k_u)^2, using intra-layer degrees only.
+        Returns dict[node -> float].
+        """
+        import numpy as np
+        # build per-layer deg vectors and aggregate per node
+        layer_deg = self.layer_degree_vectors(layers)
+        # aggregate k_u over layers
+        per_node_total = {}
+        per_node_by_layer = {}
+        for L, (rows, deg) in layer_deg.items():
+            for i, r in enumerate(rows):
+                u, _ = self._row_to_nl[r]
+                per_node_total[u] = per_node_total.get(u, 0.0) + float(deg[i])
+                per_node_by_layer.setdefault(u, {})[L] = float(deg[i])
+        P = {}
+        for u, k in per_node_total.items():
+            if k <= 0:
+                P[u] = 0.0
+                continue
+            s = 0.0
+            for L, kL in per_node_by_layer[u].items():
+                x = kL / k
+                s += x * x
+            P[u] = 1.0 - s
+        return P
+
+    def versatility(self, layers: list[str] | list[tuple] | None = None):
+        """
+        Simple versatility proxy: dominant eigenvector of supra adjacency, summed over
+        node's layer-copies. Returns dict[node -> float] normalized to unit max.
+        """
+        import numpy as np
+        from scipy.sparse.linalg import eigsh
+        A = self.supra_adjacency(layers).astype(float)
+        n = A.shape[0]
+        if n == 0:
+            return {}
+        # largest eigenpair of symmetric A
+        vals, vecs = eigsh(A, k=1, which="LA")
+        v = vecs[:, 0]
+        per_node = {}
+        for i, (u, _) in enumerate(self._row_to_nl):
+            per_node[u] = per_node.get(u, 0.0) + float(abs(v[i]))
+        # normalize
+        m = max(per_node.values()) if per_node else 1.0
+        if m > 0:
+            for u in per_node:
+                per_node[u] /= m
+        return per_node
+
+    ## Multislice modularity (scorer)
+
+    def multislice_modularity(self, partition, *, gamma: float = 1.0, omega: float = 1.0,
+                              include_inter: bool = False,
+                              layers: list[str] | list[tuple] | None = None):
+        """
+        Mucha et al. multislice modularity (scorer only).
+        Uses: intra-layer A and configuration null model per layer; coupling edges scaled by 'omega'.
+        Optionally includes inter-layer (non-diagonal) edges if include_inter=True.
+        Args:
+          partition: list/array of community ids, length = |V_M| in current index.
+          gamma: resolution parameter applied uniformly to all layers.
+          omega: coupling strength multiplying the coupling block (ignores stored coupling weights).
+          include_inter: whether to include inter-layer (non-diagonal) edges in A (default False).
+          layers: optional subset of layers to score on (will rebuild the supra index).
+        Returns:
+          Q (float)
+        """
+        import numpy as np
+        import scipy.sparse as sp
+        # Ensure index over the right layers
+        layers_t = self._normalize_layers_arg(layers)
+        self.ensure_node_layer_index(layers_t)
+        n = len(self._row_to_nl)
+        part = np.asarray(partition)
+        if part.shape[0] != n:
+            raise ValueError(f"partition length {part.shape[0]} != |V_M| {n}")
+        # Build A = A_intra + (include_inter ? A_inter : 0) + omega * (binary coupling structure)
+        A_intra = self.build_intra_block(layers_t).tocsr()
+        A_coup  = self.build_coupling_block(layers_t).tocsr()
+        # binarize coupling structure then scale by omega
+        if A_coup.nnz:
+            A_coup = (A_coup > 0).astype(float) * float(omega)
+        A = A_intra.copy()
+        if include_inter:
+            A = A + self.build_inter_block(layers_t).tocsr()
+        A = A + A_coup
+        # 2μ = total edge weight in supra (sum of all entries)
+        two_mu = float(A.sum())
+        if two_mu <= 0:
+            return 0.0
+        # Build expected term (configuration null model) per layer block
+        B = A.tolil()
+        layer_deg = self.layer_degree_vectors(layers_t)  # degrees from intra only
+        # map row -> layer to avoid repeated lookups
+        row_layer = [α for (_, α) in self._row_to_nl]
+        # For each layer L: subtract gamma * (k_i^L k_j^L)/(2 m_L) within its block
+        for L, (rows, deg) in layer_deg.items():
+            mL2 = float(deg.sum())  # = 2 m_L
+            if mL2 <= 0:
+                continue
+            # outer product deg_i deg_j / (2 m_L)
+            # Use sparse rank-1: for each i in rows, for each j in rows
+            # But we only need to subtract for pairs that share a community later; to keep simple and general,
+            # build a dense block if small, else sparse updates.
+            if len(rows) <= 2048:
+                import numpy as np
+                expected = gamma * (np.outer(deg, deg) / mL2)
+                # subtract into B
+                for ii, ri in enumerate(rows):
+                    # vectorized subtract on row
+                    cols = rows
+                    B[ri, cols] = (B[ri, cols]).toarray().ravel() - expected[ii, :]
+            else:
+                # large layer: fall back to sparse updates
+                scale = gamma / mL2
+                for a, ri in enumerate(rows):
+                    if deg[a] == 0:
+                        continue
+                    valrow = (deg[a] * deg) * scale  # numpy broadcasting
+                    B[ri, rows] = (B[ri, rows]).toarray().ravel() - valrow
+        B = B.tocsr()
+        # Q = (1 / (2μ)) * sum_{i,j} B_{ij} δ(g_i, g_j)
+        # Compute by iterating over nonzeros in B and summing those within same community
+        rows, cols = B.nonzero()
+        data = B.data
+        mask = (part[rows] == part[cols])
+        Q = float(data[mask].sum()) / two_mu
+        return Q
+
     # ID + entity ensure helpers
 
     def _get_next_edge_id(self) -> str:
         """INTERNAL: Generate a unique edge ID for parallel edges.
 
         Returns
-        -------
+        ---
         str
             Fresh ``edge_<n>`` identifier (monotonic counter).
 
@@ -1550,7 +2609,7 @@ class Graph:
         """INTERNAL: Ensure the vertex attribute table exists with a canonical schema.
 
         Notes
-        -----
+        -
         - Creates an empty Polars DF [DataFrame] with a single ``Utf8`` ``vertex_id`` column
         if missing or malformed.
 
@@ -1563,7 +2622,7 @@ class Graph:
         """INTERNAL: Ensure a row for ``vertex_id`` exists in the vertex attribute DF.
 
         Notes
-        -----
+        -
         - Appends a new row with ``vertex_id`` and ``None`` for other columns if absent.
         - Preserves existing schema and columns.
 
@@ -1673,7 +2732,7 @@ class Graph:
         """Add (or upsert) a vertex and optionally attach it to a layer.
 
         Parameters
-        ----------
+        --
         vertex_id : str
             vertex ID (must be unique across entities).
         layer : str, optional
@@ -1682,12 +2741,12 @@ class Graph:
             Pure vertex attributes to store.
 
         Returns
-        -------
+        ---
         str
             The vertex ID (echoed).
 
         Notes
-        -----
+        -
         - Ensures a row exists in the Polars DF [DataFrame] for attributes.
         - Resizes the incidence matrix if needed.
 
@@ -1730,6 +2789,18 @@ class Graph:
             layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
         layers[layer]["vertices"].add(vertex_id)
 
+        # Multilayer presence sync:
+        # - Track V (true vertices only)
+        # - If node_aligned: ensure presence across all layers
+        # - Else, if we are in 1-aspect shim mode and a layer was given, add (u, (layer,))
+        if self.entity_types.get(vertex_id) == "vertex":
+            self._V.add(vertex_id)
+            if self.node_aligned and self._all_layers:
+                for α in self._all_layers:
+                    self._VM.add((vertex_id, α))
+            elif layer is not None and len(self.aspects) == 1 and self._legacy_single_aspect_enabled:
+                self._VM.add((vertex_id, (layer,)))
+
         # Ensure vertex_attributes has a row for this vertex (even with no attrs)
         self._ensure_vertex_table()
         self._ensure_vertex_row(vertex_id)
@@ -1762,7 +2833,7 @@ class Graph:
         """Add an **edge entity** (vertex-edge hybrid) that can connect to vertices/edges.
 
         Parameters
-        ----------
+        --
         edge_entity_id : str
             Entity ID to register as type ``'edge'`` in the entity set.
         layer : str, optional
@@ -1771,7 +2842,7 @@ class Graph:
             Attributes stored in the vertex attribute DF (treated like vertices).
 
         Returns
-        -------
+        ---
         str
             The edge-entity ID.
 
@@ -1810,12 +2881,12 @@ class Graph:
         """INTERNAL: Register an **edge-entity** so edges can attach to it (vertex-edge mode).
 
         Parameters
-        ----------
+        --
         edge_id : str
             Identifier to insert into the entity index as type ``'edge'``.
 
         Notes
-        -----
+        -
         - Adds a new entity row and resizes the DOK incidence matrix accordingly.
 
         """
@@ -1859,7 +2930,7 @@ class Graph:
         """Add or update a binary edge between two entities.
 
         Parameters
-        ----------
+        --
         source : str
             Source entity ID (vertex or edge-entity for vertex-edge mode).
         target : str
@@ -1885,19 +2956,19 @@ class Graph:
             Pure edge attributes to upsert.
 
         Returns
-        -------
+        ---
         str
             The edge ID (new or updated).
 
         Raises
-        ------
+        --
         ValueError
             If ``propagate`` or ``edge_type`` is invalid.
         TypeError
             If ``weight`` is not numeric.
 
         Notes
-        -----
+        -
         - Directed edges write ``+weight`` at source row and ``-weight`` at target row.
         - Undirected edges write ``+weight`` at both endpoints.
         - Updating an existing edge ID overwrites its matrix column and metadata.
@@ -2119,7 +3190,7 @@ class Graph:
         """Add a parallel edge (same endpoints, different ID).
 
         Parameters
-        ----------
+        --
         source : str
         target : str
         weight : float, optional
@@ -2127,7 +3198,7 @@ class Graph:
             Pure edge attributes.
 
         Returns
-        -------
+        ---
         str
             The new edge ID.
 
@@ -2160,7 +3231,7 @@ class Graph:
         """Create a k-ary hyperedge as a single incidence column.
 
         Modes
-        -----
+        -
         - **Undirected**: pass ``members`` (>=2). Each member gets ``+weight``.
         - **Directed**: pass ``head`` and ``tail`` (both non-empty, disjoint).
         Head gets ``+weight``; tail gets ``-weight``.
@@ -2342,14 +3413,14 @@ class Graph:
         """Attach an existing edge to a layer (no weight changes).
 
         Parameters
-        ----------
+        --
         lid : str
             Layer ID.
         eid : str
             Edge ID.
 
         Raises
-        ------
+        --
         KeyError
             If the layer does not exist.
 
@@ -2362,7 +3433,7 @@ class Graph:
         """INTERNAL: Add an edge to all layers that already contain **both** endpoints.
 
         Parameters
-        ----------
+        --
         edge_id : str
         source : str
         target : str
@@ -2377,7 +3448,7 @@ class Graph:
         insert the missing endpoint into that layer.
 
         Parameters
-        ----------
+        --
         edge_id : str
         source : str
         target : str
@@ -2400,20 +3471,20 @@ class Graph:
         of vertex identifiers.
 
         Parameters
-        ----------
+        --
         vertices : str | Iterable[str] | None
             - A single vertex ID (string).
             - An iterable of vertex IDs (e.g., list, tuple, set).
             - `None` is allowed and will return an empty set.
 
         Returns
-        -------
+        ---
         set[str]
             A set of vertex identifiers. If `vertices` is `None`, returns an
             empty set. If a single vertex is provided, returns a one-element set.
 
         Notes
-        -----
+        -
         - Strings are treated as **single vertex IDs**, not iterables.
         - If the argument is neither iterable nor a string, it is wrapped in a set.
         - Used internally by API methods that accept flexible vertex arguments.
@@ -3152,16 +4223,16 @@ class Graph:
         """Remove an edge (binary or hyperedge) from the graph.
 
         Parameters
-        ----------
+        --
         edge_id : str
 
         Raises
-        ------
+        --
         KeyError
             If the edge is not found.
 
         Notes
-        -----
+        -
         - Physically removes the incidence column (no CSR round-trip).
         - Cleans edge attributes, layer memberships, and per-layer entries.
 
@@ -3238,16 +4309,16 @@ class Graph:
         """Remove a vertex and all incident edges (binary + hyperedges).
 
         Parameters
-        ----------
+        --
         vertex_id : str
 
         Raises
-        ------
+        --
         KeyError
             If the vertex is not found.
 
         Notes
-        -----
+        -
         - Rebuilds entity indexing and shrinks the incidence matrix accordingly.
 
         """
@@ -3333,18 +4404,18 @@ class Graph:
         """Remove a non-default layer and its per-layer attributes.
 
         Parameters
-        ----------
+        --
         layer_id : str
 
         Raises
-        ------
+        --
         ValueError
             If attempting to remove the internal default layer.
         KeyError
             If the layer does not exist.
 
         Notes
-        -----
+        -
         - Does not delete vertices/edges globally; only membership and layer metadata.
 
         """
@@ -3516,7 +4587,7 @@ class Graph:
         """Set a graph-level attribute.
 
         Parameters
-        ----------
+        --
         key : str
         value : Any
 
@@ -3527,12 +4598,12 @@ class Graph:
         """Get a graph-level attribute.
 
         Parameters
-        ----------
+        --
         key : str
         default : Any, optional
 
         Returns
-        -------
+        ---
         Any
 
         """
@@ -3580,13 +4651,13 @@ class Graph:
         """Get a single vertex attribute (scalar) or default if missing.
 
         Parameters
-        ----------
+        --
         vertex_id : str
         key : str
         default : Any, optional
 
         Returns
-        -------
+        ---
         Any
 
         """
@@ -3603,18 +4674,18 @@ class Graph:
         """(Legacy alias) Get a single vertex attribute from the Polars DF [DataFrame].
 
         Parameters
-        ----------
+        --
         vertex_id : str
         attribute : str or enum.Enum
             Column name or Enum with ``.value``.
 
         Returns
-        -------
+        ---
         Any or None
             Scalar value if present, else ``None``.
 
         See Also
-        --------
+        
         get_attr_vertex
 
         """
@@ -3638,7 +4709,7 @@ class Graph:
         """Upsert pure edge attributes (non-structural) into the edge DF.
 
         Parameters
-        ----------
+        --
         edge_id : str
         **attrs
             Key/value attributes. Structural keys are ignored.
@@ -3656,13 +4727,13 @@ class Graph:
         """Get a single edge attribute (scalar) or default if missing.
 
         Parameters
-        ----------
+        --
         edge_id : str
         key : str
         default : Any, optional
 
         Returns
-        -------
+        ---
         Any
 
         """
@@ -3679,18 +4750,18 @@ class Graph:
         """(Legacy alias) Get a single edge attribute from the Polars DF [DataFrame].
 
         Parameters
-        ----------
+        --
         edge_id : str
         attribute : str or enum.Enum
             Column name or Enum with ``.value``.
 
         Returns
-        -------
+        ---
         Any or None
             Scalar value if present, else ``None``.
 
         See Also
-        --------
+        
         get_attr_edge
 
         """
@@ -3714,7 +4785,7 @@ class Graph:
         """Upsert pure layer attributes.
 
         Parameters
-        ----------
+        --
         layer_id : str
         **attrs
             Key/value attributes. Structural keys are ignored.
@@ -3728,13 +4799,13 @@ class Graph:
         """Get a single layer attribute (scalar) or default if missing.
 
         Parameters
-        ----------
+        --
         layer_id : str
         key : str
         default : Any, optional
 
         Returns
-        -------
+        ---
         Any
 
         """
@@ -3751,7 +4822,7 @@ class Graph:
         """Upsert per-layer attributes for a specific edge.
 
         Parameters
-        ----------
+        --
         layer_id : str
         edge_id : str
         **attrs
@@ -3805,14 +4876,14 @@ class Graph:
         """Get a per-layer attribute for an edge.
 
         Parameters
-        ----------
+        --
         layer_id : str
         edge_id : str
         key : str
         default : Any, optional
 
         Returns
-        -------
+        ---
         Any
 
         """
@@ -3829,18 +4900,18 @@ class Graph:
         """Set a legacy per-layer weight override for an edge.
 
         Parameters
-        ----------
+        --
         layer_id : str
         edge_id : str
         weight : float
 
         Raises
-        ------
+        --
         KeyError
             If the layer or edge does not exist.
 
         See Also
-        --------
+        
         get_effective_edge_weight
 
         """
@@ -3854,13 +4925,13 @@ class Graph:
         """Resolve the effective weight for an edge, optionally within a layer.
 
         Parameters
-        ----------
+        --
         edge_id : str
         layer : str, optional
             If provided, return the layer override if present; otherwise global weight.
 
         Returns
-        -------
+        ---
         float
             Effective weight.
 
@@ -3891,7 +4962,7 @@ class Graph:
         """Audit attribute tables for extra/missing rows and invalid edge-layer pairs.
 
         Returns
-        -------
+        ---
         dict
             {
             'extra_vertex_rows': list[str],
@@ -3947,17 +5018,17 @@ class Graph:
         """INTERNAL: Infer an appropriate Polars dtype for a Python value.
 
         Parameters
-        ----------
+        --
         v : Any
 
         Returns
-        -------
+        ---
         polars.datatypes.DataType
             One of ``pl.Null``, ``pl.Boolean``, ``pl.Int64``, ``pl.Float64``,
             ``pl.Utf8``, ``pl.Binary``, ``pl.Object``, or ``pl.List(inner)``.
 
         Notes
-        -----
+        -
         - Enums are mapped to ``pl.Object`` (useful for categorical enums).
         - Lists/tuples infer inner dtype from the first element (defaults to ``Utf8``).
 
@@ -3989,19 +5060,19 @@ class Graph:
         """INTERNAL: Create/align attribute columns and dtypes to accept ``attrs``.
 
         Parameters
-        ----------
+        --
         df : polars.DataFrame
             Existing attribute table.
         attrs : dict
             Incoming key/value pairs to upsert.
 
         Returns
-        -------
+        ---
         polars.DataFrame
             DataFrame with columns added/cast so inserts/updates won't hit ``Null`` dtypes.
 
         Notes
-        -----
+        -
         - New columns are created with the inferred dtype.
         - If a column is ``Null`` and the incoming value is not, it is cast to the inferred dtype.
         - If dtypes conflict (mixed over time), both sides upcast to ``Utf8`` to avoid schema errors.
@@ -4026,7 +5097,7 @@ class Graph:
         """INTERNAL: Upsert a row in a Polars DF [DataFrame] using explicit key columns.
 
         Keys
-        ----
+        
         - ``vertex_attributes``           → key: ``["vertex_id"]``
         - ``edge_attributes``             → key: ``["edge_id"]``
         - ``layer_attributes``            → key: ``["layer_id"]``
@@ -4262,12 +5333,12 @@ class Graph:
         """Return the full attribute dict for a single edge.
 
         Parameters
-        ----------
+        --
         edge : int | str
             Edge index (int) or edge id (str).
 
         Returns
-        -------
+        ---
         dict
             Attribute dictionary for that edge. {} if not found.
 
@@ -4298,12 +5369,12 @@ class Graph:
         """Return the full attribute dict for a single vertex.
 
         Parameters
-        ----------
+        --
         vertex : str
             Vertex id.
 
         Returns
-        -------
+        ---
         dict
             Attribute dictionary for that vertex. {} if not found.
 
@@ -4328,21 +5399,21 @@ class Graph:
         """Retrieve edge attributes as a dictionary.
 
         Parameters
-        ----------
+        --
         indexes : Iterable[int] | None, optional
             A list or iterable of edge indices to retrieve attributes for.
             - If `None` (default), attributes for **all** edges are returned.
             - If provided, only those edges will be included in the output.
 
         Returns
-        -------
+        ---
         dict[str, dict]
             A dictionary mapping `edge_id` → `attribute_dict`, where:
             - `edge_id` is the unique string identifier of the edge.
             - `attribute_dict` is a dictionary of attribute names and values.
 
         Notes
-        -----
+        -
         - This function reads directly from `self.edge_attributes`, which should be
         a Polars DataFrame where each row corresponds to an edge.
         - Useful for bulk inspection, serialization, or analytics without looping manually.
@@ -4357,21 +5428,21 @@ class Graph:
         """Retrieve vertex (vertex) attributes as a dictionary.
 
         Parameters
-        ----------
+        --
         vertices : Iterable[str] | None, optional
             A list or iterable of vertex IDs to retrieve attributes for.
             - If `None` (default), attributes for **all** verices are returned.
             - If provided, only those verices will be included in the output.
 
         Returns
-        -------
+        ---
         dict[str, dict]
             A dictionary mapping `vertex_id` → `attribute_dict`, where:
             - `vertex_id` is the unique string identifier of the vertex.
             - `attribute_dict` is a dictionary of attribute names and values.
 
         Notes
-        -----
+        -
         - This reads from `self.vertex_attributes`, which stores per-vertex metadata.
         - Use this for bulk data extraction instead of repeated single-vertex calls.
 
@@ -4385,7 +5456,7 @@ class Graph:
         """Extract a specific attribute column for all edges.
 
         Parameters
-        ----------
+        --
         key : str
             Attribute column name to extract from `self.edge_attributes`.
         default : Any, optional
@@ -4393,12 +5464,12 @@ class Graph:
             does not have a value. Defaults to `None`.
 
         Returns
-        -------
+        ---
         dict[str, Any]
             A dictionary mapping `edge_id` → attribute value.
 
         Notes
-        -----
+        -
         - If the requested column is missing, all edges return `default`.
         - This is useful for quick property lookups (e.g., weight, label, type).
 
@@ -4415,19 +5486,19 @@ class Graph:
         """Retrieve all edges where a given attribute equals a specific value.
 
         Parameters
-        ----------
+        --
         key : str
             Attribute column name to filter on.
         value : Any
             Value to match.
 
         Returns
-        -------
+        ---
         list[str]
             A list of edge IDs where the attribute `key` equals `value`.
 
         Notes
-        -----
+        -
         - If the attribute column does not exist, an empty list is returned.
         - Comparison is exact; consider normalizing types before calling.
 
@@ -4441,7 +5512,7 @@ class Graph:
         """Return a shallow copy of the graph-level attributes dictionary.
 
         Returns
-        -------
+        ---
         dict
             A dictionary of global metadata describing the graph as a whole.
             Typical keys might include:
@@ -4451,7 +5522,7 @@ class Graph:
             - `"created_at"` : Timestamp of graph creation.
 
         Notes
-        -----
+        -
         - Returns a **shallow copy** to prevent external mutation of internal state.
         - Graph-level attributes are meant to store metadata not tied to individual
         verices or edges (e.g., versioning info, provenance, global labels).
@@ -4502,7 +5573,7 @@ class Graph:
                         self.layer_edge_weights[layer_id][r["edge_id"]] = float(w)
             return
 
-        # schema alignment using your _ensure_attr_columns + Utf8 upcast rule
+        # schema alignment using _ensure_attr_columns + Utf8 upcast rule
         need_cols = {c: None for c in add_df.columns if c not in df.columns}
         if need_cols:
             df = self._ensure_attr_columns(df, need_cols)  # adds missing columns to df
@@ -4543,12 +5614,12 @@ class Graph:
         """Return the vertex ID corresponding to a given internal index.
 
         Parameters
-        ----------
+        --
         index : int
             The internal vertex index.
 
         Returns
-        -------
+        ---
         str
             The vertex ID.
 
@@ -4559,12 +5630,12 @@ class Graph:
         """Return edge endpoints in a canonical form.
 
         Parameters
-        ----------
+        --
         index : int
             Internal edge index.
 
         Returns
-        -------
+        ---
         tuple[frozenset, frozenset]
             (S, T) where S and T are frozensets of vertex IDs.
             - For directed binary edges: ({u}, {v})
@@ -4607,12 +5678,12 @@ class Graph:
         """Return all edge indices incident to a given vertex.
 
         Parameters
-        ----------
+        --
         vertex_id : str
             vertex identifier.
 
         Returns
-        -------
+        ---
         list[int]
             List of edge indices incident to the vertex.
 
@@ -4650,11 +5721,11 @@ class Graph:
         """Check if an edge is directed (per-edge flag overrides graph default).
 
         Parameters
-        ----------
+        --
         edge_id : str
 
         Returns
-        -------
+        ---
         bool
 
         """
@@ -4664,14 +5735,14 @@ class Graph:
         """Test for the existence of an edge.
 
         Parameters
-        ----------
+        --
         source : str
         target : str
         edge_id : str, optional
             If provided, check for this specific ID.
 
         Returns
-        -------
+        ---
         bool
 
         """
@@ -4688,11 +5759,11 @@ class Graph:
         """Test for the existence of a vertex.
 
         Parameters
-        ----------
+        --
         vertex_id : str
 
         Returns
-        -------
+        ---
         bool
 
         """
@@ -4702,12 +5773,12 @@ class Graph:
         """List all edge IDs between two endpoints.
 
         Parameters
-        ----------
+        --
         source : str
         target : str
 
         Returns
-        -------
+        ---
         list[str]
             Edge IDs (may be empty).
 
@@ -4722,11 +5793,11 @@ class Graph:
         """Degree of a vertex or edge-entity (number of incident non-zero entries).
 
         Parameters
-        ----------
+        --
         entity_id : str
 
         Returns
-        -------
+        ---
         int
 
         """
@@ -4741,7 +5812,7 @@ class Graph:
         """Get all vertex IDs (excluding edge-entities).
 
         Returns
-        -------
+        ---
         list[str]
 
         """
@@ -4751,7 +5822,7 @@ class Graph:
         """Get all edge IDs.
 
         Returns
-        -------
+        ---
         list[str]
 
         """
@@ -4761,7 +5832,7 @@ class Graph:
         """Materialize (source, target, edge_id, weight) for binary/vertex-edge edges.
 
         Returns
-        -------
+        ---
         list[tuple[str, str, str, float]]
 
         """
@@ -4775,7 +5846,7 @@ class Graph:
         """List IDs of directed edges.
 
         Returns
-        -------
+        ---
         list[str]
 
         """
@@ -4786,7 +5857,7 @@ class Graph:
         """List IDs of undirected edges.
 
         Returns
-        -------
+        ---
         list[str]
 
         """
@@ -4799,7 +5870,7 @@ class Graph:
         """Count vertices (excluding edge-entities).
 
         Returns
-        -------
+        ---
         int
 
         """
@@ -4809,7 +5880,7 @@ class Graph:
         """Count edges (columns in the incidence matrix).
 
         Returns
-        -------
+        ---
         int
 
         """
@@ -4819,7 +5890,7 @@ class Graph:
         """Count unique entities present across all layers (union of memberships).
 
         Returns
-        -------
+        ---
         int
 
         """
@@ -4832,7 +5903,7 @@ class Graph:
         """Count unique edges present across all layers (union of memberships).
 
         Returns
-        -------
+        ---
         int
 
         """
@@ -4845,13 +5916,13 @@ class Graph:
         """Iterate over all edges that are **incoming** to one or more vertices.
 
         Parameters
-        ----------
+        --
         vertices : str | Iterable[str]
             A single vertex ID or an iterable of vertex IDs. All edges whose
             **target set** intersects with this set will be yielded.
 
         Yields
-        ------
+        --
         tuple[int, tuple[frozenset, frozenset]]
             Tuples of the form `(edge_index, (S, T))`, where:
             - `edge_index` : int — internal integer index of the edge.
@@ -4859,14 +5930,14 @@ class Graph:
             - `T` : frozenset[str] — set of target/tail verices.
 
         Behavior
-        --------
+        
         - **Directed binary edges**: returned if any vertex is in the target (`T`).
         - **Directed hyperedges**: returned if any vertex is in the tail set.
         - **Undirected edges/hyperedges**: returned if any vertex is in
         the edge's member set (`S ∪ T`).
 
         Notes
-        -----
+        -
         - Works with binary and hyperedges.
         - Undirected edges appear in both `in_edges()` and `out_edges()`.
         - The returned `(S, T)` is the canonical form from `get_edge()`.
@@ -4890,13 +5961,13 @@ class Graph:
         """Iterate over all edges that are **outgoing** from one or more vertices.
 
         Parameters
-        ----------
+        --
         vertices : str | Iterable[str]
             A single vertex ID or an iterable of vertex IDs. All edges whose
             **source set** intersects with this set will be yielded.
 
         Yields
-        ------
+        --
         tuple[int, tuple[frozenset, frozenset]]
             Tuples of the form `(edge_index, (S, T))`, where:
             - `edge_index` : int — internal integer index of the edge.
@@ -4904,14 +5975,14 @@ class Graph:
             - `T` : frozenset[str] — set of target/tail verices.
 
         Behavior
-        --------
+        
         - **Directed binary edges**: returned if any vertex is in the source (`S`).
         - **Directed hyperedges**: returned if any vertex is in the head set.
         - **Undirected edges/hyperedges**: returned if any vertex is in
         the edge's member set (`S ∪ T`).
 
         Notes
-        -----
+        -
         - Works with binary and hyperedges.
         - Undirected edges appear in both `out_edges()` and `in_edges()`.
         - The returned `(S, T)` is the canonical form from `get_edge()`.
@@ -4968,7 +6039,7 @@ class Graph:
         """All vertices as a tuple.
 
         Returns
-        -------
+        ---
         tuple
             Tuple of all vertex IDs in the graph.
 
@@ -4980,7 +6051,7 @@ class Graph:
         """All edges as a tuple.
 
         Returns
-        -------
+        ---
         tuple
             Tuple of all edge identifiers (whatever `self.edges()` yields).
 
@@ -5135,12 +6206,12 @@ class Graph:
         """Read-only vertex attribute table.
 
         Parameters
-        ----------
+        --
         copy : bool, optional
             Return a cloned DF.
 
         Returns
-        -------
+        ---
         polars.DataFrame
             Columns: ``vertex_id`` plus pure attributes (may be empty).
 
@@ -5154,12 +6225,12 @@ class Graph:
         """Read-only layer attribute table.
 
         Parameters
-        ----------
+        --
         copy : bool, optional
             Return a cloned DF.
 
         Returns
-        -------
+        ---
         polars.DataFrame
             Columns: ``layer_id`` plus pure attributes (may be empty).
 
@@ -5175,11 +6246,11 @@ class Graph:
         """Vertices in a layer.
 
         Parameters
-        ----------
+        --
         layer_id : str
 
         Returns
-        -------
+        ---
         set[str]
 
         """
@@ -5189,11 +6260,11 @@ class Graph:
         """Edges in a layer.
 
         Parameters
-        ----------
+        --
         layer_id : str
 
         Returns
-        -------
+        ---
         set[str]
 
         """
@@ -5203,11 +6274,11 @@ class Graph:
         """Union of multiple layers.
 
         Parameters
-        ----------
+        --
         layer_ids : Iterable[str]
 
         Returns
-        -------
+        ---
         dict
             ``{"vertices": set[str], "edges": set[str]}``
 
@@ -5229,11 +6300,11 @@ class Graph:
         """Intersection of multiple layers.
 
         Parameters
-        ----------
+        --
         layer_ids : Iterable[str]
 
         Returns
-        -------
+        ---
         dict
             ``{"vertices": set[str], "edges": set[str]}``
 
@@ -5267,17 +6338,17 @@ class Graph:
         """Set difference: elements in ``layer1_id`` not in ``layer2_id``.
 
         Parameters
-        ----------
+        --
         layer1_id : str
         layer2_id : str
 
         Returns
-        -------
+        ---
         dict
             ``{"vertices": set[str], "edges": set[str]}``
 
         Raises
-        ------
+        --
         KeyError
             If either layer is missing.
 
@@ -5297,7 +6368,7 @@ class Graph:
         """Create a new layer from the result of a set operation.
 
         Parameters
-        ----------
+        --
         result_layer_id : str
         operation_result : dict
             Output of ``layer_union``/``layer_intersection``/``layer_difference``.
@@ -5305,12 +6376,12 @@ class Graph:
             Pure layer attributes.
 
         Returns
-        -------
+        ---
         str
             The created layer ID.
 
         Raises
-        ------
+        --
         ValueError
             If the target layer already exists.
 
@@ -5338,7 +6409,7 @@ class Graph:
         """Locate where an edge exists across layers.
 
         Parameters
-        ----------
+        --
         edge_id : str, optional
             If provided, match by ID (any kind: binary/vertex-edge/hyper).
         source : str, optional
@@ -5350,13 +6421,13 @@ class Graph:
             When endpoint matching, allow undirected symmetric matches.
 
         Returns
-        -------
+        ---
         list[str] or dict[str, list[str]]
             If ``edge_id`` given: list of layer IDs.
             Else: ``{layer_id: [edge_id, ...]}``.
 
         Raises
-        ------
+        --
         ValueError
             If both modes (ID and endpoints) are provided or neither is valid.
 
@@ -5404,7 +6475,7 @@ class Graph:
         """Locate layers containing a hyperedge with exactly these sets.
 
         Parameters
-        ----------
+        --
         members : Iterable[str], optional
             Undirected member set (exact match).
         head : Iterable[str], optional
@@ -5414,12 +6485,12 @@ class Graph:
         include_default : bool, optional
 
         Returns
-        -------
+        ---
         dict[str, list[str]]
             ``{layer_id: [edge_id, ...]}``.
 
         Raises
-        ------
+        --
         ValueError
             For invalid combinations or empty sets.
 
@@ -5465,12 +6536,12 @@ class Graph:
         """List layers containing a specific vertex.
 
         Parameters
-        ----------
+        --
         vertex_id : str
         include_default : bool, optional
 
         Returns
-        -------
+        ---
         list[str]
 
         """
@@ -5484,12 +6555,12 @@ class Graph:
         """Edges present in at least ``min_layers`` layers.
 
         Parameters
-        ----------
+        --
         min_layers : int, optional
         include_default : bool, optional
 
         Returns
-        -------
+        ---
         dict[str, int]
             ``{edge_id: count}``.
 
@@ -5507,15 +6578,15 @@ class Graph:
         """Edges that appear **only** in the specified layer.
 
         Parameters
-        ----------
+        --
         layer_id : str
 
         Returns
-        -------
+        ---
         set[str]
 
         Raises
-        ------
+        --
         KeyError
             If the layer does not exist.
 
@@ -5538,18 +6609,18 @@ class Graph:
         """Compute changes between consecutive layers in a temporal sequence.
 
         Parameters
-        ----------
+        --
         ordered_layers : list[str]
             Layer IDs in chronological order.
         metric : {'edge_change', 'vertex_change'}, optional
 
         Returns
-        -------
+        ---
         list[dict[str, int]]
             Per-step dictionaries with keys: ``'added'``, ``'removed'``, ``'net_change'``.
 
         Raises
-        ------
+        --
         ValueError
             If fewer than two layers are provided.
         KeyError
@@ -5589,7 +6660,7 @@ class Graph:
         """Create a new layer by aggregating multiple source layers.
 
         Parameters
-        ----------
+        --
         source_layer_ids : list[str]
         target_layer_id : str
         method : {'union', 'intersection'}, optional
@@ -5599,12 +6670,12 @@ class Graph:
             Pure layer attributes.
 
         Returns
-        -------
+        ---
         str
             The created layer ID.
 
         Raises
-        ------
+        --
         ValueError
             For unknown methods or missing source layers, or if target exists.
 
@@ -5628,11 +6699,11 @@ class Graph:
         """Basic per-layer statistics.
 
         Parameters
-        ----------
+        --
         include_default : bool, optional
 
         Returns
-        -------
+        ---
         dict[str, dict]
             ``{layer_id: {'vertices': int, 'edges': int, 'attributes': dict}}``.
 
@@ -5652,11 +6723,11 @@ class Graph:
         """Neighbors of an entity (vertex or edge-entity).
 
         Parameters
-        ----------
+        --
         entity_id : str
 
         Returns
-        -------
+        ---
         list[str]
             Adjacent entities. For hyperedges, uses head/tail orientation.
 
@@ -5690,11 +6761,11 @@ class Graph:
         """Out-neighbors of a vertex under directed semantics.
 
         Parameters
-        ----------
+        --
         vertex_id : str
 
         Returns
-        -------
+        ---
         list[str]
 
         """
@@ -5724,11 +6795,11 @@ class Graph:
         """Successors of a vertex under directed semantics.
 
         Parameters
-        ----------
+        --
         vertex_id : str
 
         Returns
-        -------
+        ---
         list[str]
 
         """
@@ -5758,11 +6829,11 @@ class Graph:
         """In-neighbors of a vertex under directed semantics.
 
         Parameters
-        ----------
+        --
         vertex_id : str
 
         Returns
-        -------
+        ---
         list[str]
 
         """
@@ -5792,11 +6863,11 @@ class Graph:
         """In-neighbors of a vertex under directed semantics.
 
         Parameters
-        ----------
+        --
         vertex_id : str
 
         Returns
-        -------
+        ---
         list[str]
 
         """
@@ -5828,25 +6899,25 @@ class Graph:
         """Create a new graph containing only a specified subset of edges.
 
         Parameters
-        ----------
+        --
         edges : Iterable[str] | Iterable[int]
             Edge identifiers (strings) or edge indices (integers) to retain
             in the subgraph.
 
         Returns
-        -------
+        ---
         Graph
             A new `Graph` instance containing only the selected edges and the
             vertices incident to them.
 
         Behavior
-        --------
+        
         - Copies the current graph and deletes all edges **not** in the provided set.
         - Optionally, you can prune orphaned vertices (i.e., vertices not incident
         to any remaining edge) — this is generally recommended for consistency.
 
         Notes
-        -----
+        -
         - Attributes associated with remaining edges and vertices are preserved.
         - Hyperedges are supported: if a hyperedge is in the provided set, all
         its members are retained.
@@ -5932,24 +7003,24 @@ class Graph:
         """Create a vertex-induced subgraph.
 
         Parameters
-        ----------
+        --
         vertices : Iterable[str]
             A set or list of vertex identifiers to keep in the subgraph.
 
         Returns
-        -------
+        ---
         Graph
             A new `Graph` containing only the specified vertices and any edges
             for which **all** endpoints are within this set.
 
         Behavior
-        --------
+        
         - Copies the current graph and removes edges with any endpoint outside
         the provided vertex set.
         - Removes all vertices not listed in `vertices`.
 
         Notes
-        -----
+        -
         - For binary edges, both endpoints must be in `vertices` to be retained.
         - For hyperedges, **all** member verices must be included to retain the edge.
         - Attributes for retained verices and edges are preserved.
@@ -6050,7 +7121,7 @@ class Graph:
         """Create a subgraph based on a combination of vertex and/or edge filters.
 
         Parameters
-        ----------
+        --
         vertices : Iterable[str] | None, optional
             A set of vertex IDs to include. If provided, behaves like `subgraph()`.
             If `None`, no vertex filtering is applied.
@@ -6059,13 +7130,13 @@ class Graph:
             `edge_subgraph()`. If `None`, no edge filtering is applied.
 
         Returns
-        -------
+        ---
         Graph
             A new `Graph` filtered according to the provided vertex and/or edge
             sets.
 
         Behavior
-        --------
+        
         - If both `vertices` and `edges` are provided, the resulting subgraph is
         the intersection of the two filters.
         - If only `vertices` is provided, equivalent to `subgraph(vertices)`.
@@ -6073,7 +7144,7 @@ class Graph:
         - If neither is provided, a full copy of the graph is returned.
 
         Notes
-        -----
+        -
         - This is a convenience method; it delegates to `subgraph()` and
         `edge_subgraph()` internally.
 
@@ -6121,19 +7192,19 @@ class Graph:
         """Return a new graph with all directed edges reversed.
 
         Returns
-        -------
+        ---
         Graph
             A new `Graph` instance with reversed directionality where applicable.
 
         Behavior
-        --------
+        
         - **Binary edges:** direction is flipped by swapping source and target.
         - **Directed hyperedges:** `head` and `tail` sets are swapped.
         - **Undirected edges/hyperedges:** unaffected.
         - Edge attributes and metadata are preserved.
 
         Notes
-        -----
+        -
         - This operation does not modify the original graph.
         - If the graph is undirected (`self.directed == False`), the result is
         identical to the original.
@@ -6288,7 +7359,7 @@ class Graph:
         # Build the mapping once per df object
         if mapping is None:
             mapping = {}
-            # Latest write should win if duplicates exist (matches your upsert semantics)
+            # Latest write should win if duplicates exist (matches upsert semantics)
             for row in df.iter_rows(named=True):
                 kval = row.get(key_col)
                 if kval is None:
@@ -6309,7 +7380,7 @@ class Graph:
         # Preallocate with current sizes
         new_graph = Graph(directed=self.directed, n=self._num_entities, e=self._num_edges)
 
-        # Copy layers & their pure attributes ----
+        # Copy layers & their pure attributes 
         for lid, meta in self._layers.items():
             if lid != new_graph._default_layer:
                 new_graph.add_layer(lid, **meta["attributes"])
@@ -6408,7 +7479,7 @@ class Graph:
         """Approximate total memory usage in bytes.
 
         Returns
-        -------
+        ---
         int
             Estimated bytes for the incidence matrix, dictionaries, and attribute DFs.
 
@@ -6437,14 +7508,14 @@ class Graph:
         """Materialize the vertex–edge incidence structure as Python lists.
 
         Parameters
-        ----------
+        --
         values : bool, optional (default=False)
             - If `False`, returns edge indices incident to each vertex.
             - If `True`, returns the **matrix values** (usually weights or 1/0) for
             each incident edge instead of the indices.
 
         Returns
-        -------
+        ---
         dict[str, list]
             A mapping from `vertex_id` → list of incident edges (indices or values),
             where:
@@ -6453,7 +7524,7 @@ class Graph:
             from the incidence matrix (if `values=True`).
 
         Notes
-        -----
+        -
         - Internally uses the sparse incidence matrix `self._matrix`, which is stored
         as a SciPy CSR (compressed sparse row) matrix or similar.
         - The incidence matrix `M` is defined as:
@@ -6479,7 +7550,7 @@ class Graph:
         """Return the vertex–edge incidence matrix in sparse or dense form.
 
         Parameters
-        ----------
+        --
         values : bool, optional (default=False)
             If `True`, include the numeric values stored in the matrix
             (e.g., weights or signed incidence values). If `False`, convert the
@@ -6489,7 +7560,7 @@ class Graph:
             - If `False`, return a dense NumPy ndarray.
 
         Returns
-        -------
+        ---
         scipy.sparse.csr_matrix | numpy.ndarray
             The vertex–edge incidence matrix `M`:
             - Rows correspond to vertices.
@@ -6497,7 +7568,7 @@ class Graph:
             - `M[i, j]` ≠ 0 indicates that vertex `i` is incident to edge `j`.
 
         Notes
-        -----
+        -
         - If `values=False`, the returned matrix is binarized before returning.
         - Use `sparse=True` for large graphs to avoid memory blowups.
         - This is the canonical low-level structure that most algorithms (e.g.,
@@ -6520,13 +7591,13 @@ class Graph:
         """Return a stable hash representing the current graph structure and metadata.
 
         Returns
-        -------
+        ---
         int
             A hash value that uniquely (within high probability) identifies the graph
             based on its topology and attributes.
 
         Behavior
-        --------
+        
         - Includes the set of verices, edges, and directedness in the hash.
         - Includes graph-level attributes (if any) to capture metadata changes.
         - Does **not** depend on memory addresses or internal object IDs, so the same
@@ -6534,7 +7605,7 @@ class Graph:
         will produce the same hash.
 
         Notes
-        -----
+        -
         - This method enables `Graph` objects to be used in hash-based containers
         (like `set` or `dict` keys).
         - If the graph is **mutated** after hashing (e.g., verices or edges are added
@@ -6653,12 +7724,12 @@ class Graph:
         """Return the append-only mutation history.
 
         Parameters
-        ----------
+        --
         as_df : bool, default False
             If True, return a Polars DF [DataFrame]; otherwise return a list of dicts.
 
         Returns
-        -------
+        ---
         list[dict] or polars.DataFrame
             Each event includes: 'version', 'ts_utc' (UTC [Coordinated Universal Time]
             ISO-8601 [International Organization for Standardization]), 'mono_ns'
@@ -6666,7 +7737,7 @@ class Graph:
             and 'result' when captured.
 
         Notes
-        -----
+        -
         Ordering is guaranteed by 'version' and 'mono_ns'. The log is in-memory until exported.
 
         """
@@ -6676,18 +7747,18 @@ class Graph:
         """Write the mutation history to disk.
 
         Parameters
-        ----------
+        --
         path : str
             Output path. Supported extensions: '.parquet', '.ndjson' (a.k.a. '.jsonl'),
             '.json', '.csv'. Unknown extensions default to Parquet by appending '.parquet'.
 
         Returns
-        -------
+        ---
         int
             Number of events written. Returns 0 if the history is empty.
 
         Raises
-        ------
+        --
         OSError
             If the file cannot be written.
 
@@ -6723,12 +7794,12 @@ class Graph:
         """Enable or disable in-memory mutation logging.
 
         Parameters
-        ----------
+        --
         flag : bool, default True
             When True, start/continue logging; when False, pause logging.
 
         Returns
-        -------
+        ---
         None
 
         """
@@ -6738,11 +7809,11 @@ class Graph:
         """Clear the in-memory mutation log.
 
         Returns
-        -------
+        ---
         None
 
         Notes
-        -----
+        -
         This does not delete any files previously exported.
 
         """
@@ -6752,16 +7823,16 @@ class Graph:
         """Insert a manual marker into the mutation history.
 
         Parameters
-        ----------
+        --
         label : str
             Human-readable tag for the marker event.
 
         Returns
-        -------
+        ---
         None
 
         Notes
-        -----
+        -
         The event is recorded with 'op'='mark' alongside standard fields
         ('version', 'ts_utc', 'mono_ns'). Logging must be enabled for the
         marker to be recorded.
@@ -6792,13 +7863,13 @@ class Graph:
         - NEW: _nx_edge_aggs to control parallel-edge aggregation (e.g., {"capacity":"sum"}).
         """
 
-        # ------------------------------ init -----------------------------------
+        # -- init ---
         def __init__(self, owner: "Graph"):
             self._G = owner
             self._cache = {}  # key -> {"nxG": nx.Graph, "version": int}
             self.cache_enabled = True
 
-        # ---------------------------- public API --------------------------------
+        #  public API 
         def clear(self):
             """Drop all cached NX graphs."""
             self._cache.clear()
@@ -6823,7 +7894,7 @@ class Graph:
                     break
             return out
 
-        # ------------------------- dynamic dispatch -----------------------------
+        # - dynamic dispatch -
         # Public helper: obtain the cached/backend NX graph directly
         # Usage in tests: nxG = G.nx.backend(directed=False, simple=True)
         def backend(
@@ -6843,7 +7914,7 @@ class Graph:
             Args:
               directed: build DiGraph (True) or Graph (False) view
               hyperedge_mode: "skip" | "expand"
-              layer/layers: layer selection if your Graph is multilayered
+              layer/layers: layer selection if Graph is multilayered
               needed_attrs: set of edge attribute names to keep (default empty)
               simple: if True, collapse Multi* -> simple (Di)Graph
               edge_aggs: how to aggregate parallel edge attrs when simple=True,
@@ -6957,7 +8028,7 @@ class Graph:
                     # Add actionable tip that actually tells how to fix it now.
                     sample = self.peek_nodes(5)
                     tip = (
-                        f"{e}. Nodes must be your graph's vertex IDs.\n"
+                        f"{e}. Nodes must be graph's vertex IDs.\n"
                         f"- If you passed labels, specify _nx_label_field=<vertex label column> "
                         f"or rely on auto-guess (columns like 'name'/'label'/'title').\n"
                         f"- Example: G.nx.shortest_path_length(G, source='a', target='z', weight='weight', _nx_label_field='name')\n"
@@ -6967,7 +8038,7 @@ class Graph:
 
             return wrapper
 
-        # ------------------------------ internals -------------------------------
+        # -- internals ---
         def _resolve_nx_callable(self, name: str):
             import networkx as _nx
 
@@ -7137,7 +8208,7 @@ class Graph:
                     stacklevel=3,
                 )
 
-        # ---------------------- label/ID mapping helpers ------------------------
+        # -- label/ID mapping helpers 
         def _infer_label_field(self) -> str | None:
             """Heuristic label column if user didn't specify:
             1) Graph.default_label_field if present
@@ -7234,7 +8305,7 @@ class Graph:
                         bound.arguments[key], nxG, label_field
                     )
 
-        # ---------------------- Multi* collapse helpers -------------------------
+        # -- Multi* collapse helpers -
         def _collapse_multiedges(
             self, nxG, *, directed: bool, aggregations: dict | None, needed_attrs: set
         ):
@@ -7311,7 +8382,7 @@ class Graph:
             self._cache = {}  # key -> {"igG": ig.Graph, "version": int}
             self.cache_enabled = True
 
-        # ---------------------------- public API --------------------------------
+        #  public API 
         def clear(self):
             self._cache.clear()
 
@@ -7354,7 +8425,7 @@ class Graph:
                 edge_aggs=edge_aggs,
             )
 
-        # ------------------------- dynamic dispatch -----------------------------
+        # - dynamic dispatch -
         def __getattr__(self, name: str):
             def wrapper(*args, **kwargs):
                 import inspect
@@ -7442,7 +8513,7 @@ class Graph:
 
             return wrapper
 
-        # ------------------------------ internals -------------------------------
+        # -- internals ---
         def _needed_edge_attrs_for_ig(self, func_name: str, kwargs: dict) -> set:
             """Heuristic: igraph uses `weights` (plural) for edge weights in most algos,
             some accept both; flows use 'capacity' if you forward them to adapters.
@@ -7580,7 +8651,7 @@ class Graph:
                     stacklevel=3,
                 )
 
-        # ---------------------- label/ID mapping helpers ------------------------
+        # -- label/ID mapping helpers 
         def _infer_label_field(self) -> str | None:
             try:
                 if hasattr(self._G, "default_label_field") and self._G.default_label_field:
@@ -7703,7 +8774,7 @@ class Graph:
                         bound.arguments[key], igG, label_field
                     )
 
-        # ---------------------- edge-attr & multiedge helpers -------------------
+        # -- edge-attr & multiedge helpers ---
         def _prune_edge_attributes(self, igG, needed_attrs: set):
             import igraph as _ig
 
@@ -7855,12 +8926,12 @@ class Graph:
         Uses existing Graph attributes: entity_types, edge_to_idx, _layers, _version
 
         Parameters
-        ----------
+        --
         label : str, optional
             Human-readable label for snapshot (auto-generated if None)
 
         Returns
-        -------
+        ---
         dict
             Snapshot metadata
 
@@ -7892,14 +8963,14 @@ class Graph:
         """Compare two snapshots or compare snapshot with current state.
 
         Parameters
-        ----------
+        --
         a : str | dict | Graph
             First snapshot (label, snapshot dict, or Graph instance)
         b : str | dict | Graph | None
             Second snapshot. If None, compare with current state.
 
         Returns
-        -------
+        ---
         GraphDiff
             Difference object with added/removed entities
 
@@ -7945,7 +9016,7 @@ class Graph:
         """List all snapshots.
 
         Returns
-        -------
+        ---
         list[dict]
             Snapshot metadata
 
