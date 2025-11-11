@@ -2357,8 +2357,8 @@ class Graph:
         """
         Convenience: return k smallest eigenvalues/eigenvectors of supra-Laplacian.
         """
-        from scipy.sparse.linalg import eigsh
         import numpy as np
+        from scipy.sparse.linalg import eigsh
         if k < 1:
             raise ValueError("k must be >= 1")
         L = self.supra_laplacian(kind=kind, layers=layers).astype(float)
@@ -2399,8 +2399,8 @@ class Graph:
             Aω = self.supra_adjacency_scaled(coupling_scale=float(ω), include_inter=True, layers=layers)
             if metric == "algebraic_connectivity":
                 # Compute λ2 of L = D - Aω
-                from scipy.sparse import diags
                 import numpy as np
+                from scipy.sparse import diags
                 deg = Aω.sum(axis=1).A.ravel()
                 L = diags(deg) - Aω
                 from scipy.sparse.linalg import eigsh

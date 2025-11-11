@@ -261,7 +261,7 @@ def _write_audit(graph, path: Path, compression: str):
         from datetime import UTC  # Py3.11+
     except Exception:  # fallback for <3.11
         from datetime import timezone as _tz
-        UTC = _tz.utc
+        UTC = UTC
 
     import numpy as np
     import polars as pl
@@ -299,7 +299,8 @@ def _write_audit(graph, path: Path, compression: str):
                 v = list(v)
             # datetimes/dates -> ISO 8601
             try:
-                from datetime import datetime as _dt_datetime, date as _dt_date
+                from datetime import date as _dt_date
+                from datetime import datetime as _dt_datetime
                 if isinstance(v, (_dt_datetime, _dt_date)):
                     return v.isoformat()
             except Exception:
