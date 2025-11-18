@@ -87,7 +87,7 @@ def _endpoint_coeff_map(edge_attrs, private_key, endpoint_set):
 
 def write_parquet_graphdir(graph: Graph, path):
     """Write lossless GraphDir:
-      vertices.parquet, edges.parquet, layers.parquet, edge_layers.parquet, manifest.json
+      vertices.parquet, edges.parquet, slices.parquet, edge_slices.parquet, manifest.json
     Wide tables (attrs as columns). Hyperedges stored with 'kind' and head/tail/members lists.
     """
     path = Path(path)
@@ -154,26 +154,26 @@ def write_parquet_graphdir(graph: Graph, path):
         e_rows.append(row)
     pl.DataFrame(e_rows).write_parquet(path / "edges.parquet", compression="zstd")
 
-    # layers
+    # slices
     L = []
     try:
-        for lid in graph.list_layers(include_default=True):
-            L.append({"layer_id": lid})
+        for lid in graph.list_slices(include_default=True):
+            L.append({"slice_id": lid})
     except Exception:
         pass
-    pl.DataFrame(L).write_parquet(path / "layers.parquet", compression="zstd")
+    pl.DataFrame(L).write_parquet(path / "slices.parquet", compression="zstd")
 
-    # edge_layers
+    # edge_slices
     EL = []
     try:
-        for lid in graph.list_layers(include_default=True):
-            for eid in graph.get_layer_edges(lid):
-                rec = {"layer_id": lid, "edge_id": eid}
+        for lid in graph.list_slices(include_default=True):
+            for eid in graph.get_slice_edges(lid):
+                rec = {"slice_id": lid, "edge_id": eid}
                 try:
-                    w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+                    w = graph.get_edge_slice_attr(lid, eid, "weight", default=None)
                 except Exception:
                     try:
-                        w = graph.get_edge_layer_attr(lid, eid, "weight")
+                        w = graph.get_edge_slice_attr(lid, eid, "weight")
                     except Exception:
                         w = None
                 if w is not None:
@@ -181,12 +181,12 @@ def write_parquet_graphdir(graph: Graph, path):
                 EL.append(rec)
     except Exception:
         pass
-    pl.DataFrame(EL).write_parquet(path / "edge_layers.parquet", compression="zstd")
+    pl.DataFrame(EL).write_parquet(path / "edge_slices.parquet", compression="zstd")
 
     # manifest.json (tiny)
     manifest = {
         "format_version": 1,
-        "counts": {"V": len(v_rows), "E": len(e_rows), "layers": len(L)},
+        "counts": {"V": len(v_rows), "E": len(e_rows), "slices": len(L)},
         "schema": {"edges.kind": ["binary", "hyper"]},
         "provenance": {"package": "annnet"},
     }
@@ -201,13 +201,13 @@ def read_parquet_graphdir(path) -> Graph:
     V = pl.read_parquet(path / "vertices.parquet")
     E = pl.read_parquet(path / "edges.parquet")
     L = (
-        pl.read_parquet(path / "layers.parquet", use_pyarrow=True)
-        if (path / "layers.parquet").exists()
+        pl.read_parquet(path / "slices.parquet", use_pyarrow=True)
+        if (path / "slices.parquet").exists()
         else pl.DataFrame([])
     )
     EL = (
-        pl.read_parquet(path / "edge_layers.parquet", use_pyarrow=True)
-        if (path / "edge_layers.parquet").exists()
+        pl.read_parquet(path / "edge_slices.parquet", use_pyarrow=True)
+        if (path / "edge_slices.parquet").exists()
         else pl.DataFrame([])
     )
 
@@ -261,31 +261,31 @@ def read_parquet_graphdir(path) -> Graph:
         if rec:
             H.set_edge_attrs(eid, **rec)
 
-    # layers
+    # slices
     for rec in L.to_dicts():
-        lid = rec.get("layer_id")
+        lid = rec.get("slice_id")
         try:
-            if lid not in set(H.list_layers(include_default=True)):
-                H.add_layer(lid)
+            if lid not in set(H.list_slices(include_default=True)):
+                H.add_slice(lid)
         except Exception:
             pass
 
-    # edge_layers
+    # edge_slices
     for rec in EL.to_dicts():
-        lid = rec.get("layer_id")
+        lid = rec.get("slice_id")
         eid = rec.get("edge_id")
         if lid is None or eid is None:
             continue
         try:
-            H.add_edge_to_layer(lid, eid)
+            H.add_edge_to_slice(lid, eid)
         except Exception:
             pass
         if "weight" in rec:
             try:
-                H.set_edge_layer_attrs(lid, eid, weight=float(rec["weight"]))
+                H.set_edge_slice_attrs(lid, eid, weight=float(rec["weight"]))
             except Exception:
                 try:
-                    H.set_edge_layer_attr(lid, eid, "weight", float(rec["weight"]))
+                    H.set_edge_slice_attr(lid, eid, "weight", float(rec["weight"]))
                 except Exception:
                     pass
 

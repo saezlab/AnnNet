@@ -10,23 +10,23 @@ if TYPE_CHECKING:
     from ..core.graph import Graph
 
 
-def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
+def _collect_slices_and_weights(graph) -> tuple[dict, dict]:
     """Returns:
-      layers_section: {layer_id: [edge_id, ...]}
-      layer_weights:  {layer_id: {edge_id: weight}}
+      slices_section: {slice_id: [edge_id, ...]}
+      slice_weights:  {slice_id: {edge_id: weight}}
     Backends supported: Polars-like, .to_dicts()-like, dict.
 
     """
-    layers_section: dict = {}
-    layer_weights: dict = {}
+    slices_section: dict = {}
+    slice_weights: dict = {}
 
-    # --- Source A: edge_layer_attributes table (Polars-like)
-    t = getattr(graph, "edge_layer_attributes", None)
+    # --- Source A: edge_slice_attributes table (Polars-like)
+    t = getattr(graph, "edge_slice_attributes", None)
     if t is not None and hasattr(t, "filter"):
         try:
             # Attempt Polars path without hard dependency
 
-            # Get all rows then group by layer in Python (keeps us backend-agnostic)
+            # Get all rows then group by slice in Python (keeps us backend-agnostic)
             if hasattr(t, "to_dicts"):
                 rows = t.to_dicts()
             else:
@@ -34,42 +34,42 @@ def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
                 # many DataFrame-likes support .rows(named=True)
                 rows = getattr(t, "rows", lambda named=False: [])(named=True)  # type: ignore
             for r in rows:
-                lid = r.get("layer")
+                lid = r.get("slice")
                 if lid is None:
                     continue
                 eid = r.get("edge_id", r.get("edge"))
                 if eid is None:
                     continue
-                layers_section.setdefault(lid, []).append(eid)
+                slices_section.setdefault(lid, []).append(eid)
                 w = r.get("weight")
                 if w is not None:
-                    layer_weights.setdefault(lid, {})[eid] = float(w)
+                    slice_weights.setdefault(lid, {})[eid] = float(w)
         except Exception:
             pass  # fall through to other sources
 
-    # --- Source B: edge_layer_attributes with .to_dicts() but no Polars
-    if not layers_section and t is not None and hasattr(t, "to_dicts"):
+    # --- Source B: edge_slice_attributes with .to_dicts() but no Polars
+    if not slices_section and t is not None and hasattr(t, "to_dicts"):
         try:
             for r in t.to_dicts():
-                lid = r.get("layer")
+                lid = r.get("slice")
                 if lid is None:
                     continue
                 eid = r.get("edge_id", r.get("edge"))
                 if eid is None:
                     continue
-                layers_section.setdefault(lid, []).append(eid)
+                slices_section.setdefault(lid, []).append(eid)
                 w = r.get("weight")
                 if w is not None:
-                    layer_weights.setdefault(lid, {})[eid] = float(w)
+                    slice_weights.setdefault(lid, {})[eid] = float(w)
         except Exception:
             pass
 
-    # --- Source C: dict mapping layer -> {edge_id: attrs}
-    if not layers_section and isinstance(t, dict):
+    # --- Source C: dict mapping slice -> {edge_id: attrs}
+    if not slices_section and isinstance(t, dict):
         for lid, ed in t.items():
             if isinstance(ed, dict):
                 eids = list(ed.keys())
-                layers_section.setdefault(lid, []).extend(eids)
+                slices_section.setdefault(lid, []).extend(eids)
                 # pick weights if present
                 for eid, attrs in ed.items():
                     if (
@@ -77,10 +77,10 @@ def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
                         and "weight" in attrs
                         and attrs["weight"] is not None
                     ):
-                        layer_weights.setdefault(lid, {})[eid] = float(attrs["weight"])
+                        slice_weights.setdefault(lid, {})[eid] = float(attrs["weight"])
 
-    # --- Fallback D: per-edge scan (if graph exposes edge iteration + get_edge_layers)
-    if not layers_section:
+    # --- Fallback D: per-edge scan (if graph exposes edge iteration + get_edge_slices)
+    if not slices_section:
         edges_iter = None
         for attr in ("edges", "iter_edges", "edge_ids"):
             if hasattr(graph, attr):
@@ -92,7 +92,7 @@ def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
         if edges_iter:
             for eid in edges_iter:
                 lids = []
-                for probe in ("get_edge_layers", "edge_layers"):
+                for probe in ("get_edge_slices", "edge_slices"):
                     if hasattr(graph, probe):
                         try:
                             lids = list(getattr(graph, probe)(eid))
@@ -100,26 +100,26 @@ def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
                         except Exception:
                             pass
                 for lid in lids or []:
-                    layers_section.setdefault(lid, []).append(eid)
+                    slices_section.setdefault(lid, []).append(eid)
 
-    # --- Collect per-layer weight overrides using canonical accessor
-    if hasattr(graph, "get_edge_layer_attr"):
-        for lid, eids in list(layers_section.items()):
+    # --- Collect per-slice weight overrides using canonical accessor
+    if hasattr(graph, "get_edge_slice_attr"):
+        for lid, eids in list(slices_section.items()):
             for eid in eids:
                 w = None
                 try:
-                    w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+                    w = graph.get_edge_slice_attr(lid, eid, "weight", default=None)
                 except Exception:
                     try:
                         # some implementations don't support default=
-                        w = graph.get_edge_layer_attr(lid, eid, "weight")
+                        w = graph.get_edge_slice_attr(lid, eid, "weight")
                     except Exception:
                         w = None
                 if w is not None:
-                    layer_weights.setdefault(lid, {})[eid] = float(w)
+                    slice_weights.setdefault(lid, {})[eid] = float(w)
 
     # Ensure deterministic and non-empty lists in manifest
-    for lid, eids in layers_section.items():
+    for lid, eids in slices_section.items():
         # unique, stable order
         seen = set()
         uniq = []
@@ -127,9 +127,9 @@ def _collect_layers_and_weights(graph) -> tuple[dict, dict]:
             if e not in seen:
                 seen.add(e)
                 uniq.append(e)
-        layers_section[lid] = uniq
+        slices_section[lid] = uniq
 
-    return layers_section, layer_weights
+    return slices_section, slice_weights
 
 
 def _serialize_value(v: Any) -> Any:
@@ -416,8 +416,8 @@ def to_igraph(
     graph: Graph,
     directed=True,
     hyperedge_mode="skip",
-    layer=None,
-    layers=None,
+    slice=None,
+    slices=None,
     public_only=False,
     reify_prefix="he::",
 ):
@@ -484,7 +484,7 @@ def to_igraph(
             tail_map = _endpoint_coeff_map(eattr, "__target_attr", T)
             manifest_edges[eid] = (head_map, tail_map, "hyper")
 
-    # ---------- layers + per-layer weights for manifest ----------
+    # ---------- slices + per-slice weights for manifest ----------
     def _rows_from_table(t):
         if t is None:
             return []
@@ -497,61 +497,61 @@ def to_igraph(
 
     all_eids = list(manifest_edges.keys())
 
-    # discover layers
+    # discover slices
     lids = set()
     try:
-        lids.update(list(graph.list_layers(include_default=True)))
+        lids.update(list(graph.list_slices(include_default=True)))
     except Exception:
         try:
-            lids.update(list(graph.list_layers()))
+            lids.update(list(graph.list_slices()))
         except Exception:
             pass
 
-    layers_section = {lid: [] for lid in lids}
+    slices_section = {lid: [] for lid in lids}
     for lid in list(lids):
         try:
-            eids = list(graph.get_layer_edges(lid))
+            eids = list(graph.get_slice_edges(lid))
         except Exception:
             eids = []
         if eids:
-            seen = set(layers_section[lid])
+            seen = set(slices_section[lid])
             for e in eids:
                 if e not in seen:
-                    layers_section[lid].append(e)
+                    slices_section[lid].append(e)
                     seen.add(e)
 
-    t = getattr(graph, "edge_layer_attributes", None)
+    t = getattr(graph, "edge_slice_attributes", None)
     if isinstance(t, dict):
         for lid, mapping in t.items():
             if isinstance(mapping, dict):
-                arr = layers_section.setdefault(lid, [])
+                arr = slices_section.setdefault(lid, [])
                 seen = set(arr)
                 for eid in list(mapping.keys()):
                     if eid not in seen:
                         arr.append(eid)
                         seen.add(eid)
     for r in _rows_from_table(t):
-        lid = r.get("layer") or r.get("layer_id") or r.get("lid")
+        lid = r.get("slice") or r.get("slice_id") or r.get("lid")
         if lid is None:
             continue
         eid = r.get("edge_id", r.get("edge"))
         if eid is not None:
-            arr = layers_section.setdefault(lid, [])
+            arr = slices_section.setdefault(lid, [])
             if eid not in arr:
                 arr.append(eid)
 
-    etl = getattr(graph, "edge_to_layers", None)
+    etl = getattr(graph, "edge_to_slices", None)
     if isinstance(etl, dict):
         for eid, arr_lids in etl.items():
             for lid in arr_lids or []:
-                arr = layers_section.setdefault(lid, [])
+                arr = slices_section.setdefault(lid, [])
                 if eid not in arr:
                     arr.append(eid)
 
-    le = getattr(graph, "layer_edges", None)
+    le = getattr(graph, "slice_edges", None)
     if isinstance(le, dict):
         for lid, eids in le.items():
-            arr = layers_section.setdefault(lid, [])
+            arr = slices_section.setdefault(lid, [])
             seen = set(arr)
             for eid in list(eids):
                 if eid not in seen:
@@ -559,33 +559,33 @@ def to_igraph(
                     seen.add(eid)
 
     # remove empties
-    layers_section = {lid: eids for lid, eids in layers_section.items() if eids}
+    slices_section = {lid: eids for lid, eids in slices_section.items() if eids}
 
-    # filter layers if requested
+    # filter slices if requested
     requested_lids = set()
-    if layer is not None:
-        requested_lids.update([layer] if isinstance(layer, str) else list(layer))
-    if layers is not None:
-        requested_lids.update(list(layers))
+    if slice is not None:
+        requested_lids.update([slice] if isinstance(slice, str) else list(slice))
+    if slices is not None:
+        requested_lids.update(list(slices))
     if requested_lids:
         req_norm = {str(x) for x in requested_lids}
-        layers_section = {lid: eids for lid, eids in layers_section.items() if str(lid) in req_norm}
+        slices_section = {lid: eids for lid, eids in slices_section.items() if str(lid) in req_norm}
 
-    # per-layer weights
-    layer_weights = {}
-    if hasattr(graph, "get_edge_layer_attr"):
-        for lid, eids in layers_section.items():
+    # per-slice weights
+    slice_weights = {}
+    if hasattr(graph, "get_edge_slice_attr"):
+        for lid, eids in slices_section.items():
             for eid in eids:
                 w = None
                 try:
-                    w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+                    w = graph.get_edge_slice_attr(lid, eid, "weight", default=None)
                 except Exception:
                     try:
-                        w = graph.get_edge_layer_attr(lid, eid, "weight")
+                        w = graph.get_edge_slice_attr(lid, eid, "weight")
                     except Exception:
                         w = None
                 if w is not None:
-                    layer_weights.setdefault(lid, {})[eid] = float(w)
+                    slice_weights.setdefault(lid, {})[eid] = float(w)
 
     # baseline weights
     try:
@@ -595,11 +595,11 @@ def to_igraph(
 
     # -------------- REIFY: add HE nodes + membership edges to igG --------------
     if hyperedge_mode == "reify":
-        # allowed HE set under layer filter (None => all)
+        # allowed HE set under slice filter (None => all)
         allowed = None
         if requested_lids:
             allowed = set()
-            for lid, eids in layers_section.items():
+            for lid, eids in slices_section.items():
                 for eid in eids:
                     allowed.add(eid)
 
@@ -691,10 +691,10 @@ def to_igraph(
     manifest = {
         "edges": manifest_edges,
         "weights": base_weights,
-        "layers": layers_section,
+        "slices": slices_section,
         "vertex_attrs": vertex_attrs,
         "edge_attrs": edge_attrs,
-        "layer_weights": layer_weights,
+        "slice_weights": slice_weights,
         "edge_directed": {eid: bool(_is_directed_eid(graph, eid)) for eid in all_eids},
         "manifest_version": 1,
     }
@@ -1035,35 +1035,35 @@ def from_igraph(
         except Exception:
             pass
 
-    # -------- layers + per-layer overrides --------
-    for lid, eids in (manifest.get("layers", {}) or {}).items():
+    # -------- slices + per-slice overrides --------
+    for lid, eids in (manifest.get("slices", {}) or {}).items():
         try:
-            if lid not in set(H.list_layers(include_default=True)):
-                H.add_layer(lid)
+            if lid not in set(H.list_slices(include_default=True)):
+                H.add_slice(lid)
         except Exception:
             pass
         for eid in eids or []:
             try:
-                H.add_edge_to_layer(lid, eid)
+                H.add_edge_to_slice(lid, eid)
             except Exception:
                 pass
 
-    for lid, per_edge in (manifest.get("layer_weights", {}) or {}).items():
+    for lid, per_edge in (manifest.get("slice_weights", {}) or {}).items():
         try:
-            if lid not in set(H.list_layers(include_default=True)):
-                H.add_layer(lid)
+            if lid not in set(H.list_slices(include_default=True)):
+                H.add_slice(lid)
         except Exception:
             pass
         for eid, w in (per_edge or {}).items():
             try:
-                H.add_edge_to_layer(lid, eid)
+                H.add_edge_to_slice(lid, eid)
             except Exception:
                 pass
             try:
-                H.set_edge_layer_attrs(lid, eid, weight=float(w))
+                H.set_edge_slice_attrs(lid, eid, weight=float(w))
             except Exception:
                 try:
-                    H.set_edge_layer_attr(lid, eid, "weight", float(w))
+                    H.set_edge_slice_attr(lid, eid, "weight", float(w))
                 except Exception:
                     pass
 
@@ -1164,7 +1164,7 @@ def to_backend(graph, **kwargs):
         are stored in vertex attribute 'name'. Edge IDs stored in edge
         attribute 'eid'. Hyperedges are either dropped or expanded into
         multiple binary edges. No manifest is returned, so round-tripping
-        will lose hyperedge structure, layers, and precise edge IDs.
+        will lose hyperedge structure, slices, and precise edge IDs.
 
     Notes
     -----

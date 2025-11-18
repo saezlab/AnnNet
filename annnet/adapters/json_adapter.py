@@ -81,8 +81,8 @@ def _endpoint_coeff_map(edge_attrs, private_key, endpoint_set):
 
 
 def to_json(graph: Graph, path, *, public_only: bool = False, indent: int = 0):
-    """Node-link JSON with x-extensions (layers, edge_layers, hyperedges).
-    Lossless vs your core (IDs, attrs, parallel, hyperedges, layers).
+    """Node-link JSON with x-extensions (slices, edge_slices, hyperedges).
+    Lossless vs your core (IDs, attrs, parallel, hyperedges, slices).
     """
     # nodes
     nodes = []
@@ -165,31 +165,31 @@ def to_json(graph: Graph, path, *, public_only: bool = False, indent: int = 0):
                 }
             )
 
-    # layers + per-layer weights
-    layers = []
+    # slices + per-slice weights
+    slices = []
     try:
-        for lid in graph.list_layers(include_default=True):
-            layers.append({"layer_id": lid})
+        for lid in graph.list_slices(include_default=True):
+            slices.append({"slice_id": lid})
     except Exception:
         pass
 
-    edge_layers = []
+    edge_slices = []
     # Collect memberships + weights if available
     try:
-        for lid in graph.list_layers(include_default=True):
+        for lid in graph.list_slices(include_default=True):
             try:
-                for eid in graph.get_layer_edges(lid):
-                    rec = {"layer_id": lid, "edge_id": eid}
+                for eid in graph.get_slice_edges(lid):
+                    rec = {"slice_id": lid, "edge_id": eid}
                     try:
-                        w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+                        w = graph.get_edge_slice_attr(lid, eid, "weight", default=None)
                     except Exception:
                         try:
-                            w = graph.get_edge_layer_attr(lid, eid, "weight")
+                            w = graph.get_edge_slice_attr(lid, eid, "weight")
                         except Exception:
                             w = None
                     if w is not None:
                         rec["weight"] = float(w)
-                    edge_layers.append(rec)
+                    edge_slices.append(rec)
             except Exception:
                 continue
     except Exception:
@@ -211,8 +211,8 @@ def to_json(graph: Graph, path, *, public_only: bool = False, indent: int = 0):
             for e in edges
         ],
         "x-extensions": {
-            "layers": layers,
-            "edge_layers": edge_layers,
+            "slices": slices,
+            "edge_slices": edge_slices,
             "hyperedges": [
                 (
                     {
@@ -282,7 +282,7 @@ def from_json(path) -> Graph:
         if attrs:
             H.set_edge_attrs(eid, **attrs)
 
-    # hyperedges + layers
+    # hyperedges + slices
     ext = doc.get("x-extensions") or {}
     for h in ext.get("hyperedges", []):
         eid = h.get("id")
@@ -310,32 +310,32 @@ def from_json(path) -> Graph:
         if attrs:
             H.set_edge_attrs(eid, **attrs)
 
-    # layers + edge_layers
-    for L in ext.get("layers", []):
-        lid = L.get("layer_id")
+    # slices + edge_slices
+    for L in ext.get("slices", []):
+        lid = L.get("slice_id")
         if lid is None:
             continue
         try:
-            if lid not in set(H.list_layers(include_default=True)):
-                H.add_layer(lid)
+            if lid not in set(H.list_slices(include_default=True)):
+                H.add_slice(lid)
         except Exception:
             pass
 
-    for EL in ext.get("edge_layers", []):
-        lid = EL.get("layer_id")
+    for EL in ext.get("edge_slices", []):
+        lid = EL.get("slice_id")
         eid = EL.get("edge_id")
         if lid is None or eid is None:
             continue
         try:
-            H.add_edge_to_layer(lid, eid)
+            H.add_edge_to_slice(lid, eid)
         except Exception:
             pass
         if "weight" in EL:
             try:
-                H.set_edge_layer_attrs(lid, eid, weight=float(EL["weight"]))
+                H.set_edge_slice_attrs(lid, eid, weight=float(EL["weight"]))
             except Exception:
                 try:
-                    H.set_edge_layer_attr(lid, eid, "weight", float(EL["weight"]))
+                    H.set_edge_slice_attr(lid, eid, "weight", float(EL["weight"]))
                 except Exception:
                     pass
 
@@ -343,7 +343,7 @@ def from_json(path) -> Graph:
 
 
 def write_ndjson(graph: Graph, dir_path):
-    """Write nodes.ndjson, edges.ndjson, hyperedges.ndjson, layers.ndjson, edge_layers.ndjson.
+    """Write nodes.ndjson, edges.ndjson, hyperedges.ndjson, slices.ndjson, edge_slices.ndjson.
     Each line is one JSON object. Lossless wrt to_json schema.
     """
     import json
@@ -414,24 +414,24 @@ def write_ndjson(graph: Graph, dir_path):
                 obj.update({k: v for k, v in d.items() if not str(k).startswith("__")})
                 fe.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
-    # layers
-    with open(f"{dir_path}/layers.ndjson", "w", encoding="utf-8") as fl:
+    # slices
+    with open(f"{dir_path}/slices.ndjson", "w", encoding="utf-8") as fl:
         try:
-            for lid in graph.list_layers(include_default=True):
-                fl.write(json.dumps({"layer_id": lid}, ensure_ascii=False) + "\n")
+            for lid in graph.list_slices(include_default=True):
+                fl.write(json.dumps({"slice_id": lid}, ensure_ascii=False) + "\n")
         except Exception:
             pass
 
-    with open(f"{dir_path}/edge_layers.ndjson", "w", encoding="utf-8") as fel:
+    with open(f"{dir_path}/edge_slices.ndjson", "w", encoding="utf-8") as fel:
         try:
-            for lid in graph.list_layers(include_default=True):
-                for eid in graph.get_layer_edges(lid):
-                    rec = {"layer_id": lid, "edge_id": eid}
+            for lid in graph.list_slices(include_default=True):
+                for eid in graph.get_slice_edges(lid):
+                    rec = {"slice_id": lid, "edge_id": eid}
                     try:
-                        w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+                        w = graph.get_edge_slice_attr(lid, eid, "weight", default=None)
                     except Exception:
                         try:
-                            w = graph.get_edge_layer_attr(lid, eid, "weight")
+                            w = graph.get_edge_slice_attr(lid, eid, "weight")
                         except Exception:
                             w = None
                     if w is not None:

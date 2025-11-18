@@ -173,13 +173,13 @@ def to_nx(
     graph: Graph,
     directed=True,
     hyperedge_mode="skip",
-    layer=None,
-    layers=None,
+    slice=None,
+    slices=None,
     public_only=False,
     reify_prefix="he::",
 ):
     """Export Graph → (networkx.Graph, manifest).
-    Manifest preserves hyperedges with per-endpoint coefficients, layers,
+    Manifest preserves hyperedges with per-endpoint coefficients, slices,
     vertex/edge attrs, and stable edge IDs.
 
     Parameters
@@ -187,10 +187,10 @@ def to_nx(
     graph : Graph
     directed : bool
     hyperedge_mode : {"skip", "expand", "reify"}
-    layer : str, optional
-        Export single layer only (affects which hyperedges are reified).
-    layers : list[str], optional
-        Export union of specified layers (affects which hyperedges are reified).
+    slice : str, optional
+        Export single slice only (affects which hyperedges are reified).
+    slices : list[str], optional
+        Export union of specified slices (affects which hyperedges are reified).
     public_only : bool
 
     Returns
@@ -216,19 +216,19 @@ def to_nx(
         data.setdefault("eid", eid)
         return data
 
-    # Figure out which hyperedges should be included if user filters by layer(s)
+    # Figure out which hyperedges should be included if user filters by slice(s)
     requested_lids = set()
-    if layer is not None:
-        requested_lids.update([layer] if isinstance(layer, str) else list(layer))
-    if layers is not None:
-        requested_lids.update(list(layers))
+    if slice is not None:
+        requested_lids.update([slice] if isinstance(slice, str) else list(slice))
+    if slices is not None:
+        requested_lids.update(list(slices))
 
     selected_eids = None
     if requested_lids:
         selected_eids = set()
         for lid in requested_lids:
             try:
-                for eid in graph.get_layer_edges(lid):
+                for eid in graph.get_slice_edges(lid):
                     selected_eids.add(eid)
             except Exception:
                 pass
@@ -296,7 +296,7 @@ def to_nx(
     except Exception:
         weights_map = {}
 
-    # ----------------- robust LAYER discovery + per-layer weights -----------------
+    # ----------------- robust slice discovery + per-slice weights -----------------
     def _rows_from_table(t):
         if t is None:
             return []
@@ -336,67 +336,67 @@ def to_nx(
 
     lids = set()
     try:
-        lids.update(list(graph.list_layers(include_default=True)))
+        lids.update(list(graph.list_slices(include_default=True)))
     except Exception:
         try:
-            lids.update(list(graph.list_layers()))
+            lids.update(list(graph.list_slices()))
         except Exception:
             pass
 
-    t = getattr(graph, "edge_layer_attributes", None)
+    t = getattr(graph, "edge_slice_attributes", None)
     if isinstance(t, dict):
         lids.update(t.keys())
     for r in _rows_from_table(t):
-        lid = r.get("layer") or r.get("layer_id") or r.get("lid")
+        lid = r.get("slice") or r.get("slice_id") or r.get("lid")
         if lid is not None:
             lids.add(lid)
 
-    le = getattr(graph, "layer_edges", None)
+    le = getattr(graph, "slice_edges", None)
     if isinstance(le, dict):
         lids.update(le.keys())
 
-    etl = getattr(graph, "edge_to_layers", None)
+    etl = getattr(graph, "edge_to_slices", None)
     if isinstance(etl, dict):
         for arr in etl.values():
             for lid in arr or []:
                 lids.add(lid)
 
-    layers_section = {lid: [] for lid in lids}
+    slices_section = {lid: [] for lid in lids}
 
     for lid in list(lids):
         try:
-            eids = list(graph.get_layer_edges(lid))
+            eids = list(graph.get_slice_edges(lid))
         except Exception:
             eids = []
         if eids:
-            seen = set(layers_section[lid])
+            seen = set(slices_section[lid])
             for e in eids:
                 if e not in seen:
-                    layers_section[lid].append(e)
+                    slices_section[lid].append(e)
                     seen.add(e)
 
     if isinstance(t, dict):
         for lid, mapping in t.items():
             if isinstance(mapping, dict):
-                arr = layers_section.setdefault(lid, [])
+                arr = slices_section.setdefault(lid, [])
                 seen = set(arr)
                 for eid in list(mapping.keys()):
                     if eid not in seen:
                         arr.append(eid)
                         seen.add(eid)
     for r in _rows_from_table(t):
-        lid = r.get("layer") or r.get("layer_id") or r.get("lid")
+        lid = r.get("slice") or r.get("slice_id") or r.get("lid")
         if lid is None:
             continue
         eid = r.get("edge_id", r.get("edge"))
         if eid is not None:
-            arr = layers_section.setdefault(lid, [])
+            arr = slices_section.setdefault(lid, [])
             if eid not in arr:
                 arr.append(eid)
 
     if isinstance(le, dict):
         for lid, eids in le.items():
-            arr = layers_section.setdefault(lid, [])
+            arr = slices_section.setdefault(lid, [])
             seen = set(arr)
             for eid in list(eids):
                 if eid not in seen:
@@ -405,50 +405,50 @@ def to_nx(
     if isinstance(etl, dict):
         for eid, arr_lids in etl.items():
             for lid in arr_lids or []:
-                arr = layers_section.setdefault(lid, [])
+                arr = slices_section.setdefault(lid, [])
                 if eid not in arr:
                     arr.append(eid)
 
-    #  per-edge probe for layer weights
-    layer_weights = {}
-    candidate_lids = set(layers_section.keys()) or lids
-    if hasattr(graph, "get_edge_layer_attr"):
+    #  per-edge probe for slice weights
+    slice_weights = {}
+    candidate_lids = set(slices_section.keys()) or lids
+    if hasattr(graph, "get_edge_slice_attr"):
         for lid in candidate_lids:
-            arr = layers_section.setdefault(lid, [])
+            arr = slices_section.setdefault(lid, [])
             seen = set(arr)
             for eid in all_eids:
                 w = None
                 try:
-                    w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+                    w = graph.get_edge_slice_attr(lid, eid, "weight", default=None)
                 except Exception:
                     try:
-                        w = graph.get_edge_layer_attr(lid, eid, "weight")
+                        w = graph.get_edge_slice_attr(lid, eid, "weight")
                     except Exception:
                         w = None
                 if w is not None:
                     if eid not in seen:
                         arr.append(eid)
                         seen.add(eid)
-                    layer_weights.setdefault(lid, {})[eid] = float(w)
+                    slice_weights.setdefault(lid, {})[eid] = float(w)
 
     # Drop empties
-    layers_section = {lid: eids for lid, eids in layers_section.items() if eids}
+    slices_section = {lid: eids for lid, eids in slices_section.items() if eids}
 
-    # Respect layer/layers filters for the manifest sections
+    # Respect slice/slices filters for the manifest sections
     if requested_lids:
         req_norm = {str(x) for x in requested_lids}
-        layers_section = {lid: eids for lid, eids in layers_section.items() if str(lid) in req_norm}
-        layer_weights = {lid: m for lid, m in layer_weights.items() if str(lid) in req_norm}
+        slices_section = {lid: eids for lid, eids in slices_section.items() if str(lid) in req_norm}
+        slice_weights = {lid: m for lid, m in slice_weights.items() if str(lid) in req_norm}
 
     # ----------------- REIFY: add HE nodes + membership edges to nxG -----------------
     if hyperedge_mode == "reify":
         import networkx as nx
 
-        # Build fast lookup of allowed hyperedge IDs if filtering by layers
+        # Build fast lookup of allowed hyperedge IDs if filtering by slices
         allowed = None
         if requested_lids:
             allowed = set()
-            for lid, eids in layers_section.items():
+            for lid, eids in slices_section.items():
                 for eid in eids:
                     allowed.add(eid)
 
@@ -536,10 +536,10 @@ def to_nx(
     manifest = {
         "edges": manifest_edges,
         "weights": weights_map,
-        "layers": layers_section,
+        "slices": slices_section,
         "vertex_attrs": vertex_attrs,
         "edge_attrs": edge_attrs,
-        "layer_weights": layer_weights,  # always present (may be {})
+        "slice_weights": slice_weights,  # always present (may be {})
         "edge_directed": {eid: bool(_is_directed_eid(graph, eid)) for eid in all_eids},
         "manifest_version": 1,
     }
@@ -782,35 +782,35 @@ def from_nx(
         except Exception:
             pass
 
-    # --- layers and per-layer overrides
-    for lid, eids in (manifest.get("layers", {}) or {}).items():
+    # --- slices and per-slice overrides
+    for lid, eids in (manifest.get("slices", {}) or {}).items():
         try:
-            if lid not in set(H.list_layers(include_default=True)):
-                H.add_layer(lid)
+            if lid not in set(H.list_slices(include_default=True)):
+                H.add_slice(lid)
         except Exception:
             pass
         for eid in eids or []:
             try:
-                H.add_edge_to_layer(lid, eid)
+                H.add_edge_to_slice(lid, eid)
             except Exception:
                 pass
 
-    for lid, per_edge in (manifest.get("layer_weights", {}) or {}).items():
+    for lid, per_edge in (manifest.get("slice_weights", {}) or {}).items():
         try:
-            if lid not in set(H.list_layers(include_default=True)):
-                H.add_layer(lid)
+            if lid not in set(H.list_slices(include_default=True)):
+                H.add_slice(lid)
         except Exception:
             pass
         for eid, w in (per_edge or {}).items():
             try:
-                H.add_edge_to_layer(lid, eid)
+                H.add_edge_to_slice(lid, eid)
             except Exception:
                 pass
             try:
-                H.set_edge_layer_attrs(lid, eid, weight=float(w))
+                H.set_edge_slice_attrs(lid, eid, weight=float(w))
             except Exception:
                 try:
-                    H.set_edge_layer_attr(lid, eid, "weight", float(w))
+                    H.set_edge_slice_attr(lid, eid, "weight", float(w))
                 except Exception:
                     pass
 
@@ -908,7 +908,7 @@ def to_backend(graph, **kwargs):
     networkx.MultiGraph | networkx.MultiDiGraph
         NetworkX graph containing binary edges only. Hyperedges are
         either dropped or expanded. No manifest is returned, so
-        round-tripping will lose hyperedge structure, layers, and
+        round-tripping will lose hyperedge structure, slices, and
         precise edge IDs.
 
     Notes

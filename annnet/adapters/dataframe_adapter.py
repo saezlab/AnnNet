@@ -17,7 +17,7 @@ except ImportError:
 def to_dataframes(
     graph: Graph,
     *,
-    include_layers: bool = True,
+    include_slices: bool = True,
     include_hyperedges: bool = True,
     explode_hyperedges: bool = False,
     public_only: bool = True,
@@ -28,12 +28,12 @@ def to_dataframes(
     - 'nodes': Vertex IDs and attributes
     - 'edges': Binary edges with source, target, weight, directed, attributes
     - 'hyperedges': Hyperedges with head/tail sets (if include_hyperedges=True)
-    - 'layers': Layer membership (if include_layers=True)
-    - 'layer_weights': Per-layer edge weights (if include_layers=True)
+    - 'slices': slice membership (if include_slices=True)
+    - 'slice_weights': Per-slice edge weights (if include_slices=True)
 
     Args:
         graph: Graph instance to export
-        include_layers: Include layer membership tables
+        include_slices: Include slice membership tables
         include_hyperedges: Include hyperedge table
         explode_hyperedges: If True, explode hyperedges to one row per endpoint
         public_only: If True, filter out attributes starting with '__'
@@ -220,43 +220,43 @@ def to_dataframes(
                     }
                 )
 
-    # 4. Layer membership
-    if include_layers:
-        layers_data = []
+    # 4. slice membership
+    if include_slices:
+        slices_data = []
         try:
-            for lid in graph.list_layers(include_default=True):
-                layer_meta = graph._layers.get(lid, {})
-                for eid in layer_meta.get("edges", []):
-                    layers_data.append(
+            for lid in graph.list_slices(include_default=True):
+                slice_meta = graph._slices.get(lid, {})
+                for eid in slice_meta.get("edges", []):
+                    slices_data.append(
                         {
-                            "layer_id": lid,
+                            "slice_id": lid,
                             "edge_id": eid,
                         }
                     )
         except Exception:
             pass
 
-        result["layers"] = (
-            pl.DataFrame(layers_data)
-            if layers_data
-            else pl.DataFrame(schema={"layer_id": pl.Utf8, "edge_id": pl.Utf8})
+        result["slices"] = (
+            pl.DataFrame(slices_data)
+            if slices_data
+            else pl.DataFrame(schema={"slice_id": pl.Utf8, "edge_id": pl.Utf8})
         )
 
-        # 5. Per-layer weights
-        layer_weights_data = []
+        # 5. Per-slice weights
+        slice_weights_data = []
         try:
-            df = graph.edge_layer_attributes
+            df = graph.edge_slice_attributes
             if isinstance(df, pl.DataFrame) and df.height > 0:
-                if {"layer_id", "edge_id", "weight"}.issubset(df.columns):
-                    layer_weights_data = df.select(["layer_id", "edge_id", "weight"]).to_dicts()
+                if {"slice_id", "edge_id", "weight"}.issubset(df.columns):
+                    slice_weights_data = df.select(["slice_id", "edge_id", "weight"]).to_dicts()
         except Exception:
             pass
 
-        result["layer_weights"] = (
-            pl.DataFrame(layer_weights_data)
-            if layer_weights_data
+        result["slice_weights"] = (
+            pl.DataFrame(slice_weights_data)
+            if slice_weights_data
             else pl.DataFrame(
-                schema={"layer_id": pl.Utf8, "edge_id": pl.Utf8, "weight": pl.Float64}
+                schema={"slice_id": pl.Utf8, "edge_id": pl.Utf8, "weight": pl.Float64}
             )
         )
 
@@ -267,8 +267,8 @@ def from_dataframes(
     nodes: pl.DataFrame | None = None,
     edges: pl.DataFrame | None = None,
     hyperedges: pl.DataFrame | None = None,
-    layers: pl.DataFrame | None = None,
-    layer_weights: pl.DataFrame | None = None,
+    slices: pl.DataFrame | None = None,
+    slice_weights: pl.DataFrame | None = None,
     *,
     directed: bool | None = None,
     exploded_hyperedges: bool = False,
@@ -289,18 +289,18 @@ def from_dataframes(
         - Compact format: edge_id, directed, weight, head (list), tail (list), members (list)
         - Exploded format: edge_id, vertex_id, role, weight, directed
 
-    Layers DataFrame (optional):
-        - Required: layer_id, edge_id
+    slices DataFrame (optional):
+        - Required: slice_id, edge_id
 
-    Layer_weights DataFrame (optional):
-        - Required: layer_id, edge_id, weight
+    slice_weights DataFrame (optional):
+        - Required: slice_id, edge_id, weight
 
     Args:
         nodes: DataFrame with vertex_id and attributes
         edges: DataFrame with binary edges
         hyperedges: DataFrame with hyperedges
-        layers: DataFrame with layer membership
-        layer_weights: DataFrame with per-layer edge weights
+        slices: DataFrame with slice membership
+        slice_weights: DataFrame with per-slice edge weights
         directed: Default directedness (None = mixed graph)
         exploded_hyperedges: If True, hyperedges DataFrame is in exploded format
 
@@ -413,36 +413,36 @@ def from_dataframes(
                 if row:
                     G.set_edge_attrs(eid, **row)
 
-    # 4. Add layer memberships
-    if layers is not None and layers.height > 0:
-        if "layer_id" not in layers.columns or "edge_id" not in layers.columns:
-            raise ValueError("layers DataFrame must have 'layer_id' and 'edge_id' columns")
+    # 4. Add slice memberships
+    if slices is not None and slices.height > 0:
+        if "slice_id" not in slices.columns or "edge_id" not in slices.columns:
+            raise ValueError("slices DataFrame must have 'slice_id' and 'edge_id' columns")
 
-        for row in layers.to_dicts():
-            lid = row["layer_id"]
+        for row in slices.to_dicts():
+            lid = row["slice_id"]
             eid = row["edge_id"]
 
             try:
-                if lid not in set(G.list_layers(include_default=True)):
-                    G.add_layer(lid)
+                if lid not in set(G.list_slices(include_default=True)):
+                    G.add_slice(lid)
             except Exception:
-                G.add_layer(lid)
+                G.add_slice(lid)
 
             try:
-                G.add_edge_to_layer(lid, eid)
+                G.add_edge_to_slice(lid, eid)
             except Exception:
                 pass
 
-    # 5. Add per-layer weights
-    if layer_weights is not None and layer_weights.height > 0:
-        if {"layer_id", "edge_id", "weight"}.issubset(layer_weights.columns):
-            for row in layer_weights.to_dicts():
-                lid = row["layer_id"]
+    # 5. Add per-slice weights
+    if slice_weights is not None and slice_weights.height > 0:
+        if {"slice_id", "edge_id", "weight"}.issubset(slice_weights.columns):
+            for row in slice_weights.to_dicts():
+                lid = row["slice_id"]
                 eid = row["edge_id"]
                 weight = row["weight"]
 
                 try:
-                    G.set_edge_layer_attrs(lid, eid, weight=weight)
+                    G.set_edge_slice_attrs(lid, eid, weight=weight)
                 except Exception:
                     pass
 

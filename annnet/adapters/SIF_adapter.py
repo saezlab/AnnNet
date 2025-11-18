@@ -99,7 +99,7 @@ def to_sif(
             "hyperedges": {},
             "vertex_attrs": {},
             "edge_metadata": {},
-            "layers": {},
+            "slices": {},
         }
         if lossless
         else None
@@ -227,24 +227,24 @@ def to_sif(
             }
 
         try:
-            layer_ids = list(graph.list_layers(include_default=True))
-            for lid in layer_ids:
+            slice_ids = list(graph.list_slices(include_default=True))
+            for lid in slice_ids:
                 try:
-                    edge_ids = list(graph.get_layer_edges(lid))
+                    edge_ids = list(graph.get_slice_edges(lid))
                     if not edge_ids:
                         continue
 
-                    layer_info = {"edges": edge_ids, "weights": {}}
+                    slice_info = {"edges": edge_ids, "weights": {}}
 
                     for eid in edge_ids:
                         try:
-                            w = graph.get_edge_layer_attr(lid, eid, "weight", default=None)
+                            w = graph.get_edge_slice_attr(lid, eid, "weight", default=None)
                             if w is not None:
-                                layer_info["weights"][eid] = float(w)
+                                slice_info["weights"][eid] = float(w)
                         except Exception:
                             pass
 
-                    manifest["layers"][str(lid)] = layer_info
+                    manifest["slices"][str(lid)] = slice_info
                 except Exception:
                     pass
         except Exception:
@@ -286,7 +286,7 @@ def from_sif(
         - Restores original edge IDs, weights, and attributes from manifest
         - Reconstructs hyperedges from manifest
         - Restores per-edge directedness from manifest
-        - Restores layer memberships and layer-specific weights from manifest
+        - Restores slice memberships and slice-specific weights from manifest
         - Full round-trip fidelity when paired with to_sif(lossless=True)
 
     SIF Format:
@@ -317,7 +317,7 @@ def from_sif(
 
     Notes:
         - SIF format only supports binary edges natively
-        - For full graph reconstruction (hyperedges, layers, metadata), use manifest
+        - For full graph reconstruction (hyperedges, slices, metadata), use manifest
         - Manifest files are created by to_sif(lossless=True)
         - Edge IDs are auto-generated in standard mode, preserved in lossless mode
         - Vertex attributes require .nodes sidecar file or manifest
@@ -479,23 +479,23 @@ def from_sif(
             if attrs:
                 H.set_edge_attrs(he_id, **attrs)
 
-    if manifest and "layers" in manifest:
-        for lid, layer_info in manifest["layers"].items():
+    if manifest and "slices" in manifest:
+        for lid, slice_info in manifest["slices"].items():
             try:
-                if lid not in set(H.list_layers(include_default=True)):
-                    H.add_layer(lid)
+                if lid not in set(H.list_slices(include_default=True)):
+                    H.add_slice(lid)
             except Exception:
-                H.add_layer(lid)
+                H.add_slice(lid)
 
-            for eid in layer_info.get("edges", []):
+            for eid in slice_info.get("edges", []):
                 try:
-                    H.add_edge_to_layer(lid, eid)
+                    H.add_edge_to_slice(lid, eid)
                 except Exception:
                     pass
 
-            for eid, weight in layer_info.get("weights", {}).items():
+            for eid, weight in slice_info.get("weights", {}).items():
                 try:
-                    H.set_edge_layer_attrs(lid, eid, weight=weight)
+                    H.set_edge_slice_attrs(lid, eid, weight=weight)
                 except Exception:
                     pass
 
