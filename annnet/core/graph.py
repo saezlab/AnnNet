@@ -16,10 +16,10 @@ class EdgeType(Enum):
     UNDIRECTED = "UNDIRECTED"
 
 
-class LayerManager:
-    """Manager for graph layers and multi-layer operations.
+class SliceManager:
+    """Manager for graph slice operations.
 
-    Provides organized namespace for layer operations by delegating to Graph methods.
+    Provides organized namespace for slice operations by delegating to Graph methods.
     All heavy lifting is done by the Graph class; this is just a clean API surface.
 
     """
@@ -29,91 +29,91 @@ class LayerManager:
 
     # ==================== Basic Operations (Delegation) ====================
 
-    def add(self, layer_id, **attributes):
-        """Create new layer.
+    def add(self, slice_id, **attributes):
+        """Create new slice.
 
-        Delegates to Graph.add_layer()
+        Delegates to Graph.add_slice()
         """
-        return self._G.add_layer(layer_id, **attributes)
+        return self._G.add_slice(slice_id, **attributes)
 
-    def remove(self, layer_id):
-        """Remove layer.
+    def remove(self, slice_id):
+        """Remove slice.
 
-        Delegates to Graph.remove_layer()
+        Delegates to Graph.remove_slice()
         """
-        return self._G.remove_layer(layer_id)
+        return self._G.remove_slice(slice_id)
 
     def list(self, include_default=False):
-        """List layer IDs.
+        """List slice IDs.
 
-        Delegates to Graph.list_layers()
+        Delegates to Graph.list_slices()
         """
-        return self._G.list_layers(include_default=include_default)
+        return self._G.list_slices(include_default=include_default)
 
-    def exists(self, layer_id):
-        """Check if layer exists.
+    def exists(self, slice_id):
+        """Check if slice exists.
 
-        Delegates to Graph.has_layer()
+        Delegates to Graph.has_slice()
         """
-        return self._G.has_layer(layer_id)
+        return self._G.has_slice(slice_id)
 
-    def info(self, layer_id):
-        """Get layer metadata.
+    def info(self, slice_id):
+        """Get slice metadata.
 
-        Delegates to Graph.get_layer_info()
+        Delegates to Graph.get_slice_info()
         """
-        return self._G.get_layer_info(layer_id)
+        return self._G.get_slice_info(slice_id)
 
     def count(self):
-        """Get number of layers.
+        """Get number of slices.
 
-        Delegates to Graph.layer_count()
+        Delegates to Graph.slice_count()
         """
-        return self._G.layer_count()
+        return self._G.slice_count()
 
-    def vertices(self, layer_id):
-        """Get vertices in layer.
+    def vertices(self, slice_id):
+        """Get vertices in slice.
 
-        Delegates to Graph.get_layer_vertices()
+        Delegates to Graph.get_slice_vertices()
         """
-        return self._G.get_layer_vertices(layer_id)
+        return self._G.get_slice_vertices(slice_id)
 
-    def edges(self, layer_id):
-        """Get edges in layer.
+    def edges(self, slice_id):
+        """Get edges in slice.
 
-        Delegates to Graph.get_layer_edges()
+        Delegates to Graph.get_slice_edges()
         """
-        return self._G.get_layer_edges(layer_id)
+        return self._G.get_slice_edges(slice_id)
 
-    # ==================== Active Layer Property ====================
+    # ==================== Active slice Property ====================
 
     @property
     def active(self):
-        """Get active layer ID.
+        """Get active slice ID.
 
-        Delegates to Graph.get_active_layer()
+        Delegates to Graph.get_active_slice()
         """
-        return self._G.get_active_layer()
+        return self._G.get_active_slice()
 
     @active.setter
-    def active(self, layer_id):
-        """Set active layer ID.
+    def active(self, slice_id):
+        """Set active slice ID.
 
-        Delegates to Graph.set_active_layer()
+        Delegates to Graph.set_active_slice()
         """
-        self._G.set_active_layer(layer_id)
+        self._G.set_active_slice(slice_id)
 
     # ==================== Set Operations (Pure Delegation) ====================
 
-    def union(self, layer_ids):
-        """Compute union of layers (returns dict, doesn't create layer).
+    def union(self, slice_ids):
+        """Compute union of slices (returns dict, doesn't create slice).
 
-        Delegates to Graph.layer_union()
+        Delegates to Graph.slice_union()
 
         Parameters
         --
-        layer_ids : list[str]
-            Layers to union
+        slice_ids : list[str]
+            slices to union
 
         Returns
         ---
@@ -121,17 +121,17 @@ class LayerManager:
             {"vertices": set[str], "edges": set[str]}
 
         """
-        return self._G.layer_union(layer_ids)
+        return self._G.slice_union(slice_ids)
 
-    def intersect(self, layer_ids):
-        """Compute intersection of layers (returns dict, doesn't create layer).
+    def intersect(self, slice_ids):
+        """Compute intersection of slices (returns dict, doesn't create slice).
 
-        Delegates to Graph.layer_intersection()
+        Delegates to Graph.slice_intersection()
 
         Parameters
         --
-        layer_ids : list[str]
-            Layers to intersect
+        slice_ids : list[str]
+            slices to intersect
 
         Returns
         ---
@@ -139,173 +139,173 @@ class LayerManager:
             {"vertices": set[str], "edges": set[str]}
 
         """
-        return self._G.layer_intersection(layer_ids)
+        return self._G.slice_intersection(slice_ids)
 
-    def difference(self, layer_a, layer_b):
-        """Compute set difference (returns dict, doesn't create layer).
+    def difference(self, slice_a, slice_b):
+        """Compute set difference (returns dict, doesn't create slice).
 
-        Delegates to Graph.layer_difference()
+        Delegates to Graph.slice_difference()
 
         Parameters
         --
-        layer_a : str
-            First layer
-        layer_b : str
-            Second layer
+        slice_a : str
+            First slice
+        slice_b : str
+            Second slice
 
         Returns
         ---
         dict
             {"vertices": set[str], "edges": set[str]}
-            Elements in layer_a but not in layer_b
+            Elements in slice_a but not in slice_b
 
         """
-        return self._G.layer_difference(layer_a, layer_b)
+        return self._G.slice_difference(slice_a, slice_b)
 
     # ==================== Creation from Operations ====================
 
-    def union_create(self, layer_ids, name, **attributes):
-        """Create new layer as union of existing layers.
+    def union_create(self, slice_ids, name, **attributes):
+        """Create new slice as union of existing slices.
 
-        Combines Graph.layer_union() + Graph.create_layer_from_operation()
+        Combines Graph.slice_union() + Graph.create_slice_from_operation()
 
         Parameters
         --
-        layer_ids : list[str]
-            Layers to union
+        slice_ids : list[str]
+            slices to union
         name : str
-            New layer name
+            New slice name
         **attributes
-            Layer attributes
+            slice attributes
 
         Returns
         ---
         str
-            Created layer ID
+            Created slice ID
 
         """
-        result = self._G.layer_union(layer_ids)
-        return self._G.create_layer_from_operation(name, result, **attributes)
+        result = self._G.slice_union(slice_ids)
+        return self._G.create_slice_from_operation(name, result, **attributes)
 
-    def intersect_create(self, layer_ids, name, **attributes):
-        """Create new layer as intersection of existing layers.
+    def intersect_create(self, slice_ids, name, **attributes):
+        """Create new slice as intersection of existing slices.
 
-        Combines Graph.layer_intersection() + Graph.create_layer_from_operation()
+        Combines Graph.slice_intersection() + Graph.create_slice_from_operation()
 
         Parameters
         --
-        layer_ids : list[str]
-            Layers to intersect
+        slice_ids : list[str]
+            slices to intersect
         name : str
-            New layer name
+            New slice name
         **attributes
-            Layer attributes
+            slice attributes
 
         Returns
         ---
         str
-            Created layer ID
+            Created slice ID
 
         """
-        result = self._G.layer_intersection(layer_ids)
-        return self._G.create_layer_from_operation(name, result, **attributes)
+        result = self._G.slice_intersection(slice_ids)
+        return self._G.create_slice_from_operation(name, result, **attributes)
 
-    def difference_create(self, layer_a, layer_b, name, **attributes):
-        """Create new layer as difference of two layers.
+    def difference_create(self, slice_a, slice_b, name, **attributes):
+        """Create new slice as difference of two slices.
 
-        Combines Graph.layer_difference() + Graph.create_layer_from_operation()
+        Combines Graph.slice_difference() + Graph.create_slice_from_operation()
 
         Parameters
         --
-        layer_a : str
-            First layer
-        layer_b : str
-            Second layer
+        slice_a : str
+            First slice
+        slice_b : str
+            Second slice
         name : str
-            New layer name
+            New slice name
         **attributes
-            Layer attributes
+            slice attributes
 
         Returns
         ---
         str
-            Created layer ID
+            Created slice ID
 
         """
-        result = self._G.layer_difference(layer_a, layer_b)
-        return self._G.create_layer_from_operation(name, result, **attributes)
+        result = self._G.slice_difference(slice_a, slice_b)
+        return self._G.create_slice_from_operation(name, result, **attributes)
 
     def aggregate(
-        self, source_layer_ids, target_layer_id, method="union", weight_func=None, **attributes
+        self, source_slice_ids, target_slice_id, method="union", weight_func=None, **attributes
     ):
-        """Create aggregated layer from multiple sources.
+        """Create aggregated slice from multiple sources.
 
-        Delegates to Graph.create_aggregated_layer()
+        Delegates to Graph.create_aggregated_slice()
 
         Parameters
         --
-        source_layer_ids : list[str]
-            Source layers
-        target_layer_id : str
-            Target layer name
+        source_slice_ids : list[str]
+            Source slices
+        target_slice_id : str
+            Target slice name
         method : {'union', 'intersection'}
             Aggregation method
         weight_func : callable, optional
             Weight merging function (reserved)
         **attributes
-            Layer attributes
+            slice attributes
 
         Returns
         ---
         str
-            Created layer ID
+            Created slice ID
 
         """
-        return self._G.create_aggregated_layer(
-            source_layer_ids, target_layer_id, method, weight_func, **attributes
+        return self._G.create_aggregated_slice(
+            source_slice_ids, target_slice_id, method, weight_func, **attributes
         )
 
     # ==================== Analysis & Queries ====================
 
     def stats(self, include_default=False):
-        """Get statistics for all layers.
+        """Get statistics for all slices.
 
-        Delegates to Graph.layer_statistics()
+        Delegates to Graph.slice_statistics()
 
         Returns
         ---
         dict[str, dict]
-            {layer_id: {'vertices': int, 'edges': int, 'attributes': dict}}
+            {slice_id: {'vertices': int, 'edges': int, 'attributes': dict}}
 
         """
-        return self._G.layer_statistics(include_default=include_default)
+        return self._G.slice_statistics(include_default=include_default)
 
     def vertex_presence(self, vertex_id, include_default=False):
-        """Find layers containing a vertex.
+        """Find slices containing a vertex.
 
-        Delegates to Graph.vertex_presence_across_layers()
+        Delegates to Graph.vertex_presence_across_slices()
 
         Parameters
         --
         vertex_id : str
             Vertex to search for
         include_default : bool
-            Include default layer
+            Include default slice
 
         Returns
         ---
         list[str]
-            Layer IDs containing the vertex
+            slice IDs containing the vertex
 
         """
-        return self._G.vertex_presence_across_layers(vertex_id, include_default)
+        return self._G.vertex_presence_across_slices(vertex_id, include_default)
 
     def edge_presence(
         self, edge_id=None, source=None, target=None, include_default=False, undirected_match=None
     ):
-        """Find layers containing an edge.
+        """Find slices containing an edge.
 
-        Delegates to Graph.edge_presence_across_layers()
+        Delegates to Graph.edge_presence_across_slices()
 
         Parameters
         --
@@ -316,18 +316,18 @@ class LayerManager:
         target : str, optional
             Target node (with source)
         include_default : bool
-            Include default layer
+            Include default slice
         undirected_match : bool, optional
             Allow symmetric matches
 
         Returns
         ---
         list[str] or dict[str, list[str]]
-            If edge_id: list of layer IDs
-            If source/target: {layer_id: [edge_ids]}
+            If edge_id: list of slice IDs
+            If source/target: {slice_id: [edge_ids]}
 
         """
-        return self._G.edge_presence_across_layers(
+        return self._G.edge_presence_across_slices(
             edge_id,
             source,
             target,
@@ -336,9 +336,9 @@ class LayerManager:
         )
 
     def hyperedge_presence(self, members=None, head=None, tail=None, include_default=False):
-        """Find layers containing a hyperedge.
+        """Find slices containing a hyperedge.
 
-        Delegates to Graph.hyperedge_presence_across_layers()
+        Delegates to Graph.hyperedge_presence_across_slices()
 
         Parameters
         --
@@ -349,65 +349,65 @@ class LayerManager:
         tail : Iterable[str], optional
             Directed hyperedge tail
         include_default : bool
-            Include default layer
+            Include default slice
 
         Returns
         ---
         dict[str, list[str]]
-            {layer_id: [edge_ids]}
+            {slice_id: [edge_ids]}
 
         """
-        return self._G.hyperedge_presence_across_layers(
+        return self._G.hyperedge_presence_across_slices(
             members=members, head=head, tail=tail, include_default=include_default
         )
 
-    def conserved_edges(self, min_layers=2, include_default=False):
-        """Find edges present in multiple layers.
+    def conserved_edges(self, min_slices=2, include_default=False):
+        """Find edges present in multiple slices.
 
         Delegates to Graph.conserved_edges()
 
         Parameters
         --
-        min_layers : int
-            Minimum number of layers
+        min_slices : int
+            Minimum number of slices
         include_default : bool
-            Include default layer
+            Include default slice
 
         Returns
         ---
         dict[str, int]
-            {edge_id: layer_count}
+            {edge_id: slice_count}
 
         """
-        return self._G.conserved_edges(min_layers, include_default)
+        return self._G.conserved_edges(min_slices, include_default)
 
-    def specific_edges(self, layer_id):
-        """Find edges unique to a layer.
+    def specific_edges(self, slice_id):
+        """Find edges unique to a slice.
 
-        Delegates to Graph.layer_specific_edges()
+        Delegates to Graph.slice_specific_edges()
 
         Parameters
         --
-        layer_id : str
-            Layer to check
+        slice_id : str
+            slice to check
 
         Returns
         ---
         set[str]
-            Edge IDs unique to this layer
+            Edge IDs unique to this slice
 
         """
-        return self._G.layer_specific_edges(layer_id)
+        return self._G.slice_specific_edges(slice_id)
 
-    def temporal_dynamics(self, ordered_layers, metric="edge_change"):
-        """Analyze temporal changes across layers.
+    def temporal_dynamics(self, ordered_slices, metric="edge_change"):
+        """Analyze temporal changes across slices.
 
         Delegates to Graph.temporal_dynamics()
 
         Parameters
         --
-        ordered_layers : list[str]
-            Layers in chronological order
+        ordered_slices : list[str]
+            slices in chronological order
         metric : {'edge_change', 'vertex_change'}
             What to track
 
@@ -417,12 +417,12 @@ class LayerManager:
             Per-step changes: [{'added': int, 'removed': int, 'net_change': int}]
 
         """
-        return self._G.temporal_dynamics(ordered_layers, metric)
+        return self._G.temporal_dynamics(ordered_slices, metric)
 
     # ==================== Convenience Methods ====================
 
     def summary(self):
-        """Get human-readable summary of all layers.
+        """Get human-readable summary of all slices.
 
         Returns
         ---
@@ -431,16 +431,28 @@ class LayerManager:
 
         """
         stats = self.stats(include_default=True)
-        lines = [f"Layers: {len(stats)}"]
+        lines = [f"slices: {len(stats)}"]
 
-        for i, (layer_id, info) in enumerate(stats.items()):
+        for i, (slice_id, info) in enumerate(stats.items()):
             prefix = "├─" if i < len(stats) - 1 else "└─"
-            lines.append(f"{prefix} {layer_id}: {info['vertices']} vertices, {info['edges']} edges")
+            lines.append(f"{prefix} {slice_id}: {info['vertices']} vertices, {info['edges']} edges")
 
         return "\n".join(lines)
 
     def __repr__(self):
-        return f"LayerManager({self.count()} layers)"
+        return f"SliceManager({self.count()} slices)"
+
+
+class LayerManager:
+    """Manager for Kivela multi-layer operations.
+
+    Provides organized namespace for layer operations by delegating to Graph methods.
+    All heavy lifting is done by the Graph class; this is just a clean API surface.
+
+    """
+
+    def __init__(self, graph):
+        self._G = graph
 
     # ==================== Multi-aspect awareness ====================
 
@@ -1297,12 +1309,12 @@ class GraphDiff:
 
 
 class Graph:
-    """Sparse incidence-matrix graph with layers, attributes, parallel edges, and hyperedges.
+    """Sparse incidence-matrix graph with slices, attributes, parallel edges, and hyperedges.
 
     The graph is backed by a DOK (Dictionary Of Keys) sparse matrix and exposes
-    layered views and attribute tables stored as Polars DF (DataFrame). Supports:
+    sliceed views and attribute tables stored as Polars DF (DataFrame). Supports:
     vertices, binary edges (directed/undirected), edge-entities (vertex-edge hybrids),
-    k-ary hyperedges (directed/undirected), per-layer membership and weights,
+    k-ary hyperedges (directed/undirected), per-slice membership and weights,
     and Polars-backed attribute upserts.
 
     Parameters
@@ -1319,7 +1331,7 @@ class Graph:
 
     See Also
     
-    add_vertex, add_edge, add_hyperedge, edges_view, vertices_view, layers_view
+    add_vertex, add_edge, add_hyperedge, edges_view, vertices_view, slices_view
 
     """
 
@@ -1332,14 +1344,14 @@ class Graph:
         "weight",
         "edge_type",
         "directed",
-        "layer",
-        "layer_weight",
+        "slice",
+        "slice_weight",
         "kind",
         "members",
         "head",
         "tail",
     }
-    _LAYER_RESERVED = {"layer_id"}
+    _slice_RESERVED = {"slice_id"}
 
     # Construction
 
@@ -1357,9 +1369,9 @@ class Graph:
         an incidence matrix in DOK (Dictionary Of Keys) sparse format.
         - Attribute tables are Polars DF (DataFrame) with canonical key columns:
         ``vertex_attributes(vertex_id)``, ``edge_attributes(edge_id)``,
-        ``layer_attributes(layer_id)``, and
-        ``edge_layer_attributes(layer_id, edge_id, weight)``.
-        - A ``'default'`` layer is created and set active.
+        ``slice_attributes(slice_id)``, and
+        ``edge_slice_attributes(slice_id, edge_id, weight)``.
+        - A ``'default'`` slice is created and set active.
 
         """
         self.directed = directed
@@ -1397,9 +1409,9 @@ class Graph:
         # Attribute storage using polars DataFrames
         self.vertex_attributes = pl.DataFrame(schema={"vertex_id": pl.Utf8})
         self.edge_attributes = pl.DataFrame(schema={"edge_id": pl.Utf8})
-        self.layer_attributes = pl.DataFrame(schema={"layer_id": pl.Utf8})
-        self.edge_layer_attributes = pl.DataFrame(
-            schema={"layer_id": pl.Utf8, "edge_id": pl.Utf8, "weight": pl.Float64}
+        self.slice_attributes = pl.DataFrame(schema={"slice_id": pl.Utf8})
+        self.edge_slice_attributes = pl.DataFrame(
+            schema={"slice_id": pl.Utf8, "edge_id": pl.Utf8, "weight": pl.Float64}
         )
         self.edge_kind = {}
         self.hyperedge_definitions = {}
@@ -1408,15 +1420,15 @@ class Graph:
         # Edge ID counter for parallel edges
         self._next_edge_id = 0
 
-        # Layer management - lightweight dict structure
-        self._layers = {}  # layer_id -> {"vertices": set(), "edges": set(), "attributes": {}}
-        self._current_layer = None
-        self._default_layer = "default"
-        self.layer_edge_weights = defaultdict(dict)  # layer_id -> {edge_id: weight}
+        # slice management - lightweight dict structure
+        self._slices = {}  # slice_id -> {"vertices": set(), "edges": set(), "attributes": {}}
+        self._current_slice = None
+        self._default_slice = "default"
+        self.slice_edge_weights = defaultdict(dict)  # slice_id -> {edge_id: weight}
 
-        # Initialize default layer
-        self._layers[self._default_layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-        self._current_layer = self._default_layer
+        # Initialize default slice
+        self._slices[self._default_slice] = {"vertices": set(), "edges": set(), "attributes": {}}
+        self._current_slice = self._default_slice
 
         # counts stay logical (start empty)
         self._num_entities = 0
@@ -1474,138 +1486,139 @@ class Graph:
         self.edge_kind = {}     # eid -> {"intra","inter","coupling"}
         self.edge_layers = {}   # eid -> α   or -> (α,β) for inter/coupling
 
-    # Layer basics
 
-    def add_layer(self, layer_id, **attributes):
-        """Create a new empty layer.
+    # slice basics
+
+    def add_slice(self, slice_id, **attributes):
+        """Create a new empty slice.
 
         Parameters
         --
-        layer_id : str
-            New layer identifier (ID).
+        slice_id : str
+            New slice identifier (ID).
         **attributes
-            Pure layer attributes to store (non-structural).
+            Pure slice attributes to store (non-structural).
 
         Returns
         ---
         str
-            The created layer ID.
+            The created slice ID.
 
         Raises
         --
         ValueError
-            If the layer already exists.
+            If the slice already exists.
 
         """
-        if layer_id in self._layers and layer_id != "default":
-            raise ValueError(f"Layer {layer_id} already exists")
+        if slice_id in self._slices and slice_id != "default":
+            raise ValueError(f"slice {slice_id} already exists")
 
-        self._layers[layer_id] = {"vertices": set(), "edges": set(), "attributes": attributes}
-        # Persist layer metadata to DF (pure attributes, upsert)
+        self._slices[slice_id] = {"vertices": set(), "edges": set(), "attributes": attributes}
+        # Persist slice metadata to DF (pure attributes, upsert)
         if attributes:
-            self.set_layer_attrs(layer_id, **attributes)
-        # layer_id as an elementary layer of that aspect
+            self.set_slice_attrs(slice_id, **attributes)
+        # slice_id as an elementary slice of that aspect
         if len(self.aspects) == 1:
             a = self.aspects[0]
-            if a in self.elem_layers:
-                if layer_id not in self.elem_layers[a]:
-                    self.elem_layers[a].append(layer_id)
-                    self._rebuild_all_layers_cache()        
-        return layer_id
+            if a in self.elem_slices:
+                if slice_id not in self.elem_slices[a]:
+                    self.elem_slices[a].append(slice_id)
+                    self._rebuild_all_slices_cache()        
+        return slice_id
 
-    def set_active_layer(self, layer_id):
-        """Set the active layer for subsequent operations.
+    def set_active_slice(self, slice_id):
+        """Set the active slice for subsequent operations.
 
         Parameters
         --
-        layer_id : str
-            Existing layer ID.
+        slice_id : str
+            Existing slice ID.
 
         Raises
         --
         KeyError
-            If the layer does not exist.
+            If the slice does not exist.
 
         """
-        if layer_id not in self._layers:
-            raise KeyError(f"Layer {layer_id} not found")
-        self._current_layer = layer_id
+        if slice_id not in self._slices:
+            raise KeyError(f"slice {slice_id} not found")
+        self._current_slice = slice_id
 
-    def get_active_layer(self):
-        """Get the currently active layer ID.
+    def get_active_slice(self):
+        """Get the currently active slice ID.
 
         Returns
         ---
         str
-            Active layer ID.
+            Active slice ID.
 
         """
-        return self._current_layer
+        return self._current_slice
 
-    def get_layers_dict(self, include_default: bool = False):
-        """Get a mapping of layer IDs to their metadata.
+    def get_slices_dict(self, include_default: bool = False):
+        """Get a mapping of slice IDs to their metadata.
 
         Parameters
         --
         include_default : bool, optional
-            Include the internal ``'default'`` layer if True.
+            Include the internal ``'default'`` slice if True.
 
         Returns
         ---
         dict[str, dict]
-            ``{layer_id: {"vertices": set, "edges": set, "attributes": dict}}``.
+            ``{slice_id: {"vertices": set, "edges": set, "attributes": dict}}``.
 
         """
         if include_default:
-            return self._layers
-        return {k: v for k, v in self._layers.items() if k != self._default_layer}
+            return self._slices
+        return {k: v for k, v in self._slices.items() if k != self._default_slice}
 
-    def list_layers(self, include_default: bool = False):
-        """List layer IDs.
+    def list_slices(self, include_default: bool = False):
+        """List slice IDs.
 
         Parameters
         --
         include_default : bool, optional
-            Include the internal ``'default'`` layer if True.
+            Include the internal ``'default'`` slice if True.
 
         Returns
         ---
         list[str]
-            Layer IDs.
+            slice IDs.
 
         """
-        return list(self.get_layers_dict(include_default=include_default).keys())
+        return list(self.get_slices_dict(include_default=include_default).keys())
 
-    def has_layer(self, layer_id):
-        """Check whether a layer exists.
+    def has_slice(self, slice_id):
+        """Check whether a slice exists.
 
         Parameters
         --
-        layer_id : str
+        slice_id : str
 
         Returns
         ---
         bool
 
         """
-        return layer_id in self._layers
+        return slice_id in self._slices
 
-    def layer_count(self):
-        """Get the number of layers (including the internal default).
+    def slice_count(self):
+        """Get the number of slices (including the internal default).
 
         Returns
         ---
         int
 
         """
-        return len(self._layers)
+        return len(self._slices)
 
-    def get_layer_info(self, layer_id):
-        """Get a layer's metadata snapshot.
+    def get_slice_info(self, slice_id):
+        """Get a slice's metadata snapshot.
 
         Parameters
         --
-        layer_id : str
+        slice_id : str
 
         Returns
         ---
@@ -1615,13 +1628,13 @@ class Graph:
         Raises
         --
         KeyError
-            If the layer does not exist.
+            If the slice does not exist.
 
         """
-        if layer_id not in self._layers:
-            raise KeyError(f"Layer {layer_id} not found")
-        return self._layers[layer_id].copy()
-
+        if slice_id not in self._slices:
+            raise KeyError(f"slice {slice_id} not found")
+        return self._slices[slice_id].copy()
+    
     # Multilayers
 
     ## Aspects & layers
@@ -2590,6 +2603,7 @@ class Graph:
         Q = float(data[mask].sum()) / two_mu
         return Q
 
+
     # ID + entity ensure helpers
 
     def _get_next_edge_id(self) -> str:
@@ -2728,15 +2742,15 @@ class Graph:
 
     # Build graph
 
-    def add_vertex(self, vertex_id, layer=None, **attributes):
-        """Add (or upsert) a vertex and optionally attach it to a layer.
+    def add_vertex(self, vertex_id, slice=None, **attributes):
+        """Add (or upsert) a vertex and optionally attach it to a slice.
 
         Parameters
         --
         vertex_id : str
             vertex ID (must be unique across entities).
-        layer : str, optional
-            Target layer. Defaults to the active layer.
+        slice : str, optional
+            Target slice. Defaults to the active slice.
         **attributes
             Pure vertex attributes to store.
 
@@ -2757,12 +2771,12 @@ class Graph:
 
             if isinstance(vertex_id, str):
                 vertex_id = _sys.intern(vertex_id)
-            if layer is None:
-                layer = self._current_layer
-            elif isinstance(layer, str):
-                layer = _sys.intern(layer)
+            if slice is None:
+                slice = self._current_slice
+            elif isinstance(slice, str):
+                slice = _sys.intern(slice)
         except Exception:
-            layer = layer or self._current_layer
+            slice = slice or self._current_slice
 
         entity_to_idx = self.entity_to_idx
         idx_to_entity = self.idx_to_entity
@@ -2783,23 +2797,23 @@ class Graph:
                 new_rows = max(self._num_entities, rows + max(8, rows >> 1))
                 M.resize((new_rows, cols))
 
-        # Add to specified layer (create if needed)
-        layers = self._layers
-        if layer not in layers:
-            layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-        layers[layer]["vertices"].add(vertex_id)
+        # Add to specified slice (create if needed)
+        slices = self._slices
+        if slice not in slices:
+            slices[slice] = {"vertices": set(), "edges": set(), "attributes": {}}
+        slices[slice]["vertices"].add(vertex_id)
 
-        # Multilayer presence sync:
+        # Multislice presence sync:
         # - Track V (true vertices only)
-        # - If node_aligned: ensure presence across all layers
-        # - Else, if we are in 1-aspect shim mode and a layer was given, add (u, (layer,))
+        # - If node_aligned: ensure presence across all slices
+        # - Else, if we are in 1-aspect shim mode and a slice was given, add (u, (slice,))
         if self.entity_types.get(vertex_id) == "vertex":
             self._V.add(vertex_id)
-            if self.node_aligned and self._all_layers:
-                for α in self._all_layers:
+            if self.node_aligned and self._all_slices:
+                for α in self._all_slices:
                     self._VM.add((vertex_id, α))
-            elif layer is not None and len(self.aspects) == 1 and self._legacy_single_aspect_enabled:
-                self._VM.add((vertex_id, (layer,)))
+            elif slice is not None and len(self.aspects) == 1 and self._legacy_single_aspect_enabled:
+                self._VM.add((vertex_id, (slice,)))
 
         # Ensure vertex_attributes has a row for this vertex (even with no attrs)
         self._ensure_vertex_table()
@@ -2811,7 +2825,7 @@ class Graph:
 
         return vertex_id
 
-    def add_vertices(self, vertices, layer=None, **attributes):
+    def add_vertices(self, vertices, slice=None, **attributes):
         # normalize to [(vertex_id, per_attrs), ...]
         it = []
         for item in vertices:
@@ -2825,19 +2839,19 @@ class Graph:
                 it.append({"vertex_id": item, **attributes})
         self.add_vertices_bulk(
             [(d["vertex_id"], {k: v for k, v in d.items() if k != "vertex_id"}) for d in it],
-            layer=layer,
+            slice=slice,
         )
         return [d["vertex_id"] for d in it]
 
-    def add_edge_entity(self, edge_entity_id, layer=None, **attributes):
+    def add_edge_entity(self, edge_entity_id, slice=None, **attributes):
         """Add an **edge entity** (vertex-edge hybrid) that can connect to vertices/edges.
 
         Parameters
         --
         edge_entity_id : str
             Entity ID to register as type ``'edge'`` in the entity set.
-        layer : str, optional
-            Target layer. Defaults to the active layer.
+        slice : str, optional
+            Target slice. Defaults to the active slice.
         **attributes
             Attributes stored in the vertex attribute DF (treated like vertices).
 
@@ -2847,29 +2861,29 @@ class Graph:
             The edge-entity ID.
 
         """
-        # Resolve layer default and intern hot strings
-        layer = layer or self._current_layer
+        # Resolve slice default and intern hot strings
+        slice = slice or self._current_slice
         try:
             import sys as _sys
 
             if isinstance(edge_entity_id, str):
                 edge_entity_id = _sys.intern(edge_entity_id)
-            if isinstance(layer, str):
-                layer = _sys.intern(layer)
+            if isinstance(slice, str):
+                slice = _sys.intern(slice)
         except Exception:
             pass
 
         entity_to_idx = self.entity_to_idx
-        layers = self._layers
+        slices = self._slices
 
         # Add to global superset if new (delegate to existing helper)
         if edge_entity_id not in entity_to_idx:
             self._add_edge_entity(edge_entity_id)
 
-        # Add to specified layer
-        if layer not in layers:
-            layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-        layers[layer]["vertices"].add(edge_entity_id)
+        # Add to specified slice
+        if slice not in slices:
+            slices[slice] = {"vertices": set(), "edges": set(), "attributes": {}}
+        slices[slice]["vertices"].add(edge_entity_id)
 
         # Add attributes (treat edge entities like vertices for attributes)
         if attributes:
@@ -2917,12 +2931,12 @@ class Graph:
         self,
         source,
         target,
-        layer=None,
+        slice=None,
         weight=1.0,
         edge_id=None,
         edge_type="regular",
         propagate="none",
-        layer_weight=None,
+        slice_weight=None,
         directed=None,
         edge_directed=None,
         **attributes,
@@ -2935,8 +2949,8 @@ class Graph:
             Source entity ID (vertex or edge-entity for vertex-edge mode).
         target : str
             Target entity ID.
-        layer : str, optional
-            Layer to place the edge into. Defaults to the active layer.
+        slice : str, optional
+            slice to place the edge into. Defaults to the active slice.
         weight : float, optional
             Global edge weight stored in the incidence column (default 1.0).
         edge_id : str, optional
@@ -2944,12 +2958,12 @@ class Graph:
         edge_type : {'regular', 'vertex_edge'}, optional
             Edge kind. ``'vertex_edge'`` allows connecting to an edge-entity.
         propagate : {'none', 'shared', 'all'}, optional
-            Layer propagation:
-            - ``'none'`` : only the specified layer
-            - ``'shared'`` : all layers that already contain **both** endpoints
-            - ``'all'`` : all layers that contain **either** endpoint (and add the other)
-        layer_weight : float, optional
-            Per-layer weight override for this edge (stored in edge-layer DF).
+            slice propagation:
+            - ``'none'`` : only the specified slice
+            - ``'shared'`` : all slices that already contain **both** endpoints
+            - ``'all'`` : all slices that contain **either** endpoint (and add the other)
+        slice_weight : float, optional
+            Per-slice weight override for this edge (stored in edge-slice DF).
         edge_directed : bool, optional
             Override default directedness for this edge. If None, uses graph default.
         **attributes
@@ -2980,9 +2994,9 @@ class Graph:
         # Resolve dict endpoints via composite key (if enabled)
         if self._vertex_key_enabled():
             if isinstance(source, dict):
-                source = self.get_or_create_vertex_by_attrs(layer=layer, **source)
+                source = self.get_or_create_vertex_by_attrs(slice=slice, **source)
             if isinstance(target, dict):
-                target = self.get_or_create_vertex_by_attrs(layer=layer, **target)
+                target = self.get_or_create_vertex_by_attrs(slice=slice, **target)
         
         flexible = attributes.pop("flexible", None)
         if flexible is not None:
@@ -3012,7 +3026,7 @@ class Graph:
                     head=S,
                     tail=T,
                     edge_directed=True,
-                    layer=layer,
+                    slice=slice,
                     weight=weight,
                     edge_id=edge_id,
                     **attributes,
@@ -3022,7 +3036,7 @@ class Graph:
                 return self.add_hyperedge(
                     members=members,
                     edge_directed=False,
-                    layer=layer,
+                    slice=slice,
                     weight=weight,
                     edge_id=edge_id,
                     **attributes,
@@ -3039,9 +3053,9 @@ class Graph:
         if edge_type not in {"regular", "vertex_edge"}:
             raise ValueError(f"edge_type must be 'regular' or 'vertex_edge', got {edge_type!r}")
 
-        # resolve layer + whether to touch layering at all
-        layer = self._current_layer if layer is None else layer
-        touch_layer = layer is not None
+        # resolve slice + whether to touch sliceing at all
+        slice = self._current_slice if slice is None else slice
+        touch_slice = slice is not None
 
         # Intern common strings to speed up dict lookups
         try:
@@ -3051,8 +3065,8 @@ class Graph:
                 source = _sys.intern(source)
             if isinstance(target, str):
                 target = _sys.intern(target)
-            if isinstance(layer, str):
-                layer = _sys.intern(layer)
+            if isinstance(slice, str):
+                slice = _sys.intern(slice)
             if isinstance(edge_id, str):
                 edge_id = _sys.intern(edge_id)
         except Exception:
@@ -3064,7 +3078,7 @@ class Graph:
         edge_defs = self.edge_definitions
         edge_w = self.edge_weights
         edge_dir = self.edge_directed
-        layers = self._layers
+        slices = self._slices
         M = self._matrix  # DOK
 
         # ensure vertices exist (global)
@@ -3072,9 +3086,9 @@ class Graph:
             if x in entity_to_idx:
                 return
             if edge_type == "vertex_edge" and isinstance(x, str) and x.startswith("edge_"):
-                self.add_edge_entity(x, layer=layer)
+                self.add_edge_entity(x, slice=slice)
             else:
-                self.add_vertex(x, layer=layer)
+                self.add_vertex(x, slice=slice)
 
         _ensure_vertex_or_edge_entity(source)
         _ensure_vertex_or_edge_entity(target)
@@ -3155,23 +3169,23 @@ class Graph:
             if source != target:
                 M[target_idx, col_idx] = -weight if is_dir else weight
 
-        # layer handling
-        if touch_layer:
-            if layer not in layers:
-                layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-            layers[layer]["edges"].add(edge_id)
-            layers[layer]["vertices"].update((source, target))
+        # slice handling
+        if touch_slice:
+            if slice not in slices:
+                slices[slice] = {"vertices": set(), "edges": set(), "attributes": {}}
+            slices[slice]["edges"].add(edge_id)
+            slices[slice]["vertices"].update((source, target))
 
-            if layer_weight is not None:
-                w = float(layer_weight)
-                self.set_edge_layer_attrs(layer, edge_id, weight=w)
-                self.layer_edge_weights.setdefault(layer, {})[edge_id] = w
+            if slice_weight is not None:
+                w = float(slice_weight)
+                self.set_edge_slice_attrs(slice, edge_id, weight=w)
+                self.slice_edge_weights.setdefault(slice, {})[edge_id] = w
 
         # propagation
         if propagate == "shared":
-            self._propagate_to_shared_layers(edge_id, source, target)
+            self._propagate_to_shared_slices(edge_id, source, target)
         elif propagate == "all":
-            self._propagate_to_all_layers(edge_id, source, target)
+            self._propagate_to_all_slices(edge_id, source, target)
 
         if flexible is not None:
             self.edge_directed[edge_id] = True         # always directed; orientation is controlled
@@ -3222,7 +3236,7 @@ class Graph:
         members=None,
         head=None,
         tail=None,
-        layer=None,
+        slice=None,
         weight=1.0,
         edge_id=None,
         edge_directed=None,  # bool or None (None -> infer from params)
@@ -3239,7 +3253,7 @@ class Graph:
         # Map dict endpoints to vertex_id when composite keys are enabled
         if self._vertex_key_enabled():
             def _map(x): 
-                return self.get_or_create_vertex_by_attrs(layer=layer, **x) if isinstance(x, dict) else x
+                return self.get_or_create_vertex_by_attrs(slice=slice, **x) if isinstance(x, dict) else x
             if members is not None:
                 members = [_map(u) for u in members]
             else:
@@ -3270,15 +3284,15 @@ class Graph:
             if not directed:
                 raise ValueError("Undirected=False conflicts with head/tail.")
 
-        # set layer
-        layer = self._current_layer if layer is None else layer
+        # set slice
+        slice = self._current_slice if slice is None else slice
 
         # Intern frequently-used strings for cheaper dict ops
         try:
             import sys as _sys
 
-            if isinstance(layer, str):
-                layer = _sys.intern(layer)
+            if isinstance(slice, str):
+                slice = _sys.intern(slice)
             if isinstance(edge_id, str):
                 edge_id = _sys.intern(edge_id)
             if members is not None:
@@ -3291,7 +3305,7 @@ class Graph:
 
         # locals for hot paths
         entity_to_idx = self.entity_to_idx
-        layers = self._layers
+        slices = self._slices
         M = self._matrix  # DOK
 
         # ensure participants exist globally
@@ -3305,7 +3319,7 @@ class Graph:
                 and self.entity_types[x] == "edge"
             ):
                 return
-            self.add_vertex(x, layer=layer)
+            self.add_vertex(x, slice=slice)
 
         if members is not None:
             for u in members:
@@ -3392,16 +3406,16 @@ class Graph:
         # keep a sentinel in edge_definitions so old code won't crash
         self.edge_definitions[edge_id] = (None, None, "hyper")
 
-        # layer membership + per-layer vertices
-        if layer is not None:
-            if layer not in layers:
-                layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-            layers[layer]["edges"].add(edge_id)
+        # slice membership + per-slice vertices
+        if slice is not None:
+            if slice not in slices:
+                slices[slice] = {"vertices": set(), "edges": set(), "attributes": {}}
+            slices[slice]["edges"].add(edge_id)
             if members is not None:
-                layers[layer]["vertices"].update(members)
+                slices[slice]["vertices"].update(members)
             else:
-                layers[layer]["vertices"].update(self.hyperedge_definitions[edge_id]["head"])
-                layers[layer]["vertices"].update(self.hyperedge_definitions[edge_id]["tail"])
+                slices[slice]["vertices"].update(self.hyperedge_definitions[edge_id]["head"])
+                slices[slice]["vertices"].update(self.hyperedge_definitions[edge_id]["tail"])
 
         # attributes
         if attributes:
@@ -3409,28 +3423,28 @@ class Graph:
 
         return edge_id
 
-    def add_edge_to_layer(self, lid, eid):
-        """Attach an existing edge to a layer (no weight changes).
+    def add_edge_to_slice(self, lid, eid):
+        """Attach an existing edge to a slice (no weight changes).
 
         Parameters
         --
         lid : str
-            Layer ID.
+            slice ID.
         eid : str
             Edge ID.
 
         Raises
         --
         KeyError
-            If the layer does not exist.
+            If the slice does not exist.
 
         """
-        if lid not in self._layers:
-            raise KeyError(f"Layer {lid} does not exist")
-        self._layers[lid]["edges"].add(eid)
+        if lid not in self._slices:
+            raise KeyError(f"slice {lid} does not exist")
+        self._slices[lid]["edges"].add(eid)
 
-    def _propagate_to_shared_layers(self, edge_id, source, target):
-        """INTERNAL: Add an edge to all layers that already contain **both** endpoints.
+    def _propagate_to_shared_slices(self, edge_id, source, target):
+        """INTERNAL: Add an edge to all slices that already contain **both** endpoints.
 
         Parameters
         --
@@ -3439,13 +3453,13 @@ class Graph:
         target : str
 
         """
-        for layer_id, layer_data in self._layers.items():
-            if source in layer_data["vertices"] and target in layer_data["vertices"]:
-                layer_data["edges"].add(edge_id)
+        for slice_id, slice_data in self._slices.items():
+            if source in slice_data["vertices"] and target in slice_data["vertices"]:
+                slice_data["edges"].add(edge_id)
 
-    def _propagate_to_all_layers(self, edge_id, source, target):
-        """INTERNAL: Add an edge to any layer containing **either** endpoint and
-        insert the missing endpoint into that layer.
+    def _propagate_to_all_slices(self, edge_id, source, target):
+        """INTERNAL: Add an edge to any slice containing **either** endpoint and
+        insert the missing endpoint into that slice.
 
         Parameters
         --
@@ -3454,14 +3468,14 @@ class Graph:
         target : str
 
         """
-        for layer_id, layer_data in self._layers.items():
-            if source in layer_data["vertices"] or target in layer_data["vertices"]:
-                layer_data["edges"].add(edge_id)
-                # Only add missing endpoint if both vertices should be in layer
-                if source in layer_data["vertices"]:
-                    layer_data["vertices"].add(target)
-                if target in layer_data["vertices"]:
-                    layer_data["vertices"].add(source)
+        for slice_id, slice_data in self._slices.items():
+            if source in slice_data["vertices"] or target in slice_data["vertices"]:
+                slice_data["edges"].add(edge_id)
+                # Only add missing endpoint if both vertices should be in slice
+                if source in slice_data["vertices"]:
+                    slice_data["vertices"].add(target)
+                if target in slice_data["vertices"]:
+                    slice_data["vertices"].add(source)
 
     def _normalize_vertices_arg(self, vertices):
         """Normalize a single vertex or an iterable of vertices into a set.
@@ -3501,14 +3515,14 @@ class Graph:
 
     # Bulk build graph
 
-    def add_vertices_bulk(self, vertices, layer=None):
+    def add_vertices_bulk(self, vertices, slice=None):
         """Bulk add vertices (and edge-entities if prefixed externally).
         Accepts: iterable of str  OR  iterable of (vertex_id, attrs_dict)  OR iterable of dicts with keys {'vertex_id', ...attrs}
         Behavior: identical to calling add_vertex() for each, but resizes once and batches attribute inserts.
         """
         import polars as pl
 
-        layer = layer or self._current_layer
+        slice = slice or self._current_slice
 
         # Normalize items -> [(vid, attrs_dict), ...]
         norm = []
@@ -3536,8 +3550,8 @@ class Graph:
             norm = [
                 (_sys.intern(vid) if isinstance(vid, str) else vid, attrs) for vid, attrs in norm
             ]
-            if isinstance(layer, str):
-                layer = _sys.intern(layer)
+            if isinstance(slice, str):
+                slice = _sys.intern(slice)
         except Exception:
             pass
 
@@ -3556,10 +3570,10 @@ class Graph:
         if new_rows:
             self._grow_rows_to(self._num_entities)
 
-        # Layer membership (same semantics as add_vertex)
-        if layer not in self._layers:
-            self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-        self._layers[layer]["vertices"].update(vid for vid, _ in norm)
+        # slice membership (same semantics as add_vertex)
+        if slice not in self._slices:
+            self._slices[slice] = {"vertices": set(), "edges": set(), "attributes": {}}
+        self._slices[slice]["vertices"].update(vid for vid, _ in norm)
 
         # Vertex attributes (batch insert for new ones, upsert for existing with attrs)
         self._ensure_vertex_table()
@@ -3630,21 +3644,21 @@ class Graph:
         self,
         edges,
         *,
-        layer=None,
+        slice=None,
         default_weight=1.0,
         default_edge_type="regular",
         default_propagate="none",
-        default_layer_weight=None,
+        default_slice_weight=None,
         default_edge_directed=None,
     ):
         """Bulk add/update *binary* (and vertex-edge) edges.
         Accepts each item as:
         - (src, tgt)
         - (src, tgt, weight)
-        - dict with keys: source, target, [weight, edge_id, edge_type, propagate, layer_weight, edge_directed, attributes]
-        Behavior: identical to calling add_edge() per item (same propagation/layer/attrs), but grows columns once and avoids full-column wipes.
+        - dict with keys: source, target, [weight, edge_id, edge_type, propagate, slice_weight, edge_directed, attributes]
+        Behavior: identical to calling add_edge() per item (same propagation/slice/attrs), but grows columns once and avoids full-column wipes.
         """
-        layer = self._current_layer if layer is None else layer
+        slice = self._current_slice if slice is None else slice
 
         # Normalize into dicts
         norm = []
@@ -3661,8 +3675,8 @@ class Graph:
             d.setdefault("weight", default_weight)
             d.setdefault("edge_type", default_edge_type)
             d.setdefault("propagate", default_propagate)
-            if "layer" not in d:
-                d["layer"] = layer
+            if "slice" not in d:
+                d["slice"] = slice
             if "edge_directed" not in d:
                 d["edge_directed"] = default_edge_directed
             norm.append(d)
@@ -3680,9 +3694,9 @@ class Graph:
                     d["source"] = _sys.intern(s)
                 if isinstance(t, str):
                     d["target"] = _sys.intern(t)
-                lid = d.get("layer")
+                lid = d.get("slice")
                 if isinstance(lid, str):
-                    d["layer"] = _sys.intern(lid)
+                    d["slice"] = _sys.intern(lid)
                 eid = d.get("edge_id")
                 if isinstance(eid, str):
                     d["edge_id"] = _sys.intern(eid)
@@ -3695,7 +3709,7 @@ class Graph:
 
         entity_to_idx = self.entity_to_idx
         M = self._matrix
-        # 1) Ensure endpoints exist (global); we’ll rely on layer handling below to add membership.
+        # 1) Ensure endpoints exist (global); we’ll rely on slice handling below to add membership.
         for d in norm:
             s, t = d["source"], d["target"]
             et = d.get("edge_type", "regular")
@@ -3704,7 +3718,7 @@ class Graph:
                 if et == "vertex_edge" and isinstance(s, str) and s.startswith("edge_"):
                     self._add_edge_entity(s)
                 else:
-                    # bare global insert (no layer side-effects; membership handled later)
+                    # bare global insert (no slice side-effects; membership handled later)
                     idx = self._num_entities
                     self.entity_to_idx[s] = idx
                     self.idx_to_entity[idx] = s
@@ -3735,8 +3749,8 @@ class Graph:
             w = d["weight"]
             etype = d.get("edge_type", "regular")
             prop = d.get("propagate", default_propagate)
-            layer_local = d.get("layer", layer)
-            layer_w = d.get("layer_weight", default_layer_weight)
+            slice_local = d.get("slice", slice)
+            slice_w = d.get("slice_weight", default_slice_weight)
             e_dir = d.get("edge_directed", default_edge_directed)
             edge_id = d.get("edge_id")
 
@@ -3791,25 +3805,25 @@ class Graph:
                 if s != t:
                     M[t_idx, col] = -w if is_dir else w
 
-            # layer membership + optional per-layer weight
-            if layer_local is not None:
-                if layer_local not in self._layers:
-                    self._layers[layer_local] = {
+            # slice membership + optional per-slice weight
+            if slice_local is not None:
+                if slice_local not in self._slices:
+                    self._slices[slice_local] = {
                         "vertices": set(),
                         "edges": set(),
                         "attributes": {},
                     }
-                self._layers[layer_local]["edges"].add(edge_id)
-                self._layers[layer_local]["vertices"].update((s, t))
-                if layer_w is not None:
-                    self.set_edge_layer_attrs(layer_local, edge_id, weight=float(layer_w))
-                    self.layer_edge_weights.setdefault(layer_local, {})[edge_id] = float(layer_w)
+                self._slices[slice_local]["edges"].add(edge_id)
+                self._slices[slice_local]["vertices"].update((s, t))
+                if slice_w is not None:
+                    self.set_edge_slice_attrs(slice_local, edge_id, weight=float(slice_w))
+                    self.slice_edge_weights.setdefault(slice_local, {})[edge_id] = float(slice_w)
 
             # propagation
             if prop == "shared":
-                self._propagate_to_shared_layers(edge_id, s, t)
+                self._propagate_to_shared_slices(edge_id, s, t)
             elif prop == "all":
-                self._propagate_to_all_layers(edge_id, s, t)
+                self._propagate_to_all_slices(edge_id, s, t)
 
             # per-edge extra attributes
             attrs = d.get("attributes") or d.get("attrs") or {}
@@ -3824,17 +3838,17 @@ class Graph:
         self,
         hyperedges,
         *,
-        layer=None,
+        slice=None,
         default_weight=1.0,
         default_edge_directed=None,
     ):
         """Bulk add/update hyperedges.
         Each item can be:
-        - {'members': [...], 'edge_id': ..., 'weight': ..., 'layer': ..., 'attributes': {...}}
+        - {'members': [...], 'edge_id': ..., 'weight': ..., 'slice': ..., 'attributes': {...}}
         - {'head': [...], 'tail': [...], ...}
         Behavior: identical to calling add_hyperedge() per item, but grows columns once and avoids full-column wipes.
         """
-        layer = self._current_layer if layer is None else layer
+        slice = self._current_slice if slice is None else slice
 
         items = []
         for it in hyperedges:
@@ -3842,8 +3856,8 @@ class Graph:
                 continue
             d = dict(it)
             d.setdefault("weight", default_weight)
-            if "layer" not in d:
-                d["layer"] = layer
+            if "slice" not in d:
+                d["slice"] = slice
             if "edge_directed" not in d:
                 d["edge_directed"] = default_edge_directed
             items.append(d)
@@ -3867,9 +3881,9 @@ class Graph:
                     d["tail"] = [
                         _sys.intern(x) if isinstance(x, str) else x for x in d.get("tail", [])
                     ]
-                lid = d.get("layer")
+                lid = d.get("slice")
                 if isinstance(lid, str):
-                    d["layer"] = _sys.intern(lid)
+                    d["slice"] = _sys.intern(lid)
                 eid = d.get("edge_id")
                 if isinstance(eid, str):
                     d["edge_id"] = _sys.intern(eid)
@@ -3921,7 +3935,7 @@ class Graph:
             members = d.get("members")
             head = d.get("head")
             tail = d.get("tail")
-            layer_local = d.get("layer", layer)
+            slice_local = d.get("slice", slice)
             w = float(d.get("weight", default_weight))
             e_id = d.get("edge_id")
 
@@ -3991,20 +4005,20 @@ class Graph:
 
             self.edge_weights[e_id] = w
 
-            # layer membership
-            if layer_local is not None:
-                if layer_local not in self._layers:
-                    self._layers[layer_local] = {
+            # slice membership
+            if slice_local is not None:
+                if slice_local not in self._slices:
+                    self._slices[slice_local] = {
                         "vertices": set(),
                         "edges": set(),
                         "attributes": {},
                     }
-                self._layers[layer_local]["edges"].add(e_id)
+                self._slices[slice_local]["edges"].add(e_id)
                 if members is not None:
-                    self._layers[layer_local]["vertices"].update(members)
+                    self._slices[slice_local]["vertices"].update(members)
                 else:
-                    self._layers[layer_local]["vertices"].update(head)
-                    self._layers[layer_local]["vertices"].update(tail)
+                    self._slices[slice_local]["vertices"].update(head)
+                    self._slices[slice_local]["vertices"].update(tail)
 
             # per-edge attributes (optional)
             attrs = d.get("attributes") or d.get("attrs") or {}
@@ -4015,14 +4029,14 @@ class Graph:
 
         return out_ids
 
-    def add_edges_to_layer_bulk(self, layer_id, edge_ids):
-        """Bulk version of add_edge_to_layer: add many edges to a layer and attach
+    def add_edges_to_slice_bulk(self, slice_id, edge_ids):
+        """Bulk version of add_edge_to_slice: add many edges to a slice and attach
         all incident vertices. No weights are changed here.
         """
-        layer = layer_id if layer_id is not None else self._current_layer
-        if layer not in self._layers:
-            self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-        L = self._layers[layer]
+        slice = slice_id if slice_id is not None else self._current_slice
+        if slice not in self._slices:
+            self._slices[slice] = {"vertices": set(), "edges": set(), "attributes": {}}
+        L = self._slices[slice]
 
         add_edges = {eid for eid in edge_ids if eid in self.edge_to_idx}
         if not add_edges:
@@ -4047,7 +4061,7 @@ class Graph:
 
         L["vertices"].update(verts)
 
-    def add_edge_entities_bulk(self, items, layer=None):
+    def add_edge_entities_bulk(self, items, slice=None):
         """Bulk add edge-entities (vertex-edge hybrids). Accepts:
         - iterable of str IDs
         - iterable of (edge_entity_id, attrs_dict)
@@ -4055,7 +4069,7 @@ class Graph:
         Behavior: identical to calling add_edge_entity() for each, but grows rows once
         and batches attribute inserts.
         """
-        layer = layer or self._current_layer
+        slice = slice or self._current_slice
 
         # normalize -> [(eid, attrs)]
         norm = []
@@ -4082,8 +4096,8 @@ class Graph:
             norm = [
                 (_sys.intern(eid) if isinstance(eid, str) else eid, attrs) for eid, attrs in norm
             ]
-            if isinstance(layer, str):
-                layer = _sys.intern(layer)
+            if isinstance(slice, str):
+                slice = _sys.intern(slice)
         except Exception:
             pass
 
@@ -4101,10 +4115,10 @@ class Graph:
         if new_rows:
             self._grow_rows_to(self._num_entities)
 
-        # layer membership
-        if layer not in self._layers:
-            self._layers[layer] = {"vertices": set(), "edges": set(), "attributes": {}}
-        self._layers[layer]["vertices"].update(eid for eid, _ in norm)
+        # slice membership
+        if slice not in self._slices:
+            self._slices[slice] = {"vertices": set(), "edges": set(), "attributes": {}}
+        self._slices[slice]["vertices"].update(eid for eid, _ in norm)
 
         # attributes (edge-entities share vertex_attributes table)
         self._ensure_vertex_table()
@@ -4234,7 +4248,7 @@ class Graph:
         Notes
         -
         - Physically removes the incidence column (no CSR round-trip).
-        - Cleans edge attributes, layer memberships, and per-layer entries.
+        - Cleans edge attributes, slice memberships, and per-slice entries.
 
         """
         if edge_id not in self.edge_to_idx:
@@ -4284,22 +4298,22 @@ class Graph:
         ):
             self.edge_attributes = self.edge_attributes.filter(pl.col("edge_id") != edge_id)
 
-        # Remove from per-layer membership
-        for layer_data in self._layers.values():
-            layer_data["edges"].discard(edge_id)
+        # Remove from per-slice membership
+        for slice_data in self._slices.values():
+            slice_data["edges"].discard(edge_id)
 
-        # Remove from edge-layer attributes
+        # Remove from edge-slice attributes
         if (
-            isinstance(self.edge_layer_attributes, pl.DataFrame)
-            and self.edge_layer_attributes.height > 0
-            and "edge_id" in self.edge_layer_attributes.columns
+            isinstance(self.edge_slice_attributes, pl.DataFrame)
+            and self.edge_slice_attributes.height > 0
+            and "edge_id" in self.edge_slice_attributes.columns
         ):
-            self.edge_layer_attributes = self.edge_layer_attributes.filter(
+            self.edge_slice_attributes = self.edge_slice_attributes.filter(
                 pl.col("edge_id") != edge_id
             )
 
         # Legacy / auxiliary dicts
-        for d in self.layer_edge_weights.values():
+        for d in self.slice_edge_weights.values():
             d.pop(edge_id, None)
 
         self.edge_kind.pop(edge_id, None)
@@ -4396,48 +4410,48 @@ class Graph:
                     pl.col("vertex_id") != vertex_id
                 )
 
-        # Remove from per-layer membership
-        for layer_data in self._layers.values():
-            layer_data["vertices"].discard(vertex_id)
+        # Remove from per-slice membership
+        for slice_data in self._slices.values():
+            slice_data["vertices"].discard(vertex_id)
 
-    def remove_layer(self, layer_id):
-        """Remove a non-default layer and its per-layer attributes.
+    def remove_slice(self, slice_id):
+        """Remove a non-default slice and its per-slice attributes.
 
         Parameters
         --
-        layer_id : str
+        slice_id : str
 
         Raises
         --
         ValueError
-            If attempting to remove the internal default layer.
+            If attempting to remove the internal default slice.
         KeyError
-            If the layer does not exist.
+            If the slice does not exist.
 
         Notes
         -
-        - Does not delete vertices/edges globally; only membership and layer metadata.
+        - Does not delete vertices/edges globally; only membership and slice metadata.
 
         """
-        if layer_id == self._default_layer:
-            raise ValueError("Cannot remove default layer")
-        if layer_id not in self._layers:
-            raise KeyError(f"Layer {layer_id} not found")
+        if slice_id == self._default_slice:
+            raise ValueError("Cannot remove default slice")
+        if slice_id not in self._slices:
+            raise KeyError(f"slice {slice_id} not found")
 
-        # Purge per-layer attributes
-        ela = getattr(self, "edge_layer_attributes", None)
-        if isinstance(ela, pl.DataFrame) and ela.height > 0 and "layer_id" in ela.columns:
-            # Keep everything not matching the layer_id
-            self.edge_layer_attributes = ela.filter(pl.col("layer_id") != layer_id)
+        # Purge per-slice attributes
+        ela = getattr(self, "edge_slice_attributes", None)
+        if isinstance(ela, pl.DataFrame) and ela.height > 0 and "slice_id" in ela.columns:
+            # Keep everything not matching the slice_id
+            self.edge_slice_attributes = ela.filter(pl.col("slice_id") != slice_id)
 
         # Drop legacy dict slice if present
-        if isinstance(getattr(self, "layer_edge_weights", None), dict):
-            self.layer_edge_weights.pop(layer_id, None)
+        if isinstance(getattr(self, "slice_edge_weights", None), dict):
+            self.slice_edge_weights.pop(slice_id, None)
 
-        # Remove the layer and reset current if needed
-        del self._layers[layer_id]
-        if self._current_layer == layer_id:
-            self._current_layer = self._default_layer
+        # Remove the slice and reset current if needed
+        del self._slices[slice_id]
+        if self._current_slice == slice_id:
+            self._current_slice = self._default_slice
 
     # Bulk remove / mutate down
 
@@ -4494,9 +4508,9 @@ class Graph:
             self.edge_directed.pop(eid, None)
             self.edge_kind.pop(eid, None)
             self.hyperedge_definitions.pop(eid, None)
-        for layer_data in self._layers.values():
-            layer_data["edges"].difference_update(drop)
-        for d in self.layer_edge_weights.values():
+        for slice_data in self._slices.values():
+            slice_data["edges"].difference_update(drop)
+        for d in self.slice_edge_weights.values():
             for eid in drop:
                 d.pop(eid, None)
 
@@ -4507,12 +4521,12 @@ class Graph:
                     ~pl.col("edge_id").is_in(list(drop))
                 )
         if (
-            isinstance(self.edge_layer_attributes, pl.DataFrame)
-            and self.edge_layer_attributes.height
+            isinstance(self.edge_slice_attributes, pl.DataFrame)
+            and self.edge_slice_attributes.height
         ):
-            cols = set(self.edge_layer_attributes.columns)
+            cols = set(self.edge_slice_attributes.columns)
             if {"edge_id"}.issubset(cols):
-                self.edge_layer_attributes = self.edge_layer_attributes.filter(
+                self.edge_slice_attributes = self.edge_slice_attributes.filter(
                     ~pl.col("edge_id").is_in(list(drop))
                 )
 
@@ -4572,14 +4586,14 @@ class Graph:
             self.entity_types.pop(vid, None)
         self._num_entities = new_rows
 
-        # 6) Clean vertex attributes and layer memberships
+        # 6) Clean vertex attributes and slice memberships
         if isinstance(self.vertex_attributes, pl.DataFrame) and self.vertex_attributes.height:
             if "vertex_id" in self.vertex_attributes.columns:
                 self.vertex_attributes = self.vertex_attributes.filter(
                     ~pl.col("vertex_id").is_in(list(drop_vs))
                 )
-        for layer_data in self._layers.values():
-            layer_data["vertices"].difference_update(drop_vs)
+        for slice_data in self._slices.values():
+            slice_data["vertices"].difference_update(drop_vs)
 
     # Attributes & weights
 
@@ -4781,26 +4795,26 @@ class Graph:
         s = rows.get_column(attribute)
         return s.item(0) if s.len() else None
 
-    def set_layer_attrs(self, layer_id, **attrs):
-        """Upsert pure layer attributes.
+    def set_slice_attrs(self, slice_id, **attrs):
+        """Upsert pure slice attributes.
 
         Parameters
         --
-        layer_id : str
+        slice_id : str
         **attrs
             Key/value attributes. Structural keys are ignored.
 
         """
-        clean = {k: v for k, v in attrs.items() if k not in self._LAYER_RESERVED}
+        clean = {k: v for k, v in attrs.items() if k not in self._slice_RESERVED}
         if clean:
-            self.layer_attributes = self._upsert_row(self.layer_attributes, layer_id, clean)
+            self.slice_attributes = self._upsert_row(self.slice_attributes, slice_id, clean)
 
-    def get_layer_attr(self, layer_id, key, default=None):
-        """Get a single layer attribute (scalar) or default if missing.
+    def get_slice_attr(self, slice_id, key, default=None):
+        """Get a single slice attribute (scalar) or default if missing.
 
         Parameters
         --
-        layer_id : str
+        slice_id : str
         key : str
         default : Any, optional
 
@@ -4809,21 +4823,21 @@ class Graph:
         Any
 
         """
-        df = self.layer_attributes
+        df = self.slice_attributes
         if key not in df.columns:
             return default
-        rows = df.filter(pl.col("layer_id") == layer_id)
+        rows = df.filter(pl.col("slice_id") == slice_id)
         if rows.height == 0:
             return default
         val = rows.select(pl.col(key)).to_series()[0]
         return default if val is None else val
 
-    def set_edge_layer_attrs(self, layer_id, edge_id, **attrs):
-        """Upsert per-layer attributes for a specific edge.
+    def set_edge_slice_attrs(self, slice_id, edge_id, **attrs):
+        """Upsert per-slice attributes for a specific edge.
 
         Parameters
         --
-        layer_id : str
+        slice_id : str
         edge_id : str
         **attrs
             Pure attributes. Structural keys are ignored (except 'weight', which is allowed here).
@@ -4840,8 +4854,8 @@ class Graph:
         try:
             import sys as _sys
 
-            if isinstance(layer_id, str):
-                layer_id = _sys.intern(layer_id)
+            if isinstance(slice_id, str):
+                slice_id = _sys.intern(slice_id)
             if isinstance(edge_id, str):
                 edge_id = _sys.intern(edge_id)
         except Exception:
@@ -4854,30 +4868,30 @@ class Graph:
                 # leave as-is if not coercible; behavior stays identical
                 pass
 
-        # Ensure edge_layer_attributes compares strings to strings (defensive against prior bad writes),
+        # Ensure edge_slice_attributes compares strings to strings (defensive against prior bad writes),
         # but only cast when actually needed (skip no-op with_columns).
-        df = self.edge_layer_attributes
+        df = self.edge_slice_attributes
         if isinstance(df, pl.DataFrame) and df.height > 0:
             to_cast = []
-            if "layer_id" in df.columns and df.schema["layer_id"] != pl.Utf8:
-                to_cast.append(pl.col("layer_id").cast(pl.Utf8))
+            if "slice_id" in df.columns and df.schema["slice_id"] != pl.Utf8:
+                to_cast.append(pl.col("slice_id").cast(pl.Utf8))
             if "edge_id" in df.columns and df.schema["edge_id"] != pl.Utf8:
                 to_cast.append(pl.col("edge_id").cast(pl.Utf8))
             if to_cast:
                 df = df.with_columns(*to_cast)
-                self.edge_layer_attributes = df  # reassign only when changed
+                self.edge_slice_attributes = df  # reassign only when changed
 
         # Upsert via central helper (keeps exact behavior, schema handling, and caching)
-        self.edge_layer_attributes = self._upsert_row(
-            self.edge_layer_attributes, (layer_id, edge_id), clean
+        self.edge_slice_attributes = self._upsert_row(
+            self.edge_slice_attributes, (slice_id, edge_id), clean
         )
 
-    def get_edge_layer_attr(self, layer_id, edge_id, key, default=None):
-        """Get a per-layer attribute for an edge.
+    def get_edge_slice_attr(self, slice_id, edge_id, key, default=None):
+        """Get a per-slice attribute for an edge.
 
         Parameters
         --
-        layer_id : str
+        slice_id : str
         edge_id : str
         key : str
         default : Any, optional
@@ -4887,48 +4901,48 @@ class Graph:
         Any
 
         """
-        df = self.edge_layer_attributes
+        df = self.edge_slice_attributes
         if key not in df.columns:
             return default
-        rows = df.filter((pl.col("layer_id") == layer_id) & (pl.col("edge_id") == edge_id))
+        rows = df.filter((pl.col("slice_id") == slice_id) & (pl.col("edge_id") == edge_id))
         if rows.height == 0:
             return default
         val = rows.select(pl.col(key)).to_series()[0]
         return default if val is None else val
 
-    def set_layer_edge_weight(self, layer_id, edge_id, weight):  # legacy weight helper
-        """Set a legacy per-layer weight override for an edge.
+    def set_slice_edge_weight(self, slice_id, edge_id, weight):  # legacy weight helper
+        """Set a legacy per-slice weight override for an edge.
 
         Parameters
         --
-        layer_id : str
+        slice_id : str
         edge_id : str
         weight : float
 
         Raises
         --
         KeyError
-            If the layer or edge does not exist.
+            If the slice or edge does not exist.
 
         See Also
         
         get_effective_edge_weight
 
         """
-        if layer_id not in self._layers:
-            raise KeyError(f"Layer {layer_id} not found")
+        if slice_id not in self._slices:
+            raise KeyError(f"slice {slice_id} not found")
         if edge_id not in self.edge_to_idx:
             raise KeyError(f"Edge {edge_id} not found")
-        self.layer_edge_weights[layer_id][edge_id] = float(weight)
+        self.slice_edge_weights[slice_id][edge_id] = float(weight)
 
-    def get_effective_edge_weight(self, edge_id, layer=None):
-        """Resolve the effective weight for an edge, optionally within a layer.
+    def get_effective_edge_weight(self, edge_id, slice=None):
+        """Resolve the effective weight for an edge, optionally within a slice.
 
         Parameters
         --
         edge_id : str
-        layer : str, optional
-            If provided, return the layer override if present; otherwise global weight.
+        slice : str, optional
+            If provided, return the slice override if present; otherwise global weight.
 
         Returns
         ---
@@ -4936,15 +4950,15 @@ class Graph:
             Effective weight.
 
         """
-        if layer is not None:
-            df = self.edge_layer_attributes
+        if slice is not None:
+            df = self.edge_slice_attributes
             if (
                 isinstance(df, pl.DataFrame)
                 and df.height > 0
-                and {"layer_id", "edge_id", "weight"} <= set(df.columns)
+                and {"slice_id", "edge_id", "weight"} <= set(df.columns)
             ):
                 rows = df.filter(
-                    (pl.col("layer_id") == layer) & (pl.col("edge_id") == edge_id)
+                    (pl.col("slice_id") == slice) & (pl.col("edge_id") == edge_id)
                 ).select("weight")
                 if rows.height > 0:
                     w = rows.to_series()[0]
@@ -4952,14 +4966,14 @@ class Graph:
                         return float(w)
 
             # fallback to legacy dict if present
-            w2 = self.layer_edge_weights.get(layer, {}).get(edge_id, None)
+            w2 = self.slice_edge_weights.get(slice, {}).get(edge_id, None)
             if w2 is not None:
                 return float(w2)
 
         return float(self.edge_weights[edge_id])
 
     def audit_attributes(self):
-        """Audit attribute tables for extra/missing rows and invalid edge-layer pairs.
+        """Audit attribute tables for extra/missing rows and invalid edge-slice pairs.
 
         Returns
         ---
@@ -4969,7 +4983,7 @@ class Graph:
             'extra_edge_rows': list[str],
             'missing_vertex_rows': list[str],
             'missing_edge_rows': list[str],
-            'invalid_edge_layer_rows': list[tuple[str, str]],
+            'invalid_edge_slice_rows': list[tuple[str, str]],
             }
 
         """
@@ -4978,7 +4992,7 @@ class Graph:
 
         na = self.vertex_attributes
         ea = self.edge_attributes
-        ela = self.edge_layer_attributes
+        ela = self.edge_slice_attributes
 
         vertex_attr_ids = (
             set(na.select("vertex_id").to_series().to_list())
@@ -4996,22 +5010,22 @@ class Graph:
         missing_vertex_rows = [i for i in vertex_ids if i not in vertex_attr_ids]
         missing_edge_rows = [i for i in edge_ids if i not in edge_attr_ids]
 
-        bad_edge_layer = []
+        bad_edge_slice = []
         if (
             isinstance(ela, pl.DataFrame)
             and ela.height > 0
-            and {"layer_id", "edge_id"} <= set(ela.columns)
+            and {"slice_id", "edge_id"} <= set(ela.columns)
         ):
-            for lid, eid in ela.select(["layer_id", "edge_id"]).iter_rows():
-                if lid not in self._layers or eid not in edge_ids:
-                    bad_edge_layer.append((lid, eid))
+            for lid, eid in ela.select(["slice_id", "edge_id"]).iter_rows():
+                if lid not in self._slices or eid not in edge_ids:
+                    bad_edge_slice.append((lid, eid))
 
         return {
             "extra_vertex_rows": extra_vertex_rows,
             "extra_edge_rows": extra_edge_rows,
             "missing_vertex_rows": missing_vertex_rows,
             "missing_edge_rows": missing_edge_rows,
-            "invalid_edge_layer_rows": bad_edge_layer,
+            "invalid_edge_slice_rows": bad_edge_slice,
         }
 
     def _pl_dtype_for_value(self, v):
@@ -5100,8 +5114,8 @@ class Graph:
         
         - ``vertex_attributes``           → key: ``["vertex_id"]``
         - ``edge_attributes``             → key: ``["edge_id"]``
-        - ``layer_attributes``            → key: ``["layer_id"]``
-        - ``edge_layer_attributes``       → key: ``["layer_id", "edge_id"]``
+        - ``slice_attributes``            → key: ``["slice_id"]``
+        - ``edge_slice_attributes``       → key: ``["slice_id", "edge_id"]``
         """
         if not isinstance(attrs, dict) or not attrs:
             return df
@@ -5109,13 +5123,13 @@ class Graph:
         cols = set(df.columns)
 
         # Determine key columns + values
-        if {"layer_id", "edge_id"} <= cols:
+        if {"slice_id", "edge_id"} <= cols:
             if not (isinstance(idx, tuple) and len(idx) == 2):
-                raise ValueError("idx must be a (layer_id, edge_id) tuple")
-            key_cols = ("layer_id", "edge_id")
-            key_vals = {"layer_id": idx[0], "edge_id": idx[1]}
-            cache_name = "_edge_layer_attr_keys"  # set of (layer_id, edge_id)
-            df_id_name = "_edge_layer_attr_df_id"
+                raise ValueError("idx must be a (slice_id, edge_id) tuple")
+            key_cols = ("slice_id", "edge_id")
+            key_vals = {"slice_id": idx[0], "edge_id": idx[1]}
+            cache_name = "_edge_slice_attr_keys"  # set of (slice_id, edge_id)
+            df_id_name = "_edge_slice_attr_df_id"
         elif "vertex_id" in cols:
             key_cols = ("vertex_id",)
             key_vals = {"vertex_id": idx}
@@ -5126,11 +5140,11 @@ class Graph:
             key_vals = {"edge_id": idx}
             cache_name = "_edge_attr_ids"  # set of edge_id
             df_id_name = "_edge_attr_df_id"
-        elif "layer_id" in cols:
-            key_cols = ("layer_id",)
-            key_vals = {"layer_id": idx}
-            cache_name = "_layer_attr_ids"  # set of layer_id
-            df_id_name = "_layer_attr_df_id"
+        elif "slice_id" in cols:
+            key_cols = ("slice_id",)
+            key_vals = {"slice_id": idx}
+            cache_name = "_slice_attr_ids"  # set of slice_id
+            df_id_name = "_slice_attr_df_id"
         else:
             raise ValueError("Cannot infer key columns from DataFrame schema")
 
@@ -5154,12 +5168,12 @@ class Graph:
                     series = df.get_column("vertex_id") if df.height else pl.Series([])
                     key_cache = set(series.to_list()) if df.height else set()
                 elif (
-                    "edge_id" in cols and "layer_id" in cols and key_cols == ("layer_id", "edge_id")
+                    "edge_id" in cols and "slice_id" in cols and key_cols == ("slice_id", "edge_id")
                 ):
                     if df.height:
                         key_cache = set(
                             zip(
-                                df.get_column("layer_id").to_list(),
+                                df.get_column("slice_id").to_list(),
                                 df.get_column("edge_id").to_list(),
                             )
                         )
@@ -5168,8 +5182,8 @@ class Graph:
                 elif "edge_id" in cols and key_cols == ("edge_id",):
                     series = df.get_column("edge_id") if df.height else pl.Series([])
                     key_cache = set(series.to_list()) if df.height else set()
-                elif "layer_id" in cols and key_cols == ("layer_id",):
-                    series = df.get_column("layer_id") if df.height else pl.Series([])
+                elif "slice_id" in cols and key_cols == ("slice_id",):
+                    series = df.get_column("slice_id") if df.height else pl.Series([])
                     key_cache = set(series.to_list()) if df.height else set()
                 else:
                     key_cache = set()
@@ -5179,7 +5193,7 @@ class Graph:
             cache_key = (
                 key_vals[key_cols[0]]
                 if len(key_cols) == 1
-                else (key_vals["layer_id"], key_vals["edge_id"])
+                else (key_vals["slice_id"], key_vals["edge_id"])
             )
             exists = cache_key in key_cache
         except Exception:
@@ -5518,7 +5532,7 @@ class Graph:
             Typical keys might include:
             - `"name"` : Graph name or label.
             - `"directed"` : Boolean indicating directedness.
-            - `"layers"` : List of layers present in the graph.
+            - `"slices"` : List of slices present in the graph.
             - `"created_at"` : Timestamp of graph creation.
 
         Notes
@@ -5530,9 +5544,9 @@ class Graph:
         """
         return dict(self.graph_attributes)
 
-    def set_edge_layer_attrs_bulk(self, layer_id, items):
+    def set_edge_slice_attrs_bulk(self, slice_id, items):
         """items: iterable of (edge_id, attrs_dict) or dict{edge_id: attrs_dict}
-        Upserts rows in edge_layer_attributes for one layer in bulk.
+        Upserts rows in edge_slice_attributes for one slice in bulk.
         """
         import polars as pl
 
@@ -5545,7 +5559,7 @@ class Graph:
         for eid, attrs in it:
             if not isinstance(attrs, dict) or not attrs:
                 continue
-            r = {"layer_id": layer_id, "edge_id": eid}
+            r = {"slice_id": slice_id, "edge_id": eid}
             r.update(attrs)
             if "weight" in r:
                 try:
@@ -5557,20 +5571,20 @@ class Graph:
             return
 
         # start from current DF
-        df = self.edge_layer_attributes
+        df = self.edge_slice_attributes
         add_df = pl.DataFrame(rows)
 
         # ensure required key cols exist/correct dtype on existing df
         if not isinstance(df, pl.DataFrame) or df.is_empty():
             # create from scratch with canonical dtypes
-            self.edge_layer_attributes = add_df
+            self.edge_slice_attributes = add_df
             # legacy mirror
             if "weight" in add_df.columns:
-                self.layer_edge_weights.setdefault(layer_id, {})
+                self.slice_edge_weights.setdefault(slice_id, {})
                 for r in add_df.iter_rows(named=True):
                     w = r.get("weight")
                     if w is not None:
-                        self.layer_edge_weights[layer_id][r["edge_id"]] = float(w)
+                        self.slice_edge_weights[slice_id][r["edge_id"]] = float(w)
             return
 
         # schema alignment using _ensure_attr_columns + Utf8 upcast rule
@@ -5592,21 +5606,21 @@ class Graph:
                 df = df.with_columns(pl.col(c).cast(pl.Utf8))
                 add_df = add_df.with_columns(pl.col(c).cast(pl.Utf8).alias(c))
 
-        # drop existing keys for (layer_id, edge_id) we are about to write; then vstack new rows
+        # drop existing keys for (slice_id, edge_id) we are about to write; then vstack new rows
         mask_keep = ~(
-            (pl.col("layer_id") == layer_id) & pl.col("edge_id").is_in(add_df.get_column("edge_id"))
+            (pl.col("slice_id") == slice_id) & pl.col("edge_id").is_in(add_df.get_column("edge_id"))
         )
         df = df.filter(mask_keep)
         df = df.vstack(add_df)
-        self.edge_layer_attributes = df
+        self.edge_slice_attributes = df
 
         # legacy mirror
         if "weight" in add_df.columns:
-            self.layer_edge_weights.setdefault(layer_id, {})
+            self.slice_edge_weights.setdefault(slice_id, {})
             for r in add_df.iter_rows(named=True):
                 w = r.get("weight")
                 if w is not None:
-                    self.layer_edge_weights[layer_id][r["edge_id"]] = float(w)
+                    self.slice_edge_weights[slice_id][r["edge_id"]] = float(w)
 
     # Basic queries & metrics
 
@@ -5887,7 +5901,7 @@ class Graph:
         return self._num_edges
 
     def global_entity_count(self):
-        """Count unique entities present across all layers (union of memberships).
+        """Count unique entities present across all slices (union of memberships).
 
         Returns
         ---
@@ -5895,12 +5909,12 @@ class Graph:
 
         """
         all_vertices = set()
-        for layer_data in self._layers.values():
-            all_vertices.update(layer_data["vertices"])
+        for slice_data in self._slices.values():
+            all_vertices.update(slice_data["vertices"])
         return len(all_vertices)
 
     def global_edge_count(self):
-        """Count unique edges present across all layers (union of memberships).
+        """Count unique edges present across all slices (union of memberships).
 
         Returns
         ---
@@ -5908,8 +5922,8 @@ class Graph:
 
         """
         all_edges = set()
-        for layer_data in self._layers.values():
-            all_edges.update(layer_data["edges"])
+        for slice_data in self._slices.values():
+            all_edges.update(slice_data["edges"])
         return len(all_edges)
 
     def in_edges(self, vertices):
@@ -6002,7 +6016,7 @@ class Graph:
                 if (S | T) & V:
                     yield j, (S, T)
 
-    def get_or_create_vertex_by_attrs(self, layer=None, **attrs) -> str:
+    def get_or_create_vertex_by_attrs(self, slice=None, **attrs) -> str:
         """Return vertex_id for the given composite-key attributes, creating the vertex if needed.
 
         - Requires set_vertex_key(...) to have been called.
@@ -6024,7 +6038,7 @@ class Graph:
         # Create new vertex
         vid = self._gen_vertex_id_from_key(key)
         # No need to pre-check entity_to_idx here; ids are namespaced by 'kv:' prefix
-        self.add_vertex(vid, layer=layer, **attrs)
+        self.add_vertex(vid, slice=slice, **attrs)
 
         # Index ownership
         self._vertex_key_index[key] = vid
@@ -6089,13 +6103,13 @@ class Graph:
 
     def edges_view(
         self,
-        layer=None,
+        slice=None,
         include_directed=True,
         include_weight=True,
         resolved_weight=True,
         copy=True,
     ):
-        """Build a Polars DF [DataFrame] view of edges with optional layer join.
+        """Build a Polars DF [DataFrame] view of edges with optional slice join.
         Same columns/semantics as before, but vectorized (no per-edge DF scans).
         """
         # Fast path: no edges
@@ -6169,26 +6183,26 @@ class Graph:
         else:
             out = base
 
-        # join layer-specific attributes once, then compute resolved weight vectorized
+        # join slice-specific attributes once, then compute resolved weight vectorized
         if (
-            layer is not None
-            and isinstance(self.edge_layer_attributes, pl.DataFrame)
-            and self.edge_layer_attributes.height > 0
+            slice is not None
+            and isinstance(self.edge_slice_attributes, pl.DataFrame)
+            and self.edge_slice_attributes.height > 0
         ):
-            layer_slice = self.edge_layer_attributes.filter(pl.col("layer_id") == layer).drop(
-                "layer_id"
+            slice_slice = self.edge_slice_attributes.filter(pl.col("slice_id") == slice).drop(
+                "slice_id"
             )
-            if layer_slice.height > 0:
-                # prefix non-key columns -> layer_*
-                rename_map = {c: f"layer_{c}" for c in layer_slice.columns if c not in {"edge_id"}}
+            if slice_slice.height > 0:
+                # prefix non-key columns -> slice_*
+                rename_map = {c: f"slice_{c}" for c in slice_slice.columns if c not in {"edge_id"}}
                 if rename_map:
-                    layer_slice = layer_slice.rename(rename_map)
-                out = out.join(layer_slice, on="edge_id", how="left")
+                    slice_slice = slice_slice.rename(rename_map)
+                out = out.join(slice_slice, on="edge_id", how="left")
 
         # add effective_weight without per-edge function calls
         if resolved_weight:
             gw_col = "global_weight" if include_weight else "_gw_tmp"
-            lw_col = "layer_weight" if ("layer_weight" in out.columns) else None
+            lw_col = "slice_weight" if ("slice_weight" in out.columns) else None
             if lw_col:
                 out = out.with_columns(
                     pl.coalesce([pl.col(lw_col), pl.col(gw_col)]).alias("effective_weight")
@@ -6221,8 +6235,8 @@ class Graph:
             return pl.DataFrame(schema={"vertex_id": pl.Utf8})
         return df.clone() if copy else df
 
-    def layers_view(self, copy=True):
-        """Read-only layer attribute table.
+    def slices_view(self, copy=True):
+        """Read-only slice attribute table.
 
         Parameters
         --
@@ -6232,50 +6246,50 @@ class Graph:
         Returns
         ---
         polars.DataFrame
-            Columns: ``layer_id`` plus pure attributes (may be empty).
+            Columns: ``slice_id`` plus pure attributes (may be empty).
 
         """
-        df = self.layer_attributes
+        df = self.slice_attributes
         if df.height == 0:
-            return pl.DataFrame(schema={"layer_id": pl.Utf8})
+            return pl.DataFrame(schema={"slice_id": pl.Utf8})
         return df.clone() if copy else df
 
-    # Layer set-ops & cross-layer analytics
+    # slice set-ops & cross-slice analytics
 
-    def get_layer_vertices(self, layer_id):
-        """Vertices in a layer.
+    def get_slice_vertices(self, slice_id):
+        """Vertices in a slice.
 
         Parameters
         --
-        layer_id : str
+        slice_id : str
 
         Returns
         ---
         set[str]
 
         """
-        return self._layers[layer_id]["vertices"].copy()
+        return self._slices[slice_id]["vertices"].copy()
 
-    def get_layer_edges(self, layer_id):
-        """Edges in a layer.
+    def get_slice_edges(self, slice_id):
+        """Edges in a slice.
 
         Parameters
         --
-        layer_id : str
+        slice_id : str
 
         Returns
         ---
         set[str]
 
         """
-        return self._layers[layer_id]["edges"].copy()
+        return self._slices[slice_id]["edges"].copy()
 
-    def layer_union(self, layer_ids):
-        """Union of multiple layers.
+    def slice_union(self, slice_ids):
+        """Union of multiple slices.
 
         Parameters
         --
-        layer_ids : Iterable[str]
+        slice_ids : Iterable[str]
 
         Returns
         ---
@@ -6283,25 +6297,25 @@ class Graph:
             ``{"vertices": set[str], "edges": set[str]}``
 
         """
-        if not layer_ids:
+        if not slice_ids:
             return {"vertices": set(), "edges": set()}
 
         union_vertices = set()
         union_edges = set()
 
-        for layer_id in layer_ids:
-            if layer_id in self._layers:
-                union_vertices.update(self._layers[layer_id]["vertices"])
-                union_edges.update(self._layers[layer_id]["edges"])
+        for slice_id in slice_ids:
+            if slice_id in self._slices:
+                union_vertices.update(self._slices[slice_id]["vertices"])
+                union_edges.update(self._slices[slice_id]["edges"])
 
         return {"vertices": union_vertices, "edges": union_edges}
 
-    def layer_intersection(self, layer_ids):
-        """Intersection of multiple layers.
+    def slice_intersection(self, slice_ids):
+        """Intersection of multiple slices.
 
         Parameters
         --
-        layer_ids : Iterable[str]
+        slice_ids : Iterable[str]
 
         Returns
         ---
@@ -6309,38 +6323,38 @@ class Graph:
             ``{"vertices": set[str], "edges": set[str]}``
 
         """
-        if not layer_ids:
+        if not slice_ids:
             return {"vertices": set(), "edges": set()}
 
-        if len(layer_ids) == 1:
-            layer_id = layer_ids[0]
+        if len(slice_ids) == 1:
+            slice_id = slice_ids[0]
             return {
-                "vertices": self._layers[layer_id]["vertices"].copy(),
-                "edges": self._layers[layer_id]["edges"].copy(),
+                "vertices": self._slices[slice_id]["vertices"].copy(),
+                "edges": self._slices[slice_id]["edges"].copy(),
             }
 
-        # Start with first layer
-        common_vertices = self._layers[layer_ids[0]]["vertices"].copy()
-        common_edges = self._layers[layer_ids[0]]["edges"].copy()
+        # Start with first slice
+        common_vertices = self._slices[slice_ids[0]]["vertices"].copy()
+        common_edges = self._slices[slice_ids[0]]["edges"].copy()
 
-        # Intersect with remaining layers
-        for layer_id in layer_ids[1:]:
-            if layer_id in self._layers:
-                common_vertices &= self._layers[layer_id]["vertices"]
-                common_edges &= self._layers[layer_id]["edges"]
+        # Intersect with remaining slices
+        for slice_id in slice_ids[1:]:
+            if slice_id in self._slices:
+                common_vertices &= self._slices[slice_id]["vertices"]
+                common_edges &= self._slices[slice_id]["edges"]
             else:
-                # Layer doesn't exist, intersection is empty
+                # slice doesn't exist, intersection is empty
                 return {"vertices": set(), "edges": set()}
 
         return {"vertices": common_vertices, "edges": common_edges}
 
-    def layer_difference(self, layer1_id, layer2_id):
-        """Set difference: elements in ``layer1_id`` not in ``layer2_id``.
+    def slice_difference(self, slice1_id, slice2_id):
+        """Set difference: elements in ``slice1_id`` not in ``slice2_id``.
 
         Parameters
         --
-        layer1_id : str
-        layer2_id : str
+        slice1_id : str
+        slice2_id : str
 
         Returns
         ---
@@ -6350,54 +6364,54 @@ class Graph:
         Raises
         --
         KeyError
-            If either layer is missing.
+            If either slice is missing.
 
         """
-        if layer1_id not in self._layers or layer2_id not in self._layers:
-            raise KeyError("One or both layers not found")
+        if slice1_id not in self._slices or slice2_id not in self._slices:
+            raise KeyError("One or both slices not found")
 
-        layer1 = self._layers[layer1_id]
-        layer2 = self._layers[layer2_id]
+        slice1 = self._slices[slice1_id]
+        slice2 = self._slices[slice2_id]
 
         return {
-            "vertices": layer1["vertices"] - layer2["vertices"],
-            "edges": layer1["edges"] - layer2["edges"],
+            "vertices": slice1["vertices"] - slice2["vertices"],
+            "edges": slice1["edges"] - slice2["edges"],
         }
 
-    def create_layer_from_operation(self, result_layer_id, operation_result, **attributes):
-        """Create a new layer from the result of a set operation.
+    def create_slice_from_operation(self, result_slice_id, operation_result, **attributes):
+        """Create a new slice from the result of a set operation.
 
         Parameters
         --
-        result_layer_id : str
+        result_slice_id : str
         operation_result : dict
-            Output of ``layer_union``/``layer_intersection``/``layer_difference``.
+            Output of ``slice_union``/``slice_intersection``/``slice_difference``.
         **attributes
-            Pure layer attributes.
+            Pure slice attributes.
 
         Returns
         ---
         str
-            The created layer ID.
+            The created slice ID.
 
         Raises
         --
         ValueError
-            If the target layer already exists.
+            If the target slice already exists.
 
         """
-        if result_layer_id in self._layers:
-            raise ValueError(f"Layer {result_layer_id} already exists")
+        if result_slice_id in self._slices:
+            raise ValueError(f"slice {result_slice_id} already exists")
 
-        self._layers[result_layer_id] = {
+        self._slices[result_slice_id] = {
             "vertices": operation_result["vertices"].copy(),
             "edges": operation_result["edges"].copy(),
             "attributes": attributes,
         }
 
-        return result_layer_id
+        return result_slice_id
 
-    def edge_presence_across_layers(
+    def edge_presence_across_slices(
         self,
         edge_id: str | None = None,
         source: str | None = None,
@@ -6406,7 +6420,7 @@ class Graph:
         include_default: bool = False,
         undirected_match: bool | None = None,
     ):
-        """Locate where an edge exists across layers.
+        """Locate where an edge exists across slices.
 
         Parameters
         --
@@ -6416,15 +6430,15 @@ class Graph:
             When used with ``target``, match only binary/vertex-edge edges by endpoints.
         target : str, optional
         include_default : bool, optional
-            Include the internal default layer in the search.
+            Include the internal default slice in the search.
         undirected_match : bool, optional
             When endpoint matching, allow undirected symmetric matches.
 
         Returns
         ---
         list[str] or dict[str, list[str]]
-            If ``edge_id`` given: list of layer IDs.
-            Else: ``{layer_id: [edge_id, ...]}``.
+            If ``edge_id`` given: list of slice IDs.
+            Else: ``{slice_id: [edge_id, ...]}``.
 
         Raises
         --
@@ -6437,16 +6451,16 @@ class Graph:
         if has_id == has_pair:
             raise ValueError("Provide either edge_id OR (source and target), but not both.")
 
-        layers_view = self.get_layers_dict(include_default=include_default)
+        slices_view = self.get_slices_dict(include_default=include_default)
 
         if has_id:
-            return [lid for lid, ldata in layers_view.items() if edge_id in ldata["edges"]]
+            return [lid for lid, ldata in slices_view.items() if edge_id in ldata["edges"]]
 
         if undirected_match is None:
             undirected_match = False
 
         out: dict[str, list[str]] = {}
-        for lid, ldata in layers_view.items():
+        for lid, ldata in slices_view.items():
             matches = []
             for eid in ldata["edges"]:
                 # skip hyper-edges for (source,target) mode
@@ -6464,7 +6478,7 @@ class Graph:
                 out[lid] = matches
         return out
 
-    def hyperedge_presence_across_layers(
+    def hyperedge_presence_across_slices(
         self,
         *,
         members=None,
@@ -6472,7 +6486,7 @@ class Graph:
         tail=None,
         include_default: bool = False,
     ):
-        """Locate layers containing a hyperedge with exactly these sets.
+        """Locate slices containing a hyperedge with exactly these sets.
 
         Parameters
         --
@@ -6487,7 +6501,7 @@ class Graph:
         Returns
         ---
         dict[str, list[str]]
-            ``{layer_id: [edge_id, ...]}``.
+            ``{slice_id: [edge_id, ...]}``.
 
         Raises
         --
@@ -6513,10 +6527,10 @@ class Graph:
             if head & tail:
                 raise ValueError("head and tail must be disjoint.")
 
-        layers_view = self.get_layers_dict(include_default=include_default)
+        slices_view = self.get_slices_dict(include_default=include_default)
         out: dict[str, list[str]] = {}
 
-        for lid, ldata in layers_view.items():
+        for lid, ldata in slices_view.items():
             matches = []
             for eid in ldata["edges"]:
                 if self.edge_kind.get(eid) != "hyper":
@@ -6532,8 +6546,8 @@ class Graph:
                 out[lid] = matches
         return out
 
-    def vertex_presence_across_layers(self, vertex_id, include_default: bool = False):
-        """List layers containing a specific vertex.
+    def vertex_presence_across_slices(self, vertex_id, include_default: bool = False):
+        """List slices containing a specific vertex.
 
         Parameters
         --
@@ -6545,18 +6559,18 @@ class Graph:
         list[str]
 
         """
-        layers_with_vertex = []
-        for layer_id, layer_data in self.get_layers_dict(include_default=include_default).items():
-            if vertex_id in layer_data["vertices"]:
-                layers_with_vertex.append(layer_id)
-        return layers_with_vertex
+        slices_with_vertex = []
+        for slice_id, slice_data in self.get_slices_dict(include_default=include_default).items():
+            if vertex_id in slice_data["vertices"]:
+                slices_with_vertex.append(slice_id)
+        return slices_with_vertex
 
-    def conserved_edges(self, min_layers=2, include_default=False):
-        """Edges present in at least ``min_layers`` layers.
+    def conserved_edges(self, min_slices=2, include_default=False):
+        """Edges present in at least ``min_slices`` slices.
 
         Parameters
         --
-        min_layers : int, optional
+        min_slices : int, optional
         include_default : bool, optional
 
         Returns
@@ -6565,21 +6579,21 @@ class Graph:
             ``{edge_id: count}``.
 
         """
-        layers_to_check = self.get_layers_dict(
+        slices_to_check = self.get_slices_dict(
             include_default=include_default
         )  # hides 'default' by default
         edge_counts = {}
-        for _, layer_data in layers_to_check.items():
-            for eid in layer_data["edges"]:
+        for _, slice_data in slices_to_check.items():
+            for eid in slice_data["edges"]:
                 edge_counts[eid] = edge_counts.get(eid, 0) + 1
-        return {eid: c for eid, c in edge_counts.items() if c >= min_layers}
+        return {eid: c for eid, c in edge_counts.items() if c >= min_slices}
 
-    def layer_specific_edges(self, layer_id):
-        """Edges that appear **only** in the specified layer.
+    def slice_specific_edges(self, slice_id):
+        """Edges that appear **only** in the specified slice.
 
         Parameters
         --
-        layer_id : str
+        slice_id : str
 
         Returns
         ---
@@ -6588,30 +6602,30 @@ class Graph:
         Raises
         --
         KeyError
-            If the layer does not exist.
+            If the slice does not exist.
 
         """
-        if layer_id not in self._layers:
-            raise KeyError(f"Layer {layer_id} not found")
+        if slice_id not in self._slices:
+            raise KeyError(f"slice {slice_id} not found")
 
-        target_edges = self._layers[layer_id]["edges"]
+        target_edges = self._slices[slice_id]["edges"]
         specific_edges = set()
 
         for edge_id in target_edges:
-            # Count how many layers contain this edge
-            count = sum(1 for layer_data in self._layers.values() if edge_id in layer_data["edges"])
-            if count == 1:  # Only in target layer
+            # Count how many slices contain this edge
+            count = sum(1 for slice_data in self._slices.values() if edge_id in slice_data["edges"])
+            if count == 1:  # Only in target slice
                 specific_edges.add(edge_id)
 
         return specific_edges
 
-    def temporal_dynamics(self, ordered_layers, metric="edge_change"):
-        """Compute changes between consecutive layers in a temporal sequence.
+    def temporal_dynamics(self, ordered_slices, metric="edge_change"):
+        """Compute changes between consecutive slices in a temporal sequence.
 
         Parameters
         --
-        ordered_layers : list[str]
-            Layer IDs in chronological order.
+        ordered_slices : list[str]
+            slice IDs in chronological order.
         metric : {'edge_change', 'vertex_change'}, optional
 
         Returns
@@ -6622,25 +6636,25 @@ class Graph:
         Raises
         --
         ValueError
-            If fewer than two layers are provided.
+            If fewer than two slices are provided.
         KeyError
-            If a referenced layer does not exist.
+            If a referenced slice does not exist.
 
         """
-        if len(ordered_layers) < 2:
-            raise ValueError("Need at least 2 layers for temporal analysis")
+        if len(ordered_slices) < 2:
+            raise ValueError("Need at least 2 slices for temporal analysis")
 
         changes = []
 
-        for i in range(len(ordered_layers) - 1):
-            current_id = ordered_layers[i]
-            next_id = ordered_layers[i + 1]
+        for i in range(len(ordered_slices) - 1):
+            current_id = ordered_slices[i]
+            next_id = ordered_slices[i + 1]
 
-            if current_id not in self._layers or next_id not in self._layers:
-                raise KeyError("One or more layers not found")
+            if current_id not in self._slices or next_id not in self._slices:
+                raise KeyError("One or more slices not found")
 
-            current_data = self._layers[current_id]
-            next_data = self._layers[next_id]
+            current_data = self._slices[current_id]
+            next_data = self._slices[next_id]
 
             if metric == "edge_change":
                 added = len(next_data["edges"] - current_data["edges"])
@@ -6654,49 +6668,49 @@ class Graph:
 
         return changes
 
-    def create_aggregated_layer(
-        self, source_layer_ids, target_layer_id, method="union", weight_func=None, **attributes
+    def create_aggregated_slice(
+        self, source_slice_ids, target_slice_id, method="union", weight_func=None, **attributes
     ):
-        """Create a new layer by aggregating multiple source layers.
+        """Create a new slice by aggregating multiple source slices.
 
         Parameters
         --
-        source_layer_ids : list[str]
-        target_layer_id : str
+        source_slice_ids : list[str]
+        target_slice_id : str
         method : {'union', 'intersection'}, optional
         weight_func : callable, optional
             Reserved for future weight merging logic (currently unused).
         **attributes
-            Pure layer attributes.
+            Pure slice attributes.
 
         Returns
         ---
         str
-            The created layer ID.
+            The created slice ID.
 
         Raises
         --
         ValueError
-            For unknown methods or missing source layers, or if target exists.
+            For unknown methods or missing source slices, or if target exists.
 
         """
-        if not source_layer_ids:
-            raise ValueError("Must specify at least one source layer")
+        if not source_slice_ids:
+            raise ValueError("Must specify at least one source slice")
 
-        if target_layer_id in self._layers:
-            raise ValueError(f"Target layer {target_layer_id} already exists")
+        if target_slice_id in self._slices:
+            raise ValueError(f"Target slice {target_slice_id} already exists")
 
         if method == "union":
-            result = self.layer_union(source_layer_ids)
+            result = self.slice_union(source_slice_ids)
         elif method == "intersection":
-            result = self.layer_intersection(source_layer_ids)
+            result = self.slice_intersection(source_slice_ids)
         else:
             raise ValueError(f"Unknown aggregation method: {method}")
 
-        return self.create_layer_from_operation(target_layer_id, result, **attributes)
+        return self.create_slice_from_operation(target_slice_id, result, **attributes)
 
-    def layer_statistics(self, include_default: bool = False):
-        """Basic per-layer statistics.
+    def slice_statistics(self, include_default: bool = False):
+        """Basic per-slice statistics.
 
         Parameters
         --
@@ -6705,15 +6719,15 @@ class Graph:
         Returns
         ---
         dict[str, dict]
-            ``{layer_id: {'vertices': int, 'edges': int, 'attributes': dict}}``.
+            ``{slice_id: {'vertices': int, 'edges': int, 'attributes': dict}}``.
 
         """
         stats = {}
-        for layer_id, layer_data in self.get_layers_dict(include_default=include_default).items():
-            stats[layer_id] = {
-                "vertices": len(layer_data["vertices"]),
-                "edges": len(layer_data["edges"]),
-                "attributes": layer_data["attributes"],
+        for slice_id, slice_data in self.get_slices_dict(include_default=include_default).items():
+            stats[slice_id] = {
+                "vertices": len(slice_data["vertices"]),
+                "edges": len(slice_data["edges"]),
+                "attributes": slice_data["attributes"],
             }
         return stats
 
@@ -6982,20 +6996,20 @@ class Graph:
             {"vertex_id": v, **(self._row_attrs(self.vertex_attributes, "vertex_id", v) or {})}
             for v in V
         ]
-        g.add_vertices_bulk(v_rows, layer=g._default_layer)
+        g.add_vertices_bulk(v_rows, slice=g._default_slice)
 
         # edges
         if bin_payload:
-            g.add_edges_bulk(bin_payload, layer=g._default_layer)
+            g.add_edges_bulk(bin_payload, slice=g._default_slice)
         if hyper_payload:
-            g.add_hyperedges_bulk(hyper_payload, layer=g._default_layer)
+            g.add_hyperedges_bulk(hyper_payload, slice=g._default_slice)
 
-        # copy layer memberships for retained edges & incident vertices
-        for lid, meta in self._layers.items():
-            g.add_layer(lid, **meta["attributes"])
+        # copy slice memberships for retained edges & incident vertices
+        for lid, meta in self._slices.items():
+            g.add_slice(lid, **meta["attributes"])
             kept_edges = set(meta["edges"]) & E
             if kept_edges:
-                g.add_edges_to_layer_bulk(lid, kept_edges)
+                g.add_edges_to_slice_bulk(lid, kept_edges)
 
         return g
 
@@ -7086,15 +7100,15 @@ class Graph:
         g = Graph(
             directed=self.directed, n=len(V), e=len(E_bin) + len(E_hyper_members) + len(E_hyper_dir)
         )
-        g.add_vertices_bulk(v_rows, layer=g._default_layer)
+        g.add_vertices_bulk(v_rows, slice=g._default_slice)
         if bin_payload:
-            g.add_edges_bulk(bin_payload, layer=g._default_layer)
+            g.add_edges_bulk(bin_payload, slice=g._default_slice)
         if hyper_payload:
-            g.add_hyperedges_bulk(hyper_payload, layer=g._default_layer)
+            g.add_hyperedges_bulk(hyper_payload, slice=g._default_slice)
 
-        # layer memberships restricted to V
-        for lid, meta in self._layers.items():
-            g.add_layer(lid, **meta["attributes"])
+        # slice memberships restricted to V
+        for lid, meta in self._slices.items():
+            g.add_slice(lid, **meta["attributes"])
             keep = set()
             for eid in meta["edges"]:
                 kind = self.edge_kind.get(eid, "binary")
@@ -7113,7 +7127,7 @@ class Graph:
                     if s in V and t in V:
                         keep.add(eid)
             if keep:
-                g.add_edges_to_layer_bulk(lid, keep)
+                g.add_edges_to_slice_bulk(lid, keep)
 
         return g
 
@@ -7229,26 +7243,26 @@ class Graph:
 
         return g
 
-    def subgraph_from_layer(self, layer_id, *, resolve_layer_weights=True):
-        if layer_id not in self._layers:
-            raise KeyError(f"Layer {layer_id} not found")
+    def subgraph_from_slice(self, slice_id, *, resolve_slice_weights=True):
+        if slice_id not in self._slices:
+            raise KeyError(f"slice {slice_id} not found")
 
         import polars as pl
 
-        layer_meta = self._layers[layer_id]
-        V = set(layer_meta["vertices"])
-        E = set(layer_meta["edges"])
+        slice_meta = self._slices[slice_id]
+        V = set(slice_meta["vertices"])
+        E = set(slice_meta["edges"])
 
         g = Graph(directed=self.directed, n=len(V), e=len(E))
-        g.add_layer(layer_id, **layer_meta["attributes"])
-        g.set_active_layer(layer_id)
+        g.add_slice(slice_id, **slice_meta["attributes"])
+        g.set_active_slice(slice_id)
 
         # vertices with attrs (edge-entities share same table)
         v_rows = [
             {"vertex_id": v, **(self._row_attrs(self.vertex_attributes, "vertex_id", v) or {})}
             for v in V
         ]
-        g.add_vertices_bulk(v_rows, layer=layer_id)
+        g.add_vertices_bulk(v_rows, slice=slice_id)
 
         # edge attrs
         e_attrs = {}
@@ -7265,15 +7279,15 @@ class Graph:
 
         # weights
         eff_w = {}
-        if resolve_layer_weights:
-            df = self.edge_layer_attributes
+        if resolve_slice_weights:
+            df = self.edge_slice_attributes
             if (
                 isinstance(df, pl.DataFrame)
                 and df.height
-                and {"layer_id", "edge_id", "weight"}.issubset(df.columns)
+                and {"slice_id", "edge_id", "weight"}.issubset(df.columns)
             ):
                 for r in df.filter(
-                    (pl.col("layer_id") == layer_id) & (pl.col("edge_id").is_in(list(E)))
+                    (pl.col("slice_id") == slice_id) & (pl.col("edge_id").is_in(list(E)))
                 ).iter_rows(named=True):
                     if r.get("weight") is not None:
                         eff_w[r["edge_id"]] = float(r["weight"])
@@ -7283,7 +7297,7 @@ class Graph:
         for eid in E:
             w = (
                 eff_w.get(eid, self.edge_weights.get(eid, 1.0))
-                if resolve_layer_weights
+                if resolve_slice_weights
                 else self.edge_weights.get(eid, 1.0)
             )
             kind = self.edge_kind.get(eid, "binary")
@@ -7326,9 +7340,9 @@ class Graph:
                 )
 
         if bin_payload:
-            g.add_edges_bulk(bin_payload, layer=layer_id)
+            g.add_edges_bulk(bin_payload, slice=slice_id)
         if hyper_payload:
-            g.add_hyperedges_bulk(hyper_payload, layer=layer_id)
+            g.add_hyperedges_bulk(hyper_payload, slice=slice_id)
 
         return g
 
@@ -7372,7 +7386,7 @@ class Graph:
         return mapping.get(key, {})
 
     def copy(self):
-        """Deep copy the entire graph, including layers, edges, hyperedges, and attributes.
+        """Deep copy the entire graph, including slices, edges, hyperedges, and attributes.
         (Behavior preserved; uses preallocation + vectorized attr extraction.)
         """
         import polars as pl
@@ -7380,14 +7394,14 @@ class Graph:
         # Preallocate with current sizes
         new_graph = Graph(directed=self.directed, n=self._num_entities, e=self._num_edges)
 
-        # Copy layers & their pure attributes 
-        for lid, meta in self._layers.items():
-            if lid != new_graph._default_layer:
-                new_graph.add_layer(lid, **meta["attributes"])
+        # Copy slices & their pure attributes 
+        for lid, meta in self._slices.items():
+            if lid != new_graph._default_slice:
+                new_graph.add_slice(lid, **meta["attributes"])
             else:
-                # default layer exists; mirror its attributes too
+                # default slice exists; mirror its attributes too
                 if meta["attributes"]:
-                    new_graph.set_layer_attrs(lid, **meta["attributes"])
+                    new_graph.set_slice_attrs(lid, **meta["attributes"])
 
         # Build attribute rows once (no per-row filters)
         if (
@@ -7413,10 +7427,10 @@ class Graph:
 
         # Add entities with correct type APIs (bulk)
         if vertex_rows:
-            new_graph.add_vertices_bulk(vertex_rows, layer=new_graph._default_layer)
+            new_graph.add_vertices_bulk(vertex_rows, slice=new_graph._default_slice)
         if edge_entity_rows:
             # attributes for edge-entities live in the same vertex_attributes table
-            new_graph.add_edge_entities_bulk(edge_entity_rows, layer=new_graph._default_layer)
+            new_graph.add_edge_entities_bulk(edge_entity_rows, slice=new_graph._default_slice)
 
         # Binary / vertex-edge edges
         bin_payload = []
@@ -7435,7 +7449,7 @@ class Graph:
                 }
             )
         if bin_payload:
-            new_graph.add_edges_bulk(bin_payload, layer=new_graph._default_layer)
+            new_graph.add_edges_bulk(bin_payload, slice=new_graph._default_slice)
 
         # Hyperedges
         hyper_payload = []
@@ -7452,25 +7466,25 @@ class Graph:
                     {**base, "head": list(hdef.get("head", ())), "tail": list(hdef.get("tail", ()))}
                 )
         if hyper_payload:
-            new_graph.add_hyperedges_bulk(hyper_payload, layer=new_graph._default_layer)
+            new_graph.add_hyperedges_bulk(hyper_payload, slice=new_graph._default_slice)
 
-        # Copy layer memberships
-        for lid, meta in self._layers.items():
-            if lid not in new_graph._layers:
-                new_graph.add_layer(lid)
-            new_graph._layers[lid]["vertices"] = set(meta["vertices"])
-            new_graph._layers[lid]["edges"] = set(meta["edges"])
+        # Copy slice memberships
+        for lid, meta in self._slices.items():
+            if lid not in new_graph._slices:
+                new_graph.add_slice(lid)
+            new_graph._slices[lid]["vertices"] = set(meta["vertices"])
+            new_graph._slices[lid]["edges"] = set(meta["edges"])
 
-        # Copy edge-layer attributes + legacy weight dict
-        if isinstance(self.edge_layer_attributes, pl.DataFrame):
-            new_graph.edge_layer_attributes = self.edge_layer_attributes.clone()
+        # Copy edge-slice attributes + legacy weight dict
+        if isinstance(self.edge_slice_attributes, pl.DataFrame):
+            new_graph.edge_slice_attributes = self.edge_slice_attributes.clone()
         else:
-            new_graph.edge_layer_attributes = self.edge_layer_attributes
+            new_graph.edge_slice_attributes = self.edge_slice_attributes
 
         from collections import defaultdict
 
-        new_graph.layer_edge_weights = defaultdict(
-            dict, {lid: dict(m) for lid, m in self.layer_edge_weights.items()}
+        new_graph.slice_edge_weights = defaultdict(
+            dict, {lid: dict(m) for lid, m in self.slice_edge_weights.items()}
         )
 
         return new_graph
@@ -7708,10 +7722,10 @@ class Graph:
             "remove_vertex",
             "set_vertex_attrs",
             "set_edge_attrs",
-            "set_layer_attrs",
-            "set_edge_layer_attrs",
-            "register_layer",
-            "unregister_layer",
+            "set_slice_attrs",
+            "set_edge_slice_attrs",
+            "register_slice",
+            "unregister_slice",
         ]
         for name in to_wrap:
             if hasattr(self, name):
@@ -7879,8 +7893,8 @@ class Graph:
             nxG = self._get_or_make_nx(
                 directed=True,
                 hyperedge_mode="expand",
-                layer=None,
-                layers=None,
+                slice=None,
+                slices=None,
                 needed_attrs=set(),
                 simple=False,
                 edge_aggs=None,
@@ -7902,8 +7916,8 @@ class Graph:
             *,
             directed: bool = True,
             hyperedge_mode: str = "expand",
-            layer=None,
-            layers=None,
+            slice=None,
+            slices=None,
             needed_attrs=None,
             simple: bool = False,
             edge_aggs: dict | None = None,
@@ -7914,7 +7928,7 @@ class Graph:
             Args:
               directed: build DiGraph (True) or Graph (False) view
               hyperedge_mode: "skip" | "expand"
-              layer/layers: layer selection if Graph is multilayered
+              slice/slices: slice selection if Graph is multisliceed
               needed_attrs: set of edge attribute names to keep (default empty)
               simple: if True, collapse Multi* -> simple (Di)Graph
               edge_aggs: how to aggregate parallel edge attrs when simple=True,
@@ -7926,8 +7940,8 @@ class Graph:
             return self._get_or_make_nx(
                 directed=directed,
                 hyperedge_mode=hyperedge_mode,
-                layer=layer,
-                layers=layers,
+                slice=slice,
+                slices=slices,
                 needed_attrs=needed_attrs,
                 simple=simple,
                 edge_aggs=edge_aggs,
@@ -7946,8 +7960,8 @@ class Graph:
                 hyperedge_mode = kwargs.pop(
                     "_nx_hyperedge", getattr(self, "default_hyperedge_mode", "expand")
                 )  # "skip" | "expand"
-                layer = kwargs.pop("_nx_layer", None)
-                layers = kwargs.pop("_nx_layers", None)
+                slice = kwargs.pop("_nx_slice", None)
+                slices = kwargs.pop("_nx_slices", None)
                 label_field = kwargs.pop("_nx_label_field", None)  # explicit label column
                 guess_labels = kwargs.pop(
                     "_nx_guess_labels", True
@@ -7974,8 +7988,8 @@ class Graph:
                     nxG = self._get_or_make_nx(
                         directed=directed,
                         hyperedge_mode=hyperedge_mode,
-                        layer=layer,
-                        layers=layers,
+                        slice=slice,
+                        slices=slices,
                         needed_attrs=needed_edge_attrs,
                         simple=simple,
                         edge_aggs=edge_aggs,
@@ -8098,8 +8112,8 @@ class Graph:
             *,
             directed: bool,
             hyperedge_mode: str,
-            layer,
-            layers,
+            slice,
+            slices,
             needed_attrs: set,
             simple: bool,
             edge_aggs: dict | None,
@@ -8110,8 +8124,8 @@ class Graph:
                 self._G,
                 directed=directed,
                 hyperedge_mode=hyperedge_mode,
-                layer=layer,
-                layers=layers,
+                slice=slice,
+                slices=slices,
                 public_only=True,
             )
             # Keep only needed edge attrs
@@ -8131,7 +8145,7 @@ class Graph:
                 )
 
             self._warn_on_loss(
-                hyperedge_mode=hyperedge_mode, layer=layer, layers=layers, manifest=manifest
+                hyperedge_mode=hyperedge_mode, slice=slice, slices=slices, manifest=manifest
             )
             return nxG
 
@@ -8140,8 +8154,8 @@ class Graph:
             *,
             directed: bool,
             hyperedge_mode: str,
-            layer,
-            layers,
+            slice,
+            slices,
             needed_attrs: set,
             simple: bool,
             edge_aggs: dict | None,
@@ -8149,8 +8163,8 @@ class Graph:
             key = (
                 bool(directed),
                 str(hyperedge_mode),
-                tuple(sorted(layers)) if layers else None,
-                str(layer) if layer is not None else None,
+                tuple(sorted(slices)) if slices else None,
+                str(slice) if slice is not None else None,
                 tuple(sorted(needed_attrs)) if needed_attrs else (),
                 bool(simple),
                 tuple(sorted(edge_aggs.items())) if isinstance(edge_aggs, dict) else None,
@@ -8165,8 +8179,8 @@ class Graph:
                 nxG = self._convert_to_nx(
                     directed=directed,
                     hyperedge_mode=hyperedge_mode,
-                    layer=layer,
-                    layers=layers,
+                    slice=slice,
+                    slices=slices,
                     needed_attrs=needed_attrs,
                     simple=simple,
                     edge_aggs=edge_aggs,
@@ -8176,7 +8190,7 @@ class Graph:
                 return nxG
             return entry["nxG"]
 
-        def _warn_on_loss(self, *, hyperedge_mode, layer, layers, manifest):
+        def _warn_on_loss(self, *, hyperedge_mode, slice, slices, manifest):
             import warnings
 
             has_hyper = False
@@ -8190,13 +8204,13 @@ class Graph:
             if has_hyper and hyperedge_mode != "expand":
                 msgs.append("hyperedges dropped (hyperedge_mode='skip')")
             try:
-                layers_dict = getattr(self._G, "_layers", None)
+                slices_dict = getattr(self._G, "_slices", None)
                 if (
-                    isinstance(layers_dict, dict)
-                    and len(layers_dict) > 1
-                    and (layer is None and not layers)
+                    isinstance(slices_dict, dict)
+                    and len(slices_dict) > 1
+                    and (slice is None and not slices)
                 ):
-                    msgs.append("multiple layers flattened into single NX graph")
+                    msgs.append("multiple slices flattened into single NX graph")
             except Exception:
                 pass
             if manifest is None:
@@ -8390,8 +8404,8 @@ class Graph:
             igG = self._get_or_make_ig(
                 directed=True,
                 hyperedge_mode="skip",
-                layer=None,
-                layers=None,
+                slice=None,
+                slices=None,
                 needed_attrs=set(),
                 simple=True,
                 edge_aggs=None,
@@ -8408,8 +8422,8 @@ class Graph:
             *,
             directed: bool = True,
             hyperedge_mode: str = "skip",
-            layer=None,
-            layers=None,
+            slice=None,
+            slices=None,
             needed_attrs=None,
             simple: bool = False,
             edge_aggs: dict | None = None,
@@ -8418,8 +8432,8 @@ class Graph:
             return self._get_or_make_ig(
                 directed=directed,
                 hyperedge_mode=hyperedge_mode,
-                layer=layer,
-                layers=layers,
+                slice=slice,
+                slices=slices,
                 needed_attrs=needed_attrs,
                 simple=simple,
                 edge_aggs=edge_aggs,
@@ -8435,8 +8449,8 @@ class Graph:
                 # proxy-only knobs (consumed here)
                 directed = bool(kwargs.pop("_ig_directed", True))
                 hyperedge_mode = kwargs.pop("_ig_hyperedge", "skip")  # "skip" | "expand"
-                layer = kwargs.pop("_ig_layer", None)
-                layers = kwargs.pop("_ig_layers", None)
+                slice = kwargs.pop("_ig_slice", None)
+                slices = kwargs.pop("_ig_slices", None)
                 label_field = kwargs.pop("_ig_label_field", None)
                 guess_labels = kwargs.pop("_ig_guess_labels", True)
                 simple = bool(kwargs.pop("_ig_simple", False))
@@ -8451,8 +8465,8 @@ class Graph:
                 igG = self._get_or_make_ig(
                     directed=directed,
                     hyperedge_mode=hyperedge_mode,
-                    layer=layer,
-                    layers=layers,
+                    slice=slice,
+                    slices=slices,
                     needed_attrs=needed_edge_attrs,
                     simple=simple,
                     edge_aggs=edge_aggs,
@@ -8537,8 +8551,8 @@ class Graph:
             *,
             directed: bool,
             hyperedge_mode: str,
-            layer,
-            layers,
+            slice,
+            slices,
             needed_attrs: set,
             simple: bool,
             edge_aggs: dict | None,
@@ -8559,8 +8573,8 @@ class Graph:
                 self._G,
                 directed=directed,
                 hyperedge_mode=hyperedge_mode,
-                layer=layer,
-                layers=layers,
+                slice=slice,
+                slices=slices,
                 public_only=True,
             )
 
@@ -8574,7 +8588,7 @@ class Graph:
                 )
 
             self._warn_on_loss(
-                hyperedge_mode=hyperedge_mode, layer=layer, layers=layers, manifest=manifest
+                hyperedge_mode=hyperedge_mode, slice=slice, slices=slices, manifest=manifest
             )
             return igG
 
@@ -8583,8 +8597,8 @@ class Graph:
             *,
             directed: bool,
             hyperedge_mode: str,
-            layer,
-            layers,
+            slice,
+            slices,
             needed_attrs: set,
             simple: bool,
             edge_aggs: dict | None,
@@ -8592,8 +8606,8 @@ class Graph:
             key = (
                 bool(directed),
                 str(hyperedge_mode),
-                tuple(sorted(layers)) if layers else None,
-                str(layer) if layer is not None else None,
+                tuple(sorted(slices)) if slices else None,
+                str(slice) if slice is not None else None,
                 tuple(sorted(needed_attrs)) if needed_attrs else (),
                 bool(simple),
                 tuple(sorted(edge_aggs.items())) if isinstance(edge_aggs, dict) else None,
@@ -8608,8 +8622,8 @@ class Graph:
                 igG = self._convert_to_ig(
                     directed=directed,
                     hyperedge_mode=hyperedge_mode,
-                    layer=layer,
-                    layers=layers,
+                    slice=slice,
+                    slices=slices,
                     needed_attrs=needed_attrs,
                     simple=simple,
                     edge_aggs=edge_aggs,
@@ -8619,7 +8633,7 @@ class Graph:
                 return igG
             return entry["igG"]
 
-        def _warn_on_loss(self, *, hyperedge_mode, layer, layers, manifest):
+        def _warn_on_loss(self, *, hyperedge_mode, slice, slices, manifest):
             import warnings
 
             has_hyper = False
@@ -8633,13 +8647,13 @@ class Graph:
             if has_hyper and hyperedge_mode != "expand":
                 msgs.append("hyperedges dropped (hyperedge_mode='skip')")
             try:
-                layers_dict = getattr(self._G, "_layers", None)
+                slices_dict = getattr(self._G, "_slices", None)
                 if (
-                    isinstance(layers_dict, dict)
-                    and len(layers_dict) > 1
-                    and (layer is None and not layers)
+                    isinstance(slices_dict, dict)
+                    and len(slices_dict) > 1
+                    and (slice is None and not slices)
                 ):
-                    msgs.append("multiple layers flattened into single igraph graph")
+                    msgs.append("multiple slices flattened into single igraph graph")
             except Exception:
                 pass
             if manifest is None:
@@ -8880,11 +8894,11 @@ class Graph:
         return self.graph_attributes
 
     @property
-    def layers(self):
-        """Layer operations (add, remove, union, intersect)."""
-        if not hasattr(self, "_layer_manager"):
-            self._layer_manager = LayerManager(self)
-        return self._layer_manager
+    def slices(self):
+        """slice operations (add, remove, union, intersect)."""
+        if not hasattr(self, "_slice_manager"):
+            self._slice_manager = sliceManager(self)
+        return self._slice_manager
 
     @property
     def idx(self):
@@ -8915,15 +8929,15 @@ class Graph:
         return read(path, **kwargs)
 
     # View API
-    def view(self, nodes=None, edges=None, layers=None, predicate=None):
+    def view(self, nodes=None, edges=None, slices=None, predicate=None):
         """Create lazy view/subgraph."""
-        return GraphView(self, nodes, edges, layers, predicate)
+        return GraphView(self, nodes, edges, slices, predicate)
 
     # Audit
     def snapshot(self, label=None):
         """Create a named snapshot of current graph state.
 
-        Uses existing Graph attributes: entity_types, edge_to_idx, _layers, _version
+        Uses existing Graph attributes: entity_types, edge_to_idx, _slices, _version
 
         Parameters
         --
@@ -8948,12 +8962,12 @@ class Graph:
             "counts": {
                 "vertices": self.number_of_vertices(),
                 "edges": self.number_of_edges(),
-                "layers": len(self._layers),
+                "slices": len(self._slices),
             },
             # Store minimal state for comparison (uses existing Graph attributes)
             "vertex_ids": set(v for v, t in self.entity_types.items() if t == "vertex"),
             "edge_ids": set(self.edge_to_idx.keys()),
-            "layer_ids": set(self._layers.keys()),
+            "slice_ids": set(self._slices.keys()),
         }
 
         self._snapshots.append(snapshot)
@@ -8997,7 +9011,7 @@ class Graph:
                 "version": ref._version,
                 "vertex_ids": set(v for v, t in ref.entity_types.items() if t == "vertex"),
                 "edge_ids": set(ref.edge_to_idx.keys()),
-                "layer_ids": set(ref._layers.keys()),
+                "slice_ids": set(ref._slices.keys()),
             }
         else:
             raise TypeError(f"Invalid snapshot reference: {type(ref)}")
@@ -9009,7 +9023,7 @@ class Graph:
             "version": self._version,
             "vertex_ids": set(v for v, t in self.entity_types.items() if t == "vertex"),
             "edge_ids": set(self.edge_to_idx.keys()),
-            "layer_ids": set(self._layers.keys()),
+            "slice_ids": set(self._slices.keys()),
         }
 
     def list_snapshots(self):
