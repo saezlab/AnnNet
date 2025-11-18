@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from enum import Enum
 from functools import wraps
+import itertools
 
 import numpy as np
 import polars as pl
@@ -468,12 +469,12 @@ class LayerManager:
         """List all aspect-tuples (Cartesian product)."""
         return list(self._G.iter_layers())
 
-    def tuple_id(self, α):
+    def tuple_id(self, aa):
         """Canonical string id for a layer tuple (matches Graph’s synthetic id)."""
-        α = tuple(α)
+        aa = tuple(aa)
         if len(self._G.aspects) == 1:
-            return α[0]
-        return "×".join(α)
+            return aa[0]
+        return "×".join(aa)
 
     # ==================== Presence utilities ====================
 
@@ -481,27 +482,27 @@ class LayerManager:
         """All layer-tuples where node u is present."""
         return list(self._G.iter_node_layers(u))
 
-    def has_presence(self, u: str, α):
-        """True if (u, α) ∈ V_M."""
-        return self._G.has_presence(u, tuple(α))
+    def has_presence(self, u: str, aa):
+        """True if (u, aa) ∈ V_M."""
+        return self._G.has_presence(u, tuple(aa))
 
     # ==================== Intra/inter/coupling surfacing ====================
 
-    def intra_edges_tuple(self, α):
-        """Edge IDs of intra edges inside tuple-layer α."""
-        α = tuple(α)
-        # intra appear in Graph.edge_kind with edge_layers[eid] == α
-        return {eid for eid, k in self._G.edge_kind.items() if k == "intra" and self._G.edge_layers[eid] == α}
+    def intra_edges_tuple(self, aa):
+        """Edge IDs of intra edges inside tuple-layer aa."""
+        aa = tuple(aa)
+        # intra appear in Graph.edge_kind with edge_layers[eid] == aa
+        return {eid for eid, k in self._G.edge_kind.items() if k == "intra" and self._G.edge_layers[eid] == aa}
 
-    def inter_edges_between(self, α, β):
-        """Edge IDs of inter edges between tuple-layers α and β."""
-        α = tuple(α); β = tuple(β)
-        return {eid for eid, k in self._G.edge_kind.items() if k == "inter" and self._G.edge_layers[eid] == (α, β)}
+    def inter_edges_between(self, aa, β):
+        """Edge IDs of inter edges between tuple-layers aa and β."""
+        aa = tuple(aa); β = tuple(β)
+        return {eid for eid, k in self._G.edge_kind.items() if k == "inter" and self._G.edge_layers[eid] == (aa, β)}
 
-    def coupling_edges_between(self, α, β):
-        """Edge IDs of coupling edges connecting same-node (α)↔(β)."""
-        α = tuple(α); β = tuple(β)
-        return {eid for eid, k in self._G.edge_kind.items() if k == "coupling" and self._G.edge_layers[eid] == (α, β)}
+    def coupling_edges_between(self, aa, β):
+        """Edge IDs of coupling edges connecting same-node (aa)↔(β)."""
+        aa = tuple(aa); β = tuple(β)
+        return {eid for eid, k in self._G.edge_kind.items() if k == "coupling" and self._G.edge_layers[eid] == (aa, β)}
 
     # ==================== Supra / blocks ====================
 
@@ -827,7 +828,7 @@ class GraphView:
         if node_ids is None:
             return self._graph.vertex_attributes
 
-        import polars as pl
+        
 
         return self._graph.vertex_attributes.filter(pl.col("vertex_id").is_in(list(node_ids)))
 
@@ -838,7 +839,7 @@ class GraphView:
         if edge_ids is None:
             return self._graph.edge_attributes
 
-        import polars as pl
+        
 
         return self._graph.edge_attributes.filter(pl.col("edge_id").is_in(list(edge_ids)))
 
@@ -869,7 +870,7 @@ class GraphView:
         if rows and cols:
             return self._graph._matrix[rows, :][:, cols]
         else:
-            import scipy.sparse as sp
+            
 
             return sp.dok_matrix((len(rows), len(cols)), dtype=self._graph._matrix.dtype)
 
@@ -1018,7 +1019,7 @@ class GraphView:
         # Filter by edge IDs in this view
         edge_ids = self.edge_ids
         if edge_ids is not None:
-            import polars as pl
+            
 
             df = df.filter(pl.col("edge_id").is_in(list(edge_ids)))
 
@@ -1034,7 +1035,7 @@ class GraphView:
         # Filter by vertex IDs in this view
         node_ids = self.node_ids
         if node_ids is not None:
-            import polars as pl
+            
 
             df = df.filter(pl.col("vertex_id").is_in(list(node_ids)))
 
@@ -1472,7 +1473,7 @@ class Graph:
 
         # Node and node–layer presence
         self._V: set[str] = set()                             # node ids (entities of type 'vertex')
-        self._VM: set[tuple[str, tuple[str, ...]]] = set()    # {(u, α_tuple)}
+        self._VM: set[tuple[str, tuple[str, ...]]] = set()    # {(u, aa_tuple)}
         self.node_aligned: bool = False                      # if True, VM == V × all_layers
 
         # Stable indexing for supra rows
@@ -1484,7 +1485,7 @@ class Graph:
         
         # Multilayer edge bookkeeping (used by supra_adjacency)
         self.edge_kind = {}     # eid -> {"intra","inter","coupling"}
-        self.edge_layers = {}   # eid -> α   or -> (α,β) for inter/coupling
+        self.edge_layers = {}   # eid -> aa   or -> (aa,β) for inter/coupling
 
 
     # slice basics
@@ -1520,9 +1521,9 @@ class Graph:
         # slice_id as an elementary slice of that aspect
         if len(self.aspects) == 1:
             a = self.aspects[0]
-            if a in self.elem_slices:
-                if slice_id not in self.elem_slices[a]:
-                    self.elem_slices[a].append(slice_id)
+            if a in self.elem_layers:
+                if slice_id not in self.elem_layers[a]:
+                    self.elem_layers[a].append(slice_id)
                     self._rebuild_all_slices_cache()        
         return slice_id
 
@@ -1653,7 +1654,6 @@ class Graph:
         self._rebuild_all_layers_cache()
 
     def _rebuild_all_layers_cache(self):
-        import itertools
         if not self.aspects:
             self._all_layers = ()
             return
@@ -1675,7 +1675,7 @@ class Graph:
         self._VM.add((u, tuple(layer_tuple)))
 
     def remove_presence(self, u: str, layer_tuple: tuple[str, ...]):
-        """Remove presence (u, α)."""
+        """Remove presence (u, aa)."""
         self._validate_layer_tuple(layer_tuple)
         try:
             self._VM.remove((u, tuple(layer_tuple)))
@@ -1691,10 +1691,10 @@ class Graph:
         return iter(self._all_layers)
 
     def iter_node_layers(self, u: str):
-        """Iterate α where (u, α) ∈ V_M."""
-        for (uu, α) in self._VM:
+        """Iterate aa where (u, aa) ∈ V_M."""
+        for (uu, aa) in self._VM:
             if uu == u:
-                yield α
+                yield aa
 
     ## Index for supra rows 
     def ensure_node_layer_index(self, restrict_layers: list[tuple[str, ...]] | None = None):
@@ -1704,7 +1704,7 @@ class Graph:
         """
         if restrict_layers is not None:
             R = {tuple(x) for x in restrict_layers}
-            vm = [(u, α) for (u, α) in self._VM if α in R]
+            vm = [(u, aa) for (u, aa) in self._VM if aa in R]
         else:
             vm = list(self._VM)
         vm.sort(key=lambda x: (x[0], x[1]))
@@ -1713,14 +1713,14 @@ class Graph:
         return len(vm)
 
     def nl_to_row(self, u: str, layer_tuple: tuple[str, ...]) -> int:
-        """Map (u, α) -> row index (after ensure_node_layer_index())."""
+        """Map (u, aa) -> row index (after ensure_node_layer_index())."""
         key = (u, tuple(layer_tuple))
         if key not in self._nl_to_row:
             raise KeyError(f"node–layer {key!r} not indexed; call ensure_node_layer_index()")
         return self._nl_to_row[key]
 
     def row_to_nl(self, row: int) -> tuple[str, tuple[str, ...]]:
-        """Map row index -> (u, α)."""
+        """Map row index -> (u, aa)."""
         try:
             return self._row_to_nl[row]
         except Exception:
@@ -1728,15 +1728,15 @@ class Graph:
 
     ## Validation helpers 
     
-    def _validate_layer_tuple(self, α: tuple[str, ...]):
+    def _validate_layer_tuple(self, aa: tuple[str, ...]):
         if not self.aspects:
             raise ValueError("no aspects are configured; call set_aspects(...) first")
-        if len(α) != len(self.aspects):
-            raise ValueError(f"layer tuple rank mismatch: expected {len(self.aspects)}, got {len(α)}")
+        if len(aa) != len(self.aspects):
+            raise ValueError(f"layer tuple rank mismatch: expected {len(self.aspects)}, got {len(aa)}")
         for i, a in enumerate(self.aspects):
             allowed = self.elem_layers.get(a, [])
-            if α[i] not in allowed:
-                raise KeyError(f"unknown elementary layer {α[i]!r} for aspect {a!r}")
+            if aa[i] not in allowed:
+                raise KeyError(f"unknown elementary layer {aa[i]!r} for aspect {a!r}")
 
     def layer_id_to_tuple(self, layer_id: str) -> tuple[str, ...]:
         """
@@ -1755,8 +1755,8 @@ class Graph:
         If exactly 1 aspect is configured, this delegates to add_intra_edge_nl with (layer,) tuple.
         """
         if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
-            α = self.layer_id_to_tuple(layer)
-            return self.add_intra_edge_nl(u, v, α, weight=weight, eid=eid)
+            aa = self.layer_id_to_tuple(layer)
+            return self.add_intra_edge_nl(u, v, aa, weight=weight, eid=eid)
         # Fallback when multi-aspect is not configured: let add_edge handle bookkeeping.
         eid = eid or f"{u}--{v}@{layer}"
         self.add_edge(u, v, layer=layer, weight=weight, edge_id=eid)
@@ -1767,40 +1767,40 @@ class Graph:
     def add_intra_edge_nl(self, u: str, v: str, layer_tuple: tuple[str, ...], *,
                           weight: float = 1.0, eid: str | None = None):
         """
-        Add (u,v) inside a multi-aspect layer α (tuple). Requires presence (u,α),(v,α) in V_M.
+        Add (u,v) inside a multi-aspect layer aa (tuple). Requires presence (u,aa),(v,aa) in V_M.
         """
         self._validate_layer_tuple(layer_tuple)
-        α = tuple(layer_tuple)
-        self._assert_presence(u, α)
-        self._assert_presence(v, α)      
-        eid = eid or f"{u}--{v}@{'.'.join(α)}"
+        aa = tuple(layer_tuple)
+        self._assert_presence(u, aa)
+        self._assert_presence(v, aa)      
+        eid = eid or f"{u}--{v}@{'.'.join(aa)}"
         # Use a synthetic layer id for intra edges so existing layer bookkeeping runs.
-        Lid = α[0] if len(self.aspects) == 1 else "×".join(α)
+        Lid = aa[0] if len(self.aspects) == 1 else "×".join(aa)
         self.add_edge(u, v, layer=Lid, weight=weight, edge_id=eid)        
         self.edge_kind[eid] = "intra"
-        self.edge_layers[eid] = α
+        self.edge_layers[eid] = aa
         return eid
 
     def add_inter_edge_nl(self, u: str, layer_a: tuple[str, ...], v: str, layer_b: tuple[str, ...], *,
                           weight: float = 1.0, eid: str | None = None):
         """
-        Add an inter-layer edge between (u, α) and (v, β). Requires presence (u,α),(v,β) in V_M.
+        Add an inter-layer edge between (u, aa) and (v, β). Requires presence (u,aa),(v,β) in V_M.
         """
         self._validate_layer_tuple(layer_a); self._validate_layer_tuple(layer_b)
-        α, β = tuple(layer_a), tuple(layer_b)
-        self._assert_presence(u, α)
+        aa, β = tuple(layer_a), tuple(layer_b)
+        self._assert_presence(u, aa)
         self._assert_presence(v, β)
-        eid = eid or f"{u}--{v}=={'.'.join(α)}~{'.'.join(β)}"
+        eid = eid or f"{u}--{v}=={'.'.join(aa)}~{'.'.join(β)}"
         # No single layer applies; just register the edge normally (no 'layer' kw).
         self.add_edge(u, v, weight=weight, edge_id=eid)        
         self.edge_kind[eid] = "inter"
-        self.edge_layers[eid] = (α, β)
+        self.edge_layers[eid] = (aa, β)
         return eid
 
     def add_coupling_edge_nl(self, u: str, layer_a: tuple[str, ...], layer_b: tuple[str, ...], *,
                              weight: float = 1.0, eid: str | None = None):
         """
-        Add a diagonal coupling (u, α) <-> (u, β). Requires presence (u,α),(u,β).
+        Add a diagonal coupling (u, aa) <-> (u, β). Requires presence (u,aa),(u,β).
         """
         eid2 = self.add_inter_edge_nl(u, layer_a, u, layer_b, weight=weight, eid=eid)
         # Re-label as coupling so supra_adjacency treats it as off-diagonal coupling
@@ -1812,8 +1812,8 @@ class Graph:
     def add_inter_edge(self, u: str, v: str, layer_a: str, layer_b: str, *,
                        weight: float = 1.0, eid: str | None = None):
         if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
-            α, β = self.layer_id_to_tuple(layer_a), self.layer_id_to_tuple(layer_b)
-            return self.add_inter_edge_nl(u, α, v, β, weight=weight, eid=eid)
+            aa, β = self.layer_id_to_tuple(layer_a), self.layer_id_to_tuple(layer_b)
+            return self.add_inter_edge_nl(u, aa, v, β, weight=weight, eid=eid)
         # Fallback in non-multi-aspect mode
         eid = eid or f"{u}--{v}=={layer_a}~{layer_b}"
         self.add_edge(u, v, weight=weight, edge_id=eid)
@@ -1823,9 +1823,9 @@ class Graph:
 
     ## tiny helper
 
-    def _assert_presence(self, u: str, α: tuple[str, ...]):
-        if (u, α) not in self._VM:
-            raise KeyError(f"presence missing: {(u, α)} not in V_M; call add_presence(u, α) first")
+    def _assert_presence(self, u: str, aa: tuple[str, ...]):
+        if (u, aa) not in self._VM:
+            raise KeyError(f"presence missing: {(u, aa)} not in V_M; call add_presence(u, aa) first")
 
     ## Supra_Adjacency
 
@@ -1917,7 +1917,7 @@ class Graph:
         Internal builder for a supra block that includes only edges with kinds in include_kinds.
         Kinds: {"intra","inter","coupling"}.
         """
-        import scipy.sparse as sp
+        
         layers_t = self._normalize_layers_arg(layers)
         self.ensure_node_layer_index(layers_t)
         n = len(self._row_to_nl)
@@ -1994,7 +1994,7 @@ class Graph:
         """
         Degree vector over the supra-graph (sum of row of supra adjacency).
         """
-        import numpy as np
+        
         A = self.supra_adjacency(layers)
         # sum over columns per row -> shape (n,1); flatten to 1D
         deg = np.asarray(A.sum(axis=1)).ravel()
@@ -2006,8 +2006,8 @@ class Graph:
         kind="comb" -> combinatorial L = D - A
         kind="norm" -> normalized L_sym = I - D^{-1/2} A D^{-1/2}
         """
-        import numpy as np
-        import scipy.sparse as sp
+        
+        
         A = self.supra_adjacency(layers)
         n = A.shape[0]
         deg = self.supra_degree(layers)
@@ -2032,25 +2032,24 @@ class Graph:
             raise KeyError(f"unknown aspect {aspect!r}; known: {self.aspects!r}")
         return self.aspects.index(aspect)
 
-    def _layer_matches_filter(self, α: tuple[str, ...], layer_filter: dict[str, set]) -> bool:
+    def _layer_matches_filter(self, aa: tuple[str, ...], layer_filter: dict[str, set]) -> bool:
         """
-        layer_filter: {aspect_name: {elem1, elem2, ...}}; a layer matches if α[a] ∈ set for all keys.
+        layer_filter: {aspect_name: {elem1, elem2, ...}}; a layer matches if aa[a] ∈ set for all keys.
         """
         if not layer_filter:
             return True
         for a_name, allowed in layer_filter.items():
             i = self._aspect_index(a_name)
-            if α[i] not in allowed:
+            if aa[i] not in allowed:
                 return False
         return True
 
     def add_layer_coupling_pairs(self, layer_pairs: list[tuple[tuple[str, ...], tuple[str, ...]]],
                                  *, weight: float = 1.0) -> int:
         """
-        Generic: for each pair (α, β) in layer_pairs, add diagonal couplings (u,α)<->(u,β) for all u
+        Generic: for each pair (aa, β) in layer_pairs, add diagonal couplings (u,aa)<->(u,β) for all u
         that are present in both layers. Returns number of edges added.
         """
-        import itertools
         added = 0
         # normalize to tuples, validate once
         norm_pairs = []
@@ -2060,8 +2059,8 @@ class Graph:
             norm_pairs.append((La, Lb))
         # Build per-layer presence index to avoid O(|V_M|^2)
         layer_to_nodes = {}
-        for (u, α) in self._VM:
-            layer_to_nodes.setdefault(α, set()).add(u)
+        for (u, aa) in self._VM:
+            layer_to_nodes.setdefault(aa, set()).add(u)
         for (La, Lb) in norm_pairs:
             Ua = layer_to_nodes.get(La, set())
             Ub = layer_to_nodes.get(Lb, set())
@@ -2079,18 +2078,17 @@ class Graph:
         Example: aspect="time", groups=[["t1","t2","t3"]] connects (u,t1,⋅)-(u,t2,⋅)-(u,t3,⋅) per (other aspects).
         Returns number of edges added.
         """
-        import itertools
         ai = self._aspect_index(aspect)
         added = 0
         # Map: (u, other_aspects_tuple) -> {elem_on_aspect: full_layer_tuple}
         buckets = {}
-        for (u, α) in self._VM:
-            other = α[:ai] + α[ai+1:]
-            buckets.setdefault((u, other), {}).setdefault(α[ai], α)
+        for (u, aa) in self._VM:
+            other = aa[:ai] + aa[ai+1:]
+            buckets.setdefault((u, other), {}).setdefault(aa[ai], aa)
         for grp in groups:
             gset = set(grp)
             for (u, other), mapping in buckets.items():
-                # pick only those α whose aspect element is in this group
+                # pick only those aa whose aspect element is in this group
                 layers = [mapping[e] for e in mapping.keys() if e in gset]
                 if len(layers) < 2:
                     continue
@@ -2103,17 +2101,16 @@ class Graph:
                                      weight: float = 1.0) -> int:
         """
         Diagonal couplings inside a filtered slice of the layer space:
-        For each node u, connect all (u,α) pairs where α matches `layer_filter`.
+        For each node u, connect all (u,aa) pairs where aa matches `layer_filter`.
         layer_filter example: {"time": {"t1","t2"}, "rel": {"F"}}.
         Returns number of edges added.
         """
-        import itertools
         added = 0
         # collect per node the matching layers actually present
         per_u = {}
-        for (u, α) in self._VM:
-            if self._layer_matches_filter(α, layer_filter):
-                per_u.setdefault(u, []).append(α)
+        for (u, aa) in self._VM:
+            if self._layer_matches_filter(aa, layer_filter):
+                per_u.setdefault(u, []).append(aa)
         for u, layers in per_u.items():
             if len(layers) < 2:
                 continue
@@ -2141,13 +2138,13 @@ class Graph:
         layers_list = []
         seen_nodes = set()
         seen_layers = set()
-        for (u, α) in self._row_to_nl:
+        for (u, aa) in self._row_to_nl:
             if u not in seen_nodes:
                 nodes.append(u); seen_nodes.add(u)
-            if α not in seen_layers:
-                layers_list.append(α); seen_layers.add(α)
+            if aa not in seen_layers:
+                layers_list.append(aa); seen_layers.add(aa)
         node_to_i = {u: i for i, u in enumerate(nodes)}
-        layer_to_i = {α: i for i, α in enumerate(layers_list)}
+        layer_to_i = {aa: i for i, aa in enumerate(layers_list)}
         return nodes, layers_list, node_to_i, layer_to_i
 
     def adjacency_tensor_view(self, layers: list[str] | list[tuple] | None = None):
@@ -2165,11 +2162,11 @@ class Graph:
           }
         Symmetric entries are emitted once (ui,ai,vi,bi) and once swapped (vi,bi,ui,ai).
         """
-        import numpy as np
+        
         nodes, layers_t, node_to_i, layer_to_i = self.tensor_index(layers)
         ui = []; ai = []; vi = []; bi = []; wv = []
 
-        # Intra edges -> (u,α)↔(v,α)
+        # Intra edges -> (u,aa)↔(v,aa)
         for eid, kind in self.edge_kind.items():
             if kind != "intra":
                 continue
@@ -2194,7 +2191,7 @@ class Graph:
             ai.extend((a, a)); bi.extend((a, a))
             wv.extend((w, w))
 
-        # Inter / coupling -> (u,α)↔(v,β)
+        # Inter / coupling -> (u,aa)↔(v,β)
         for eid, kind in self.edge_kind.items():
             if kind not in {"inter", "coupling"}:
                 continue
@@ -2243,7 +2240,7 @@ class Graph:
         f: 4-index -> supra (CSR). Uses current node–layer index mapping (_nl_to_row).
         tensor_view: output of adjacency_tensor_view or unflatten_from_supra.
         """
-        import scipy.sparse as sp
+        
         # Ensure index reflects current layers subset (tensor_view["layers"])
         layers_t = tensor_view["layers"] if tensor_view.get("layers", None) else None
         self.ensure_node_layer_index(layers_t)
@@ -2252,11 +2249,11 @@ class Graph:
         nodes = tensor_view["nodes"]; layers = tensor_view["layers"]
         ui, ai, vi, bi, w = (tensor_view["ui"], tensor_view["ai"],
                              tensor_view["vi"], tensor_view["bi"], tensor_view["w"])
-        # Map back from indices to (u,α) rows using current _nl_to_row
+        # Map back from indices to (u,aa) rows using current _nl_to_row
         for k in range(len(w)):
-            u = nodes[int(ui[k])]; α = layers[int(ai[k])]
+            u = nodes[int(ui[k])]; aa = layers[int(ai[k])]
             v = nodes[int(vi[k])]; β = layers[int(bi[k])]
-            ru = self._nl_to_row.get((u, α)); rv = self._nl_to_row.get((v, β))
+            ru = self._nl_to_row.get((u, aa)); rv = self._nl_to_row.get((v, β))
             if ru is None or rv is None:
                 continue
             A[ru, rv] = A.get((ru, rv), 0.0) + float(w[k])
@@ -2266,7 +2263,7 @@ class Graph:
         """
         f^{-1}: supra -> 4-index tensor triplets (same schema as adjacency_tensor_view).
         """
-        import numpy as np
+        
         A = A.tocsr()
         nodes, layers_t, node_to_i, layer_to_i = self.tensor_index(layers)
         rows, cols = A.nonzero()
@@ -2274,10 +2271,10 @@ class Graph:
         ui = np.empty_like(rows); vi = np.empty_like(cols)
         ai = np.empty_like(rows); bi = np.empty_like(cols)
         for k in range(len(rows)):
-            (u, α) = self._row_to_nl[int(rows[k])]
+            (u, aa) = self._row_to_nl[int(rows[k])]
             (v, β) = self._row_to_nl[int(cols[k])]
             ui[k] = node_to_i[u]; vi[k] = node_to_i[v]
-            ai[k] = layer_to_i[α]; bi[k] = layer_to_i[β]
+            ai[k] = layer_to_i[aa]; bi[k] = layer_to_i[β]
         return {
             "nodes": nodes, "layers": layers_t,
             "node_to_i": node_to_i, "layer_to_i": layer_to_i,
@@ -2294,7 +2291,7 @@ class Graph:
         inclusion of inter-layer (non-diagonal) edges.
         A = A_intra + (include_inter ? A_inter : 0) + coupling_scale * A_coupling
         """
-        import scipy.sparse as sp
+        
         A_intra = self.build_intra_block(layers)
         A_coup  = self.build_coupling_block(layers)
         A_inter = self.build_inter_block(layers) if include_inter else None
@@ -2312,8 +2309,8 @@ class Graph:
         Row-stochastic transition matrix P = D^{-1} A (random walk on supra-graph).
         Rows with zero degree remain zero.
         """
-        import numpy as np
-        import scipy.sparse as sp
+        
+        
         A = self.supra_adjacency(layers).tocsr()
         deg = self.supra_degree(layers)
         invdeg = np.zeros_like(deg, dtype=float)
@@ -2326,7 +2323,7 @@ class Graph:
         """
         One step of random walk distribution: p' = p P. Accepts dense 1D array-like (len = |V_M|).
         """
-        import numpy as np
+        
         P = self.transition_matrix(layers)
         p = np.asarray(p, dtype=float).reshape(1, -1)
         if p.shape[1] != P.shape[0]:
@@ -2339,7 +2336,7 @@ class Graph:
         One explicit Euler step of diffusion on the supra-graph:
           x' = x - tau * L x   where L is combinatorial (kind='comb') or normalized (kind='norm')
         """
-        import numpy as np
+        
         L = self.supra_laplacian(kind=kind, layers=layers)
         x = np.asarray(x, dtype=float).reshape(-1)
         if x.shape[0] != L.shape[0]:
@@ -2351,7 +2348,7 @@ class Graph:
         Second-smallest eigenvalue (Fiedler value) of the combinatorial supra-Laplacian.
         Returns (lambda_2, fiedler_vector) or (0.0, None) if |V_M| < 2.
         """
-        import numpy as np
+        
         from scipy.sparse.linalg import eigsh
         L = self.supra_laplacian(kind="comb", layers=layers).astype(float)
         n = L.shape[0]
@@ -2370,7 +2367,7 @@ class Graph:
         """
         Convenience: return k smallest eigenvalues/eigenvectors of supra-Laplacian.
         """
-        import numpy as np
+        
         from scipy.sparse.linalg import eigsh
         if k < 1:
             raise ValueError("k must be >= 1")
@@ -2385,7 +2382,7 @@ class Graph:
         Dominant eigenpair of the random-walk operator P (right eigenvector). Uses eigsh on (P+P^T)/2 fallback if needed.
         Returns (lambda_max, v). For an irreducible RW, lambda_max≈1.
         """
-        import numpy as np
+        
         from scipy.sparse.linalg import eigsh
         P = self.transition_matrix(layers).tocsr().astype(float)
         n = P.shape[0]
@@ -2412,7 +2409,7 @@ class Graph:
             Aω = self.supra_adjacency_scaled(coupling_scale=float(ω), include_inter=True, layers=layers)
             if metric == "algebraic_connectivity":
                 # Compute λ2 of L = D - Aω
-                import numpy as np
+                
                 from scipy.sparse import diags
                 deg = Aω.sum(axis=1).A.ravel()
                 L = diags(deg) - Aω
@@ -2439,8 +2436,8 @@ class Graph:
             else:
                 raise ValueError("Layer id must be an aspect tuple")
         rows = []
-        for i, (u, α) in enumerate(self._row_to_nl):
-            if α == L:
+        for i, (u, aa) in enumerate(self._row_to_nl):
+            if aa == L:
                 rows.append(i)
         return rows
 
@@ -2449,7 +2446,7 @@ class Graph:
         Per-layer degree vectors (intra-layer only). Returns:
           { layer_tuple: (rows_idx_list, deg_vector_np) }
         """
-        import numpy as np
+        
         A_intra = self.build_intra_block(layers).tocsr()
         out = {}
         # choose layers subset from current index
@@ -2458,9 +2455,9 @@ class Graph:
             # infer from current index
             chosen_layers = []
             seen = set()
-            for _, α in self._row_to_nl:
-                if α not in seen:
-                    chosen_layers.append(α); seen.add(α)
+            for _, aa in self._row_to_nl:
+                if aa not in seen:
+                    chosen_layers.append(aa); seen.add(aa)
         for L in chosen_layers:
             rows = self._rows_for_layer(L)
             if not rows:
@@ -2476,7 +2473,7 @@ class Graph:
           P_u = 1 - sum_L (k_u^L / k_u)^2, using intra-layer degrees only.
         Returns dict[node -> float].
         """
-        import numpy as np
+        
         # build per-layer deg vectors and aggregate per node
         layer_deg = self.layer_degree_vectors(layers)
         # aggregate k_u over layers
@@ -2504,7 +2501,7 @@ class Graph:
         Simple versatility proxy: dominant eigenvector of supra adjacency, summed over
         node's layer-copies. Returns dict[node -> float] normalized to unit max.
         """
-        import numpy as np
+        
         from scipy.sparse.linalg import eigsh
         A = self.supra_adjacency(layers).astype(float)
         n = A.shape[0]
@@ -2541,8 +2538,8 @@ class Graph:
         Returns:
           Q (float)
         """
-        import numpy as np
-        import scipy.sparse as sp
+        
+        
         # Ensure index over the right layers
         layers_t = self._normalize_layers_arg(layers)
         self.ensure_node_layer_index(layers_t)
@@ -2568,7 +2565,7 @@ class Graph:
         B = A.tolil()
         layer_deg = self.layer_degree_vectors(layers_t)  # degrees from intra only
         # map row -> layer to avoid repeated lookups
-        row_layer = [α for (_, α) in self._row_to_nl]
+        row_layer = [aa for (_, aa) in self._row_to_nl]
         # For each layer L: subtract gamma * (k_i^L k_j^L)/(2 m_L) within its block
         for L, (rows, deg) in layer_deg.items():
             mL2 = float(deg.sum())  # = 2 m_L
@@ -2579,7 +2576,7 @@ class Graph:
             # But we only need to subtract for pairs that share a community later; to keep simple and general,
             # build a dense block if small, else sparse updates.
             if len(rows) <= 2048:
-                import numpy as np
+                
                 expected = gamma * (np.outer(deg, deg) / mL2)
                 # subtract into B
                 for ii, ri in enumerate(rows):
@@ -2810,8 +2807,8 @@ class Graph:
         if self.entity_types.get(vertex_id) == "vertex":
             self._V.add(vertex_id)
             if self.node_aligned and self._all_slices:
-                for α in self._all_slices:
-                    self._VM.add((vertex_id, α))
+                for aa in self._all_slices:
+                    self._VM.add((vertex_id, aa))
             elif slice is not None and len(self.aspects) == 1 and self._legacy_single_aspect_enabled:
                 self._VM.add((vertex_id, (slice,)))
 
@@ -3520,7 +3517,7 @@ class Graph:
         Accepts: iterable of str  OR  iterable of (vertex_id, attrs_dict)  OR iterable of dicts with keys {'vertex_id', ...attrs}
         Behavior: identical to calling add_vertex() for each, but resizes once and batches attribute inserts.
         """
-        import polars as pl
+        
 
         slice = slice or self._current_slice
 
@@ -5049,7 +5046,7 @@ class Graph:
         """
         import enum
 
-        import polars as pl
+        
 
         if v is None:
             return pl.Null
@@ -5366,7 +5363,7 @@ class Graph:
         df = self.edge_attributes
         # Polars-safe: iterate the (at most one) row as a dict
         try:
-            import polars as pl
+            
 
             for row in df.filter(pl.col("edge_id") == eid).iter_rows(named=True):
                 return dict(row)
@@ -5395,7 +5392,7 @@ class Graph:
         """
         df = self.vertex_attributes
         try:
-            import polars as pl
+            
 
             for row in df.filter(pl.col("vertex_id") == vertex).iter_rows(named=True):
                 return dict(row)
@@ -5548,7 +5545,7 @@ class Graph:
         """items: iterable of (edge_id, attrs_dict) or dict{edge_id: attrs_dict}
         Upserts rows in edge_slice_attributes for one slice in bulk.
         """
-        import polars as pl
+        
 
         # normalize
         rows = []
@@ -7247,7 +7244,7 @@ class Graph:
         if slice_id not in self._slices:
             raise KeyError(f"slice {slice_id} not found")
 
-        import polars as pl
+        
 
         slice_meta = self._slices[slice_id]
         V = set(slice_meta["vertices"])
@@ -7352,7 +7349,7 @@ class Graph:
         Caches per (id(df), key_col) for speed; cache auto-refreshes when the df object changes.
         """
         try:
-            import polars as pl
+            
         except Exception:
             # If Polars isn't available for some reason, best-effort fallback
             return {}
@@ -7389,7 +7386,7 @@ class Graph:
         """Deep copy the entire graph, including slices, edges, hyperedges, and attributes.
         (Behavior preserved; uses preallocation + vectorized attr extraction.)
         """
-        import polars as pl
+        
 
         # Preallocate with current sizes
         new_graph = Graph(directed=self.directed, n=self._num_entities, e=self._num_edges)
@@ -7480,8 +7477,6 @@ class Graph:
             new_graph.edge_slice_attributes = self.edge_slice_attributes.clone()
         else:
             new_graph.edge_slice_attributes = self.edge_slice_attributes
-
-        from collections import defaultdict
 
         new_graph.slice_edge_weights = defaultdict(
             dict, {lid: dict(m) for lid, m in self.slice_edge_weights.items()}
@@ -7656,7 +7651,7 @@ class Graph:
 
     def _jsonify(self, x):
         # Make args/return JSON-safe & compact.
-        import numpy as np
+        
 
         if x is None or isinstance(x, (bool, int, float, str)):
             return x
@@ -7951,7 +7946,7 @@ class Graph:
             nx_callable = self._resolve_nx_callable(name)
 
             def wrapper(*args, **kwargs):
-                import inspect
+                
 
                 import networkx as _nx
 
@@ -8084,7 +8079,7 @@ class Graph:
             raise AttributeError(f"networkx has no callable '{name}'")
 
         def _needed_edge_attrs(self, target, kwargs) -> set:
-            import inspect
+            
 
             needed = set()
             # weight
@@ -8261,7 +8256,7 @@ class Graph:
                 id_col = self._vertex_id_col()
                 # Prefer polars path
                 try:
-                    import polars as pl  # type: ignore
+                      # type: ignore
 
                     matches = va.filter(pl.col(label_field) == val)
                     if matches.height == 0:
@@ -8442,7 +8437,7 @@ class Graph:
         # - dynamic dispatch -
         def __getattr__(self, name: str):
             def wrapper(*args, **kwargs):
-                import inspect
+                
 
                 import igraph as _ig
 
@@ -8697,7 +8692,7 @@ class Graph:
                     return None
                 id_col = self._vertex_id_col()
                 try:
-                    import polars as pl  # type: ignore
+                      # type: ignore
 
                     matches = va.filter(pl.col(label_field) == val)
                     if matches.height == 0:
