@@ -67,12 +67,12 @@ def write(graph, path: str | Path, *, compression="zstd", overwrite=False):
             "vertices": sum(1 for t in graph.entity_types.values() if t == "vertex"),
             "edges": graph._num_edges,
             "entities": graph._num_entities,
-            "layers": len(graph._layers),
+            "slices": len(graph._slices),
             "hyperedges": sum(1 for k in graph.edge_kind.values() if k == "hyper"),
         },
-        "layers": list(graph._layers.keys()),
-        "active_layer": graph._current_layer,
-        "default_layer": graph._default_layer,
+        "slices": list(graph._slices.keys()),
+        "active_slice": graph._current_slice,
+        "default_slice": graph._default_slice,
         "compression": compression,
         # make encoding explicit for tests/docs
         "encoding": {"zarr": "v3", "parquet": "2.0"},
@@ -85,8 +85,8 @@ def write(graph, path: str | Path, *, compression="zstd", overwrite=False):
     # 3. Write tables/ (Polars > Parquet)
     _write_tables(graph, root / "tables", compression)
 
-    # 4. Write layers/
-    _write_layers(graph, root / "layers", compression)
+    # 4. Write slices/
+    _write_slices(graph, root / "slices", compression)
 
     # 5. Write audit/
     _write_audit(graph, root / "audit", compression)
@@ -196,55 +196,55 @@ def _write_tables(graph, path: Path, compression: str):
         path / "vertex_attributes.parquet", compression=compression
     )
     graph.edge_attributes.write_parquet(path / "edge_attributes.parquet", compression=compression)
-    graph.layer_attributes.write_parquet(path / "layer_attributes.parquet", compression=compression)
-    graph.edge_layer_attributes.write_parquet(
-        path / "edge_layer_attributes.parquet", compression=compression
+    graph.slice_attributes.write_parquet(path / "slice_attributes.parquet", compression=compression)
+    graph.edge_slice_attributes.write_parquet(
+        path / "edge_slice_attributes.parquet", compression=compression
     )
 
 
-def _write_layers(graph, path: Path, compression: str):
-    """Write layer registry and memberships."""
+def _write_slices(graph, path: Path, compression: str):
+    """Write slice registry and memberships."""
     import json
 
     import polars as pl
 
     path.mkdir(parents=True, exist_ok=True)
 
-    # Registry: layer_id > attributes
+    # Registry: slice_id > attributes
     registry_data = []
-    for layer_id, layer_data in graph._layers.items():
+    for slice_id, slice_data in graph._slices.items():
         registry_data.append(
-            {"layer_id": layer_id, "attributes": json.dumps(layer_data.get("attributes", {}))}
+            {"slice_id": slice_id, "attributes": json.dumps(slice_data.get("attributes", {}))}
         )
     pl.DataFrame(registry_data).write_parquet(path / "registry.parquet", compression=compression)
 
     # Vertex memberships: long format
     vertex_members = []
-    for layer_id, layer_data in graph._layers.items():
-        for vertex_id in layer_data["vertices"]:
-            vertex_members.append({"layer_id": layer_id, "vertex_id": vertex_id})
+    for slice_id, slice_data in graph._slices.items():
+        for vertex_id in slice_data["vertices"]:
+            vertex_members.append({"slice_id": slice_id, "vertex_id": vertex_id})
     pl.DataFrame(vertex_members).write_parquet(
         path / "vertex_memberships.parquet", compression=compression
     )
 
     # Edge memberships with weights
     edge_members: list[dict] = []
-    # Primary: explicit per-layer weights (if present)
-    for layer_id, edge_weights in getattr(graph, "layer_edge_weights", {}).items():
+    # Primary: explicit per-slice weights (if present)
+    for slice_id, edge_weights in getattr(graph, "slice_edge_weights", {}).items():
         for edge_id, weight in edge_weights.items():
-            edge_members.append({"layer_id": layer_id, "edge_id": edge_id, "weight": weight})
-    # Fallback: derive from registered layer edges if no explicit weights
+            edge_members.append({"slice_id": slice_id, "edge_id": edge_id, "weight": weight})
+    # Fallback: derive from registered slice edges if no explicit weights
     if not edge_members:
-        for layer_id, layer_data in graph._layers.items():
-            for edge_id in layer_data.get("edges", ()):
-                edge_members.append({"layer_id": layer_id, "edge_id": edge_id, "weight": None})
+        for slice_id, slice_data in graph._slices.items():
+            for edge_id in slice_data.get("edges", ()):
+                edge_members.append({"slice_id": slice_id, "edge_id": edge_id, "weight": None})
     # Ensure a stable schema even if there are zero rows
     if edge_members:
         em_df = pl.DataFrame(edge_members)
     else:
         em_df = pl.DataFrame(
             {
-                "layer_id": pl.Series([], dtype=pl.Utf8),
+                "slice_id": pl.Series([], dtype=pl.Utf8),
                 "edge_id": pl.Series([], dtype=pl.Utf8),
                 "weight": pl.Series([], dtype=pl.Float64),
             }
@@ -449,8 +449,8 @@ def read(path: str | Path, *, lazy: bool = False) -> Graph:
     # 4. Load tables
     _load_tables(G, root / "tables")
 
-    # 5. Load layers
-    _load_layers(G, root / "layers")
+    # 5. Load slices
+    _load_slices(G, root / "slices")
 
     # 6. Load audit
     _load_audit(G, root / "audit")
@@ -458,9 +458,9 @@ def read(path: str | Path, *, lazy: bool = False) -> Graph:
     # 7. Load uns
     _load_uns(G, root / "uns")
 
-    # 8. Set active layer
-    _current_layer = manifest["active_layer"]
-    _default_layer = manifest["default_layer"]
+    # 8. Set active slice
+    _current_slice = manifest["active_slice"]
+    _default_slice = manifest["default_slice"]
 
     return G
 
@@ -543,12 +543,12 @@ def _load_tables(graph, path: Path):
 
     graph.vertex_attributes = pl.read_parquet(path / "vertex_attributes.parquet")
     graph.edge_attributes = pl.read_parquet(path / "edge_attributes.parquet")
-    graph.layer_attributes = pl.read_parquet(path / "layer_attributes.parquet")
-    graph.edge_layer_attributes = pl.read_parquet(path / "edge_layer_attributes.parquet")
+    graph.slice_attributes = pl.read_parquet(path / "slice_attributes.parquet")
+    graph.edge_slice_attributes = pl.read_parquet(path / "edge_slice_attributes.parquet")
 
 
-def _load_layers(graph, path: Path):
-    """Reconstruct layer registry and memberships."""
+def _load_slices(graph, path: Path):
+    """Reconstruct slice registry and memberships."""
     import json
 
     import polars as pl
@@ -556,25 +556,25 @@ def _load_layers(graph, path: Path):
     # Registry
     registry_df = pl.read_parquet(path / "registry.parquet")
     for row in registry_df.to_dicts():
-        layer_id = row["layer_id"]
+        slice_id = row["slice_id"]
         attrs = json.loads(row["attributes"])
-        graph._layers[layer_id] = {"vertices": set(), "edges": set(), "attributes": attrs}
+        graph._slices[slice_id] = {"vertices": set(), "edges": set(), "attributes": attrs}
 
     # Vertex memberships
     vertex_df = pl.read_parquet(path / "vertex_memberships.parquet")
     for row in vertex_df.to_dicts():
-        graph._layers[row["layer_id"]]["vertices"].add(row["vertex_id"])
+        graph._slices[row["slice_id"]]["vertices"].add(row["vertex_id"])
 
     # Edge memberships
     edge_df = pl.read_parquet(path / "edge_memberships.parquet")
     for row in edge_df.to_dicts():
-        lid = row["layer_id"]
+        lid = row["slice_id"]
         eid = row["edge_id"]
-        graph._layers[lid]["edges"].add(eid)
-        # Only set a per-layer weight if it was explicitly stored (not None).
+        graph._slices[lid]["edges"].add(eid)
+        # Only set a per-slice weight if it was explicitly stored (not None).
         w = row.get("weight", None)
         if w is not None:
-            graph.layer_edge_weights.setdefault(lid, {})[eid] = w
+            graph.slice_edge_weights.setdefault(lid, {})[eid] = w
 
 
 def _load_audit(graph, path: Path):

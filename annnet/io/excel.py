@@ -9,7 +9,7 @@ def load_excel_to_graph(
     graph=None,
     schema: str = "auto",
     sheet: str | None = None,
-    default_layer=None,
+    default_slice=None,
     default_directed=None,
     default_weight: float = 1.0,
     **kwargs,
@@ -26,8 +26,8 @@ def load_excel_to_graph(
         Graph schema to assume or infer.
     sheet : str, optional
         Sheet name to load. Defaults to the first sheet.
-    default_layer : str, optional
-        Default layer name if not present.
+    default_slice : str, optional
+        Default slice name if not present.
     default_directed : bool, optional
         Default directedness if not present or inferrable.
     default_weight : float, default 1.0
@@ -84,7 +84,7 @@ def load_excel_to_graph(
         tmp_path,
         graph=graph,
         schema=schema,
-        default_layer=default_layer,
+        default_slice=default_slice,
         default_directed=default_directed,
         default_weight=default_weight,
         **kwargs,
