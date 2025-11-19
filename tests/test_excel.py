@@ -88,7 +88,7 @@ class TestExcelIO(unittest.TestCase):
                     True,
                     False,
                 ],  # importer may coerce; we won't assert exact directedness
-                "layer": ["L1", "L1"],
+                "slice": ["L1", "L1"],
             }
         )
         path = self._write_excel_temp({"Edges": df})
@@ -122,7 +122,7 @@ class TestExcelIO(unittest.TestCase):
             {
                 "members": ["A|B|C"],
                 "weight": [3.0],
-                "layer": ["L2"],
+                "slice": ["L2"],
             }
         )
         path = self._write_excel_temp({"Hyper": df})

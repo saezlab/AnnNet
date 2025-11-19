@@ -1,6 +1,6 @@
 # test_graph.py
 import os
-import sys
+import syss
 import unittest
 
 import polars as pl
@@ -74,7 +74,7 @@ class TestGraphBasics(unittest.TestCase):
 
     def test_edge_entity_and_vertex_edge_mode(self):
         # Explicitly add an edge-entity, then connect vertex->edgeEntity
-        self.g.add_edge_entity("edge_ghost", layer="Lx", kind="meta")
+        self.g.add_edge_entity("edge_ghost", slice="Lx", kind="meta")
         e = self.g.add_edge("x", "edge_ghost", edge_type="vertex_edge", weight=1.2)
         self.assertIn("edge_ghost", self.g.entity_types)
         self.assertEqual(self.g.entity_types["edge_ghost"], "edge")
@@ -107,51 +107,51 @@ class TestGraphBasics(unittest.TestCase):
         self.assertAlmostEqual(self.g._matrix[self.g.entity_to_idx["t1"], col], -4.0, places=7)
         self.assertEqual(self.g.get_attr_edge(hid, "category"), "flow")
 
-    def test_layers_and_activation_and_propagation(self):
-        # add layers
-        self.g.add_layer("L1", purpose="left")
-        self.g.add_layer("L2")
-        self.g.set_active_layer("L1")
-        self.assertEqual(self.g.get_active_layer(), "L1")
-        # add some vertices into current layer
+    def test_slices_and_activation_and_propagation(self):
+        # add slices
+        self.g.add_slice("L1", purpose="left")
+        self.g.add_slice("L2")
+        self.g.set_active_slice("L1")
+        self.assertEqual(self.g.get_active_slice(), "L1")
+        # add some vertices into current slice
         self.g.add_vertex("A")
         self.g.add_vertex("B")
-        # switch layer and add C
-        self.g.set_active_layer("L2")
+        # switch slice and add C
+        self.g.set_active_slice("L2")
         self.g.add_vertex("C")
-        # add edge with propagate=shared (only layers that have both endpoints A,B -> L1)
+        # add edge with propagate=shared (only slices that have both endpoints A,B -> L1)
         e1 = self.g.add_edge(
-            "A", "B", layer="L2", propagate="shared"
+            "A", "B", slice="L2", propagate="shared"
         )  # placed in L2, but should propagate to L1?
         # L1 has both A,B so edge should be present in L1 as well
-        self.assertIn(e1, self.g._layers["L1"]["edges"])
-        self.assertIn(e1, self.g._layers["L2"]["edges"])
+        self.assertIn(e1, self.g._slices["L1"]["edges"])
+        self.assertIn(e1, self.g._slices["L2"]["edges"])
         # add edge with propagate=all for A-C (A in L1, C in L2) -> should appear in both and pull missing endpoint
-        e2 = self.g.add_edge("A", "C", layer="L2", propagate="all")
-        self.assertIn(e2, self.g._layers["L1"]["edges"])
-        self.assertIn(e2, self.g._layers["L2"]["edges"])
-        self.assertIn("C", self.g._layers["L1"]["vertices"])  # pulled across
-        self.assertIn("A", self.g._layers["L2"]["vertices"])  # pulled across
+        e2 = self.g.add_edge("A", "C", slice="L2", propagate="all")
+        self.assertIn(e2, self.g._slices["L1"]["edges"])
+        self.assertIn(e2, self.g._slices["L2"]["edges"])
+        self.assertIn("C", self.g._slices["L1"]["vertices"])  # pulled across
+        self.assertIn("A", self.g._slices["L2"]["vertices"])  # pulled across
 
-    def test_set_and_get_layer_attrs(self):
-        self.g.add_layer("Geo", region="EMEA")
-        self.assertEqual(self.g.get_layer_attr("Geo", "region"), "EMEA")
+    def test_set_and_get_slice_attrs(self):
+        self.g.add_slice("Geo", region="EMEA")
+        self.assertEqual(self.g.get_slice_attr("Geo", "region"), "EMEA")
         # upsert to new dtype
-        self.g.set_layer_attrs("Geo", region="APAC")
-        self.assertEqual(self.g.get_layer_attr("Geo", "region"), "APAC")
+        self.g.set_slice_attrs("Geo", region="APAC")
+        self.assertEqual(self.g.get_slice_attr("Geo", "region"), "APAC")
 
-    def test_per_layer_weight_and_effective_weight(self):
-        # ensure the layer exists first
-        self.g.add_layer("Lw")
-        # create the edge inside layer "Lw" so per-layer attrs apply
-        eid = self.g.add_edge("u", "v", weight=5.0, layer="Lw")
-        # override via edge_layer_attributes table using the EDGE ID (string)
-        self.g.set_edge_layer_attrs("Lw", eid, weight=1.25, note="downweighted")
+    def test_per_slice_weight_and_effective_weight(self):
+        # ensure the slice exists first
+        self.g.add_slice("Lw")
+        # create the edge inside slice "Lw" so per-slice attrs apply
+        eid = self.g.add_edge("u", "v", weight=5.0, slice="Lw")
+        # override via edge_slice_attributes table using the EDGE ID (string)
+        self.g.set_edge_slice_attrs("Lw", eid, weight=1.25, note="downweighted")
         # effective weight in Lw reflects the override
-        self.assertAlmostEqual(self.g.get_effective_edge_weight(eid, layer="Lw"), 1.25, places=7)
-        # asking for a non-existent layer should fall back to the global weight
+        self.assertAlmostEqual(self.g.get_effective_edge_weight(eid, slice="Lw"), 1.25, places=7)
+        # asking for a non-existent slice should fall back to the global weight
         self.assertAlmostEqual(
-            self.g.get_effective_edge_weight(eid, layer="NonExistent"), 5.0, places=7
+            self.g.get_effective_edge_weight(eid, slice="NonExistent"), 5.0, places=7
         )
 
     def test_incident_edges(self):
@@ -173,12 +173,12 @@ class TestGraphBasics(unittest.TestCase):
         self.assertNotIn("r1", self.g.entity_to_idx)
         self.assertNotIn(e2, self.g.edge_to_idx)
 
-    def test_remove_layer_and_default_layer_guard(self):
-        self.g.add_layer("Z")
-        self.g.remove_layer("Z")
-        self.assertFalse(self.g.has_layer("Z"))
+    def test_remove_slice_and_default_slice_guard(self):
+        self.g.add_slice("Z")
+        self.g.remove_slice("Z")
+        self.assertFalse(self.g.has_slice("Z"))
         with self.assertRaises(ValueError):
-            self.g.remove_layer("default")
+            self.g.remove_slice("default")
 
     def test_audit_attributes(self):
         # create mismatch intentionally
@@ -195,7 +195,7 @@ class TestGraphBasics(unittest.TestCase):
         audit = self.g.audit_attributes()
         self.assertIn("ghost", audit["extra_vertex_rows"])
         self.assertIsInstance(audit["missing_edge_rows"], list)
-        self.assertIsInstance(audit["invalid_edge_layer_rows"], list)
+        self.assertIsInstance(audit["invalid_edge_slice_rows"], list)
 
     def test_edges_views_and_counts(self):
         e = self.g.add_edge("x1", "x2", weight=7.0, edge_directed=False)

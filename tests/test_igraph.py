@@ -38,12 +38,12 @@ def _build_graph() -> Graph:
     e2 = g.add_edge("B", "C", weight=1.0, edge_directed=False, interaction=-1)
     e3 = g.add_hyperedge(head=["A", "B"], tail=["C"], weight=0.5, interaction=+1)
 
-    # layer + per-layer override for e1
-    g.add_layer("Lw", region="EMEA")
-    g.set_edge_layer_attrs("Lw", e1, weight=5.0)
+    # slice + per-slice override for e1
+    g.add_slice("Lw", region="EMEA")
+    g.set_edge_slice_attrs("Lw", e1, weight=5.0)
 
-    # a second layer with no overrides to test fallback
-    g.add_layer("L0")
+    # a second slice with no overrides to test fallback
+    g.add_slice("L0")
 
     # basic sanity
     assert g.number_of_edges() >= 3
@@ -68,8 +68,8 @@ class TestIgraphAdapter(unittest.TestCase):
         self.assertGreaterEqual(igG.vcount(), 3)
         self.assertGreaterEqual(igG.ecount(), 2)  # hyperedge skipped
         self.assertIn("weights", manifest)
-        self.assertIn("layers", manifest)
-        self.assertIn("Lw", manifest["layers"])
+        self.assertIn("slices", manifest)
+        self.assertIn("Lw", manifest["slices"])
 
         # --- Round-trip back to Graph
         g2 = from_igraph(igG, manifest)
@@ -77,7 +77,7 @@ class TestIgraphAdapter(unittest.TestCase):
         for eid in g.edge_weights:
             self.assertIn(eid, g2.edge_weights)
         self.assertAlmostEqual(
-            g2.get_effective_edge_weight(list(manifest["layers"]["Lw"])[0], layer="Lw"),
+            g2.get_effective_edge_weight(list(manifest["slices"]["Lw"])[0], slice="Lw"),
             5.0,
             places=7,
         )

@@ -42,29 +42,29 @@ class TestIntegration:
         G_sif = from_sif(tmpdir_fixture / "network.sif")
         assert len(list(G_sif.vertices())) == len(proteins)
 
-    def test_multi_layer_network(self, tmpdir_fixture):
+    def test_multi_slice_network(self, tmpdir_fixture):
         from annnet.core.graph import Graph
 
         G = Graph(directed=True)
         users = ["Alice", "Bob", "Charlie", "David"]
         for u in users:
             G.add_vertex(u)
-        G.add_layer("friendship")
-        G.add_layer("collaboration")
-        G.add_layer("mentorship")
+        G.add_slice("friendship")
+        G.add_slice("collaboration")
+        G.add_slice("mentorship")
         G.add_edge("Alice", "Bob", edge_id="f1")
-        G.add_edge_to_layer("friendship", "f1")
+        G.add_edge_to_slice("friendship", "f1")
         G.add_edge("Bob", "Charlie", edge_id="f2")
-        G.add_edge_to_layer("friendship", "f2")
+        G.add_edge_to_slice("friendship", "f2")
         G.add_edge("Alice", "Charlie", edge_id="c1")
-        G.add_edge_to_layer("collaboration", "c1")
+        G.add_edge_to_slice("collaboration", "c1")
         G.add_edge("Alice", "David", edge_id="m1")
-        G.add_edge_to_layer("mentorship", "m1")
+        G.add_edge_to_slice("mentorship", "m1")
         from annnet.adapters.json_adapter import from_json, to_json
 
-        to_json(G, tmpdir_fixture / "multilayer.json")
-        G2 = from_json(tmpdir_fixture / "multilayer.json")
-        layers = set(G2.list_layers(include_default=False))
-        assert layers == {"friendship", "collaboration", "mentorship"}
-        friendship_edges = set(G2.get_layer_edges("friendship"))
+        to_json(G, tmpdir_fixture / "multislice.json")
+        G2 = from_json(tmpdir_fixture / "multislice.json")
+        slices = set(G2.list_slices(include_default=False))
+        assert slices == {"friendship", "collaboration", "mentorship"}
+        friendship_edges = set(G2.get_slice_edges("friendship"))
         assert "f1" in friendship_edges and "f2" in friendship_edges

@@ -46,15 +46,15 @@ class TestCSVIO(unittest.TestCase):
         self.G = Graph(directed=True)
         self.G.add_vertices(["A", "B", "C"])
         # Binary edges: A->B (directed), B--C (undirected)
-        self.e_ab = self.G.add_edge("A", "B", directed=True, weight=1.0, layer="L1", color="red")
-        self.e_bc = self.G.add_edge("B", "C", directed=False, weight=2.0, layer="L1", tag="x")
-        # Hyperedge on a different layer
-        self.h_abc = self.G.add_hyperedge(members={"A", "B", "C"}, weight=3.0, layer="L2", note="h")
+        self.e_ab = self.G.add_edge("A", "B", directed=True, weight=1.0, slice="L1", color="red")
+        self.e_bc = self.G.add_edge("B", "C", directed=False, weight=2.0, slice="L1", tag="x")
+        # Hyperedge on a different slice
+        self.h_abc = self.G.add_hyperedge(members={"A", "B", "C"}, weight=3.0, slice="L2", note="h")
 
     def test_edge_list_roundtrip(self):
         # ---- Export binary edge list to CSV (in-memory) ----
         e_buf = io.StringIO()
-        csv_io.export_edge_list_csv(self.G, e_buf, layer=None)  # all layers
+        csv_io.export_edge_list_csv(self.G, e_buf, slice=None)  # all slices
         e_buf.seek(0)
 
         # Read back with Polars and import into a fresh graph
@@ -87,7 +87,7 @@ class TestCSVIO(unittest.TestCase):
     def test_hyperedge_roundtrip(self):
         # ---- Export hyperedges to CSV (in-memory) ----
         h_buf = io.StringIO()
-        csv_io.export_hyperedge_csv(self.G, h_buf)  # includes layer + weight
+        csv_io.export_hyperedge_csv(self.G, h_buf)  # includes slice + weight
         h_buf.seek(0)
 
         # Read back and import into a fresh graph as hyperedge schema

@@ -55,7 +55,7 @@ class TestCrossAdapter:
         from annnet.adapters.dataframe_adapter import from_dataframes, to_dataframes
 
         G = complex_graph
-        dfs = to_dataframes(G, include_layers=True, include_hyperedges=True)
+        dfs = to_dataframes(G, include_slices=True, include_hyperedges=True)
         dfs["nodes"].write_parquet(tmpdir_fixture / "nodes.parquet")
         dfs["nodes"].write_csv(tmpdir_fixture / "nodes.csv")
         dfs["edges"].write_parquet(tmpdir_fixture / "edges.parquet")

@@ -20,12 +20,12 @@ from annnet.io.io_annnet import write as annnet_write
 
 class TestAnnNetIO(unittest.TestCase):
     def setUp(self):
-        # Build a tiny directed graph with a layer + hyperedge
+        # Build a tiny directed graph with a slice + hyperedge
         G = Graph(directed=True)
 
-        # Vertices (two in layer1)
-        G.add_vertex("v1", layer="layer1")
-        G.add_vertex("v2", layer="layer1")
+        # Vertices (two in slice1)
+        G.add_vertex("v1", slice="slice1")
+        G.add_vertex("v2", slice="slice1")
         G.add_vertex("v3")
         G.add_vertex("v4")
 
@@ -73,7 +73,7 @@ class TestAnnNetIO(unittest.TestCase):
         # Top-level counts
         self.assertEqual(len(self.G.entity_to_idx), len(G2.entity_to_idx))
         self.assertEqual(self.G._num_edges, G2._num_edges)
-        self.assertEqual(set(self.G._layers.keys()), set(G2._layers.keys()))
+        self.assertEqual(set(self.G._slices.keys()), set(G2._slices.keys()))
         self.assertEqual(self.G.edge_weights, G2.edge_weights)
 
         # Hyperedges preserved
@@ -88,12 +88,12 @@ class TestAnnNetIO(unittest.TestCase):
         self.assertEqual(self.G.edge_directed, G2.edge_directed)
         self.assertEqual(self.G.edge_kind, G2.edge_kind)
 
-        # Layers: same edge sets, vertex sets
-        for lid in self.G._layers:
-            self.assertEqual(self.G._layers[lid]["vertices"], G2._layers[lid]["vertices"])
-            self.assertEqual(self.G._layers[lid]["edges"], G2._layers[lid]["edges"])
+        # slices: same edge sets, vertex sets
+        for lid in self.G._slices:
+            self.assertEqual(self.G._slices[lid]["vertices"], G2._slices[lid]["vertices"])
+            self.assertEqual(self.G._slices[lid]["edges"], G2._slices[lid]["edges"])
             self.assertEqual(
-                self.G.layer_edge_weights.get(lid, {}), G2.layer_edge_weights.get(lid, {})
+                self.G.slice_edge_weights.get(lid, {}), G2.slice_edge_weights.get(lid, {})
             )
 
     def test_manifest_and_layout(self):
@@ -112,7 +112,7 @@ class TestAnnNetIO(unittest.TestCase):
         # Core layout
         self.assertTrue((root / "structure").exists())
         self.assertTrue((root / "tables").exists())
-        self.assertTrue((root / "layers").exists())
+        self.assertTrue((root / "slices").exists())
         self.assertTrue((root / "audit").exists())
         self.assertTrue((root / "uns").exists())
 
@@ -152,22 +152,22 @@ class TestAnnNetIO(unittest.TestCase):
         # now allow overwrite
         annnet_write(self.G, self.out, compression="zstd", overwrite=True)
 
-    def test_layers_registry_and_memberships(self):
+    def test_slices_registry_and_memberships(self):
         self._roundtrip()
-        layers_dir = self.out / "layers"
-        self.assertTrue((layers_dir / "registry.parquet").exists())
-        self.assertTrue((layers_dir / "vertex_memberships.parquet").exists())
-        self.assertTrue((layers_dir / "edge_memberships.parquet").exists())
+        slices_dir = self.out / "slices"
+        self.assertTrue((slices_dir / "registry.parquet").exists())
+        self.assertTrue((slices_dir / "vertex_memberships.parquet").exists())
+        self.assertTrue((slices_dir / "edge_memberships.parquet").exists())
 
-        reg = pl.read_parquet(layers_dir / "registry.parquet")
-        vmem = pl.read_parquet(layers_dir / "vertex_memberships.parquet")
-        emem = pl.read_parquet(layers_dir / "edge_memberships.parquet")
+        reg = pl.read_parquet(slices_dir / "registry.parquet")
+        vmem = pl.read_parquet(slices_dir / "vertex_memberships.parquet")
+        emem = pl.read_parquet(slices_dir / "edge_memberships.parquet")
 
         self.assertGreaterEqual(reg.height, 1)
-        self.assertIn("layer_id", reg.columns)
+        self.assertIn("slice_id", reg.columns)
 
-        # layer1 must have at least v1,v2
-        vset = set(vmem.filter(pl.col("layer_id") == "layer1")["vertex_id"].to_list())
+        # slice1 must have at least v1,v2
+        vset = set(vmem.filter(pl.col("slice_id") == "slice1")["vertex_id"].to_list())
         self.assertTrue({"v1", "v2"}.issubset(vset))
 
         # edges exist in memberships as well

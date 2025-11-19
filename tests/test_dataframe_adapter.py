@@ -17,26 +17,26 @@ class TestDataFrameAdapter:
 
     def test_simple_round_trip(self, simple_graph):
         G = simple_graph
-        dfs = to_dataframes(G, include_layers=False, include_hyperedges=False)
+        dfs = to_dataframes(G, include_slices=False, include_hyperedges=False)
         assert "nodes" in dfs and "edges" in dfs
         assert dfs["nodes"].height == 3
         assert dfs["edges"].height == 2
         G2 = from_dataframes(nodes=dfs["nodes"], edges=dfs["edges"])
-        assert_graphs_equal(G, G2, check_layers=False, check_hyperedges=False)
+        assert_graphs_equal(G, G2, check_slices=False, check_hyperedges=False)
 
     def test_complex_round_trip(self, complex_graph):
         G = complex_graph
-        dfs = to_dataframes(G, include_layers=True, include_hyperedges=True)
-        assert all(k in dfs for k in ["nodes", "edges", "hyperedges", "layers", "layer_weights"])
+        dfs = to_dataframes(G, include_slices=True, include_hyperedges=True)
+        assert all(k in dfs for k in ["nodes", "edges", "hyperedges", "slices", "slice_weights"])
         G2 = from_dataframes(
             nodes=dfs["nodes"],
             edges=dfs["edges"],
             hyperedges=dfs["hyperedges"],
-            layers=dfs["layers"],
-            layer_weights=dfs["layer_weights"],
+            slices=dfs["slices"],
+            slice_weights=dfs["slice_weights"],
             directed=None,
         )
-        assert_graphs_equal(G, G2, check_layers=True, check_hyperedges=True)
+        assert_graphs_equal(G, G2, check_slices=True, check_hyperedges=True)
         assert_vertex_attrs_equal(G, G2, "A")
         assert_edge_attrs_equal(G, G2, "e1")
         assert_edge_attrs_equal(G, G2, "h1")
@@ -76,7 +76,7 @@ class TestDataFrameAdapter:
         nodes_loaded = pl.read_parquet(tmpdir_fixture / "nodes.parquet")
         edges_loaded = pl.read_csv(tmpdir_fixture / "edges.csv")
         G2 = from_dataframes(nodes=nodes_loaded, edges=edges_loaded)
-        assert_graphs_equal(G, G2, check_layers=False, check_hyperedges=False)
+        assert_graphs_equal(G, G2, check_slices=False, check_hyperedges=False)
 
     def test_empty_graph(self):
         G = Graph()

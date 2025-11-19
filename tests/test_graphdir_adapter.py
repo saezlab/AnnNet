@@ -21,13 +21,13 @@ class TestGraphDirAdapter:
         assert (tmpdir_fixture / "graphdir" / "edges.parquet").exists()
         assert (tmpdir_fixture / "graphdir" / "manifest.json").exists()
         G2 = read_parquet_graphdir(tmpdir_fixture / "graphdir")
-        assert_graphs_equal(G, G2, check_layers=False, check_hyperedges=False)
+        assert_graphs_equal(G, G2, check_slices=False, check_hyperedges=False)
 
     def test_complex_round_trip(self, complex_graph, tmpdir_fixture):
         G = complex_graph
         write_parquet_graphdir(G, tmpdir_fixture / "graphdir")
         G2 = read_parquet_graphdir(tmpdir_fixture / "graphdir")
-        assert_graphs_equal(G, G2, check_layers=True, check_hyperedges=True)
+        assert_graphs_equal(G, G2, check_slices=True, check_hyperedges=True)
         assert_vertex_attrs_equal(G, G2, "A")
         assert_edge_attrs_equal(G, G2, "e1", ignore_private=False)
 
@@ -46,16 +46,16 @@ class TestGraphDirAdapter:
             else:
                 assert set(h1["members"]) == set(h2["members"])
 
-    def test_layer_preservation(self, complex_graph, tmpdir_fixture):
+    def test_slice_preservation(self, complex_graph, tmpdir_fixture):
         G = complex_graph
         write_parquet_graphdir(G, tmpdir_fixture / "graphdir")
         G2 = read_parquet_graphdir(tmpdir_fixture / "graphdir")
-        layers1 = set(G.list_layers(include_default=False))
-        layers2 = set(G2.list_layers(include_default=False))
-        assert layers1 == layers2
-        for lid in layers1:
-            edges1 = set(G.get_layer_edges(lid))
-            edges2 = set(G2.get_layer_edges(lid))
+        slices1 = set(G.list_slices(include_default=False))
+        slices2 = set(G2.list_slices(include_default=False))
+        assert slices1 == slices2
+        for lid in slices1:
+            edges1 = set(G.get_slice_edges(lid))
+            edges2 = set(G2.get_slice_edges(lid))
             assert edges1 == edges2
 
     def test_compression(self, complex_graph, tmpdir_fixture):

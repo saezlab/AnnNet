@@ -27,7 +27,7 @@ class TestSIFAdapter:
             manifest_path=tmpdir_fixture / "net.manifest.json",
         )
         G2 = from_sif(tmpdir_fixture / "net.sif", manifest=tmpdir_fixture / "net.manifest.json")
-        assert_graphs_equal(G, G2, check_layers=True, check_hyperedges=True)
+        assert_graphs_equal(G, G2, check_slices=True, check_hyperedges=True)
         assert G2.edge_directed.get("e1") is True
         assert G2.edge_directed.get("e2") is False
         assert_edge_attrs_equal(G, G2, "e1", ignore_private=False)

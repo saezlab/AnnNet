@@ -19,13 +19,13 @@ class TestJSONAdapter:
         G = simple_graph
         to_json(G, tmpdir_fixture / "graph.json", indent=2)
         G2 = from_json(tmpdir_fixture / "graph.json")
-        assert_graphs_equal(G, G2, check_layers=False, check_hyperedges=False)
+        assert_graphs_equal(G, G2, check_slices=False, check_hyperedges=False)
 
     def test_complex_round_trip(self, complex_graph, tmpdir_fixture):
         G = complex_graph
         to_json(G, tmpdir_fixture / "graph.json", public_only=False, indent=2)
         G2 = from_json(tmpdir_fixture / "graph.json")
-        assert_graphs_equal(G, G2, check_layers=True, check_hyperedges=True)
+        assert_graphs_equal(G, G2, check_slices=True, check_hyperedges=True)
         assert_vertex_attrs_equal(G, G2, "A")
         assert_edge_attrs_equal(G, G2, "e1", ignore_private=False)
 
@@ -43,12 +43,12 @@ class TestJSONAdapter:
         assert h2["directed"] is False
         assert set(h2["members"]) == {"A", "D", "E"}
 
-    def test_layers_preservation(self, complex_graph, tmpdir_fixture):
+    def test_slices_preservation(self, complex_graph, tmpdir_fixture):
         G = complex_graph
         to_json(G, tmpdir_fixture / "graph.json")
         G2 = from_json(tmpdir_fixture / "graph.json")
-        layers = set(G2.list_layers(include_default=False))
-        assert "core" in layers and "signaling" in layers and "regulatory" in layers
+        slices = set(G2.list_slices(include_default=False))
+        assert "core" in slices and "signaling" in slices and "regulatory" in slices
 
     def test_public_only_filter(self, complex_graph, tmpdir_fixture):
         G = complex_graph
@@ -65,7 +65,7 @@ class TestJSONAdapter:
         assert (tmpdir_fixture / "ndjson_dir" / "nodes.ndjson").exists()
         assert (tmpdir_fixture / "ndjson_dir" / "edges.ndjson").exists()
         assert (tmpdir_fixture / "ndjson_dir" / "hyperedges.ndjson").exists()
-        assert (tmpdir_fixture / "ndjson_dir" / "layers.ndjson").exists()
+        assert (tmpdir_fixture / "ndjson_dir" / "slices.ndjson").exists()
         import json
 
         with open(tmpdir_fixture / "ndjson_dir" / "nodes.ndjson") as f:

@@ -68,20 +68,20 @@ def complex_graph():
     G.add_hyperedge(members=["A", "D", "E"], edge_id="h2", edge_directed=False, weight=5.0)
     G.set_edge_attrs("h2", complex="trimer", stability=0.75)
 
-    # Layers
-    G.add_layer("core")
-    G.add_layer("signaling")
-    G.add_layer("regulatory")
+    # slices
+    G.add_slice("core")
+    G.add_slice("signaling")
+    G.add_slice("regulatory")
 
-    G.add_edge_to_layer("core", "e1")
-    G.add_edge_to_layer("core", "e2")
-    G.add_edge_to_layer("core", "parallel")
-    G.add_edge_to_layer("signaling", "h1")
-    G.add_edge_to_layer("regulatory", "loop")
+    G.add_edge_to_slice("core", "e1")
+    G.add_edge_to_slice("core", "e2")
+    G.add_edge_to_slice("core", "parallel")
+    G.add_edge_to_slice("signaling", "h1")
+    G.add_edge_to_slice("regulatory", "loop")
 
-    # Per-layer weights
-    G.set_edge_layer_attrs("core", "e1", weight=10.0)
-    G.set_edge_layer_attrs("signaling", "h1", weight=0.33)
+    # Per-slice weights
+    G.set_edge_slice_attrs("core", "e1", weight=10.0)
+    G.set_edge_slice_attrs("signaling", "h1", weight=0.33)
 
     return G
 
@@ -99,7 +99,7 @@ def tmpdir_fixture():
 # ======================================================================
 
 
-def assert_graphs_equal(G1, G2, check_layers=True, check_hyperedges=True):
+def assert_graphs_equal(G1, G2, check_slices=True, check_hyperedges=True):
     """Assert two graphs are structurally identical."""
     # Vertices
     assert set(G1.vertices()) == set(G2.vertices()), "Vertex sets differ"
@@ -138,14 +138,14 @@ def assert_graphs_equal(G1, G2, check_layers=True, check_hyperedges=True):
             else:
                 assert set(h1["members"]) == set(h2["members"]), f"Hyperedge {eid} members differ"
 
-    # Layers
-    if check_layers:
+    # slices
+    if check_slices:
         try:
-            layers1 = set(G1.list_layers(include_default=False))
-            layers2 = set(G2.list_layers(include_default=False))
-            assert layers1 == layers2, f"Layer sets differ: {layers1} != {layers2}"
+            slices1 = set(G1.list_slices(include_default=False))
+            slices2 = set(G2.list_slices(include_default=False))
+            assert slices1 == slices2, f"slice sets differ: {slices1} != {slices2}"
         except Exception:
-            # Some adapters may not implement layers; let tests control this via flags.
+            # Some adapters may not implement slices; let tests control this via flags.
             pass
 
 

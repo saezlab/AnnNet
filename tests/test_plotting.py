@@ -48,9 +48,9 @@ class TestPlottingWithRealGraph(unittest.TestCase):
         e2 = g.add_edge("B", "C", weight=-1.0, interaction=-1)
         e3 = g.add_hyperedge(head=["A", "B"], tail=["C"], weight=0.5, interaction=+1)
 
-        # Per-layer override for e1
-        g.add_layer("Lw")
-        g.set_edge_layer_attrs("Lw", e1, weight=5.0)
+        # Per-slice override for e1
+        g.add_slice("Lw")
+        g.set_edge_slice_attrs("Lw", e1, weight=5.0)
 
         self.g = g
         # Sanity: plotting relies on these
@@ -67,12 +67,12 @@ class TestPlottingWithRealGraph(unittest.TestCase):
         self.assertEqual(labels_ids["A"], "A")
 
     def test_build_edge_labels(self):
-        lbls = plotting.build_edge_labels(self.g, use_weight=True, extra_keys=["type"], layer=None)
+        lbls = plotting.build_edge_labels(self.g, use_weight=True, extra_keys=["type"], slice=None)
         # keys are edge indices (0..m-1)
         self.assertIn(0, lbls)
         self.assertRegex(lbls[0], r"w=2(\.0+)?")
-        # layer-aware override
-        lbls_Lw = plotting.build_edge_labels(self.g, use_weight=True, extra_keys=[], layer="Lw")
+        # slice-aware override
+        lbls_Lw = plotting.build_edge_labels(self.g, use_weight=True, extra_keys=[], slice="Lw")
         self.assertRegex(lbls_Lw[0], r"w=5(\.0+)?")
 
     def test_edge_style_signed(self):

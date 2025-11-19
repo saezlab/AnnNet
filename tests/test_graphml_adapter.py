@@ -18,7 +18,7 @@ class TestGraphMLAdapter:
         G = simple_graph
         to_graphml(G, tmpdir_fixture / "graph.graphml", hyperedge_mode="skip")
         G2 = from_graphml(tmpdir_fixture / "graph.graphml", hyperedge="none")
-        assert_graphs_equal(G, G2, check_layers=False, check_hyperedges=False)
+        assert_graphs_equal(G, G2, check_slices=False, check_hyperedges=False)
 
     def test_reified_hyperedges(self, complex_graph, tmpdir_fixture):
         G = complex_graph
@@ -32,7 +32,7 @@ class TestGraphMLAdapter:
         to_graphml(G, tmpdir_fixture / "graph.graphml", hyperedge_mode="reify")
         assert (tmpdir_fixture / "graph.graphml.manifest.json").exists()
         G2 = from_graphml(tmpdir_fixture / "graph.graphml", hyperedge="reified")
-        assert_graphs_equal(G, G2, check_layers=True, check_hyperedges=True)
+        assert_graphs_equal(G, G2, check_slices=True, check_hyperedges=True)
 
     def test_attribute_type_preservation(self, tmpdir_fixture):
         from annnet.core.graph import Graph

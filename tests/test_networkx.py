@@ -45,12 +45,12 @@ def _build_graph() -> Graph:
     e2 = g.add_edge("B", "C", weight=1.0, edge_directed=False, interaction=-1)
     e3 = g.add_hyperedge(head=["A", "B"], tail=["C"], weight=0.5, interaction=+1)
 
-    # layer + per-layer override for e1
-    g.add_layer("Lw", region="EMEA")
-    g.set_edge_layer_attrs("Lw", e1, weight=5.0)
+    # slice + per-slice override for e1
+    g.add_slice("Lw", region="EMEA")
+    g.set_edge_slice_attrs("Lw", e1, weight=5.0)
 
-    # a second layer with no overrides to test fallback
-    g.add_layer("L0")
+    # a second slice with no overrides to test fallback
+    g.add_slice("L0")
 
     # basic sanity
     assert g.number_of_edges() >= 3
@@ -73,7 +73,7 @@ class TestNetworkXAdapter(unittest.TestCase):
         """Full export + roundtrip:
         - Export to NetworkX with hyperedges skipped and public_only on.
         - Manifest must contain 'Lw' with at least one edge.
-        - Roundtrip back -> per-layer weight override is preserved (5.0 expected).
+        - Roundtrip back -> per-slice weight override is preserved (5.0 expected).
         """
         g = _BUILD_GRAPH()
 
@@ -85,48 +85,48 @@ class TestNetworkXAdapter(unittest.TestCase):
         # Manifest basics
         self.assertIn("edges", manifest)
         self.assertIn("weights", manifest)
-        self.assertIn("layers", manifest)
-        self.assertIn("layer_weights", manifest)
+        self.assertIn("slices", manifest)
+        self.assertIn("slice_weights", manifest)
 
         # Vertex names likely stored as node labels in nx – just sanity check
         # (We don't assert exact count since hyperedge handling can vary.)
         self.assertTrue(any(n in {"A", "B", "C"} for n in nxG.nodes))
 
-        # The key fix: ensure robust layer discovery captured 'Lw'
-        self.assertIn("Lw", manifest["layers"])
-        self.assertGreater(len(manifest["layers"]["Lw"]), 0)
+        # The key fix: ensure robust slice discovery captured 'Lw'
+        self.assertIn("Lw", manifest["slices"])
+        self.assertGreater(len(manifest["slices"]["Lw"]), 0)
 
         # --- Roundtrip back to Graph
         g2 = from_nx(nxG, manifest)
 
         # Ensure we can pull an edge id from Lw and read its effective weight
-        eid = list(manifest["layers"]["Lw"])[0]
-        w_eff = g2.get_effective_edge_weight(eid, layer="Lw")
+        eid = list(manifest["slices"]["Lw"])[0]
+        w_eff = g2.get_effective_edge_weight(eid, slice="Lw")
         self.assertEqual(w_eff, 5.0)
 
-    def test_layer_filters_single(self):
-        """Export only a single layer ('Lw'); manifest should only include that layer."""
+    def test_slice_filters_single(self):
+        """Export only a single slice ('Lw'); manifest should only include that slice."""
         g = _BUILD_GRAPH()
 
-        nxG, manifest = to_nx(g, directed=True, hyperedge_mode="skip", layer="Lw", public_only=True)
-        self.assertIn("layers", manifest)
-        self.assertEqual(set(manifest["layers"].keys()), {"Lw"})
-        self.assertGreater(len(manifest["layers"]["Lw"]), 0)
+        nxG, manifest = to_nx(g, directed=True, hyperedge_mode="skip", slice="Lw", public_only=True)
+        self.assertIn("slices", manifest)
+        self.assertEqual(set(manifest["slices"].keys()), {"Lw"})
+        self.assertGreater(len(manifest["slices"]["Lw"]), 0)
 
-        # Per-layer weights should be limited to Lw as well
-        self.assertTrue(set(manifest.get("layer_weights", {}).keys()) <= {"Lw"})
+        # Per-slice weights should be limited to Lw as well
+        self.assertTrue(set(manifest.get("slice_weights", {}).keys()) <= {"Lw"})
 
-    def test_layer_filters_multi(self):
-        """Export a union of layers, e.g., ['default', 'Lw']."""
+    def test_slice_filters_multi(self):
+        """Export a union of slices, e.g., ['default', 'Lw']."""
         g = _BUILD_GRAPH()
 
         nxG, manifest = to_nx(
-            g, directed=True, hyperedge_mode="skip", layers=["default", "Lw"], public_only=True
+            g, directed=True, hyperedge_mode="skip", slices=["default", "Lw"], public_only=True
         )
-        self.assertIn("layers", manifest)
-        self.assertTrue({"default", "Lw"} <= set(manifest["layers"].keys()))
-        self.assertGreater(len(manifest["layers"]["default"]), 0)
-        self.assertGreater(len(manifest["layers"]["Lw"]), 0)
+        self.assertIn("slices", manifest)
+        self.assertTrue({"default", "Lw"} <= set(manifest["slices"].keys()))
+        self.assertGreater(len(manifest["slices"]["default"]), 0)
+        self.assertGreater(len(manifest["slices"]["Lw"]), 0)
 
     def test_hyperedge_skip_vs_expand(self):
         """If the builder creates at least one hyperedge, then:
@@ -167,7 +167,7 @@ class TestNetworkXAdapter(unittest.TestCase):
             # Vertex private attr
             if hasattr(g, "set_vertex_attr"):
                 g.set_vertex_attr("A", "__secret_tag", 42)
-            # Edge private attr on an arbitrary default-layer edge
+            # Edge private attr on an arbitrary default-slice edge
             any_eid = next(iter(manifest_eid for manifest_eid in g.edge_weights.keys()))
             if hasattr(g, "set_edge_attr"):
                 g.set_edge_attr(any_eid, "__hidden_note", "shh")
