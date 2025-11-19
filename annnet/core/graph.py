@@ -314,9 +314,9 @@ class SliceManager:
         edge_id : str, optional
             Edge ID to search for
         source : str, optional
-            Source node (with target)
+            Source vertex (with target)
         target : str, optional
-            Target node (with source)
+            Target vertex (with source)
         include_default : bool
             Include default slice
         undirected_match : bool, optional
@@ -479,13 +479,61 @@ class LayerManager:
 
     # ==================== Presence utilities ====================
 
-    def node_layers(self, u: str):
-        """All layer-tuples where node u is present."""
-        return list(self._G.iter_node_layers(u))
+    def vertex_layers(self, u: str):
+        """All layer-tuples where vertex u is present."""
+        return list(self._G.iter_vertex_layers(u))
 
     def has_presence(self, u: str, aa):
         """True if (u, aa) ∈ V_M."""
         return self._G.has_presence(u, tuple(aa))
+
+    # ==================== Aspect / layer / vertex-layer attributes ===========
+
+    def set_aspect_attrs(self, aspect: str, **attrs):
+        """Attach metadata to an aspect (delegates to Graph.set_aspect_attrs)."""
+        return self._G.set_aspect_attrs(aspect, **attrs)
+
+    def aspect_attrs(self, aspect: str) -> dict:
+        """Get metadata dict for an aspect."""
+        return self._G.get_aspect_attrs(aspect)
+
+    def set_layer_attrs(self, aa, **attrs):
+        """Attach metadata to a Kivela layer aa (aspect tuple)."""
+        return self._G.set_layer_attrs(tuple(aa), **attrs)
+
+    def layer_attrs(self, aa) -> dict:
+        """Get metadata dict for a Kivela layer aa (aspect tuple)."""
+        return self._G.get_layer_attrs(tuple(aa))
+
+    def set_vertex_layer_attrs(self, u: str, aa, **attrs):
+        """Attach metadata to a vertex–layer pair (u, aa)."""
+        return self._G.set_vertex_layer_attrs(u, tuple(aa), **attrs)
+
+    def vertex_layer_attrs(self, u: str, aa) -> dict:
+        """Get metadata dict for a vertex–layer pair (u, aa)."""
+        return self._G.get_vertex_layer_attrs(u, tuple(aa))
+
+    ## Elementary layer attributes
+
+    def elem_layer_id(self, aspect: str, label: str) -> str:
+        """Canonical '{aspect}_{label}' id used in Graph.layer_attributes."""
+        return self._G._elem_layer_id(aspect, label)
+
+    def set_elem_layer_attrs(self, aspect: str, label: str, **attrs):
+        """
+        Upsert attributes for elementary Kivela layer (aspect, label).
+
+        Writes into Graph.layer_attributes with layer_id = "{aspect}_{label}".
+        """
+        return self._G.set_elementary_layer_attrs(aspect, label, **attrs)
+
+    def elem_layer_attrs(self, aspect: str, label: str) -> dict:
+        """
+        Read attributes for elementary Kivela layer (aspect, label) as dict.
+
+        Reads from Graph.layer_attributes.
+        """
+        return self._G.get_elementary_layer_attrs(aspect, label)
 
     # ==================== Intra/inter/coupling surfacing ====================
 
@@ -501,7 +549,7 @@ class LayerManager:
         return {eid for eid, k in self._G.edge_kind.items() if k == "inter" and self._G.edge_layers[eid] == (aa, β)}
 
     def coupling_edges_between(self, aa, β):
-        """Edge IDs of coupling edges connecting same-node (aa)↔(β)."""
+        """Edge IDs of coupling edges connecting same-vertex (aa)↔(β)."""
         aa = tuple(aa); β = tuple(β)
         return {eid for eid, k in self._G.edge_kind.items() if k == "coupling" and self._G.edge_layers[eid] == (aa, β)}
 
@@ -528,7 +576,7 @@ class IndexManager:
     def __init__(self, graph):
         self._G = graph
 
-    # ==================== Entity (Node) Indexes ====================
+    # ==================== Entity (vertex) Indexes ====================
 
     def entity_to_row(self, entity_id):
         """Map entity ID to matrix row index."""
@@ -790,8 +838,8 @@ class GraphView:
     --
     graph : Graph
         Parent graph instance
-    nodes : list[str] | set[str] | callable | None
-        Node IDs to include, or predicate function
+    vertices : list[str] | set[str] | callable | None
+        vertex IDs to include, or predicate function
     edges : list[str] | set[str] | callable | None
         Edge IDs to include, or predicate function
     layers : str | list[str] | None
@@ -801,9 +849,9 @@ class GraphView:
 
     """
 
-    def __init__(self, graph, nodes=None, edges=None, layers=None, predicate=None):
+    def __init__(self, graph, vertices=None, edges=None, layers=None, predicate=None):
         self._graph = graph
-        self._nodes_filter = nodes
+        self._vertices_filter = vertices
         self._edges_filter = edges
         self._predicate = predicate
 
@@ -816,7 +864,7 @@ class GraphView:
             self._layers = list(layers)
 
         # Lazy caches
-        self._node_ids_cache = None
+        self._vertex_ids_cache = None
         self._edge_ids_cache = None
         self._computed = False
 
@@ -824,14 +872,14 @@ class GraphView:
 
     @property
     def obs(self):
-        """Filtered node attribute table (uses Graph.vertex_attributes)."""
-        node_ids = self.node_ids
-        if node_ids is None:
+        """Filtered vertex attribute table (uses Graph.vertex_attributes)."""
+        vertex_ids = self.vertex_ids
+        if vertex_ids is None:
             return self._graph.vertex_attributes
 
         
 
-        return self._graph.vertex_attributes.filter(pl.col("vertex_id").is_in(list(node_ids)))
+        return self._graph.vertex_attributes.filter(pl.col("vertex_id").is_in(list(vertex_ids)))
 
     @property
     def var(self):
@@ -847,14 +895,14 @@ class GraphView:
     @property
     def X(self):
         """Filtered incidence matrix subview."""
-        node_ids = self.node_ids
+        vertex_ids = self.vertex_ids
         edge_ids = self.edge_ids
 
         # Get row and column indices
-        if node_ids is not None:
+        if vertex_ids is not None:
             rows = [
                 self._graph.entity_to_idx[nid]
-                for nid in node_ids
+                for nid in vertex_ids
                 if nid in self._graph.entity_to_idx
             ]
         else:
@@ -876,11 +924,11 @@ class GraphView:
             return sp.dok_matrix((len(rows), len(cols)), dtype=self._graph._matrix.dtype)
 
     @property
-    def node_ids(self):
-        """Get filtered node IDs (cached)."""
+    def vertex_ids(self):
+        """Get filtered vertex IDs (cached)."""
         if not self._computed:
             self._compute_ids()
-        return self._node_ids_cache
+        return self._vertex_ids_cache
 
     @property
     def edge_ids(self):
@@ -890,12 +938,12 @@ class GraphView:
         return self._edge_ids_cache
 
     @property
-    def node_count(self):
-        """Number of nodes in this view."""
-        node_ids = self.node_ids
-        if node_ids is None:
+    def vertex_count(self):
+        """Number of vertices in this view."""
+        vertex_ids = self.vertex_ids
+        if vertex_ids is None:
             return sum(1 for t in self._graph.entity_types.values() if t == "vertex")
-        return len(node_ids)
+        return len(vertex_ids)
 
     @property
     def edge_count(self):
@@ -908,44 +956,44 @@ class GraphView:
     # ==================== Internal Computation ====================
 
     def _compute_ids(self):
-        """Compute and cache filtered node and edge IDs."""
-        node_ids = None
+        """Compute and cache filtered vertex and edge IDs."""
+        vertex_ids = None
         edge_ids = None
 
         # Step 1: Apply layer filter (uses Graph._layers)
         if self._layers is not None:
-            node_ids = set()
+            vertex_ids = set()
             edge_ids = set()
             for layer_id in self._layers:
                 if layer_id in self._graph._layers:
-                    node_ids.update(self._graph._layers[layer_id]["vertices"])
+                    vertex_ids.update(self._graph._layers[layer_id]["vertices"])
                     edge_ids.update(self._graph._layers[layer_id]["edges"])
 
-        # Step 2: Apply node filter
-        if self._nodes_filter is not None:
-            candidate_nodes = (
-                node_ids
-                if node_ids is not None
+        # Step 2: Apply vertex filter
+        if self._vertices_filter is not None:
+            candidate_vertices = (
+                vertex_ids
+                if vertex_ids is not None
                 else set(
                     vid for vid, vtype in self._graph.entity_types.items() if vtype == "vertex"
                 )
             )
 
-            if callable(self._nodes_filter):
-                filtered_nodes = set()
-                for vid in candidate_nodes:
+            if callable(self._vertices_filter):
+                filtered_vertices = set()
+                for vid in candidate_vertices:
                     try:
-                        if self._nodes_filter(vid):
-                            filtered_nodes.add(vid)
+                        if self._vertices_filter(vid):
+                            filtered_vertices.add(vid)
                     except Exception:
                         pass
-                node_ids = filtered_nodes
+                vertex_ids = filtered_vertices
             else:
-                specified = set(self._nodes_filter)
-                if node_ids is not None:
-                    node_ids &= specified
+                specified = set(self._vertices_filter)
+                if vertex_ids is not None:
+                    vertex_ids &= specified
                 else:
-                    node_ids = specified & candidate_nodes
+                    vertex_ids = specified & candidate_vertices
 
         # Step 3: Apply edge filter
         if self._edges_filter is not None:
@@ -969,25 +1017,25 @@ class GraphView:
                 else:
                     edge_ids = specified & candidate_edges
 
-        # Step 4: Apply additional predicate to nodes
-        if self._predicate is not None and node_ids is not None:
-            filtered_nodes = set()
-            for vid in node_ids:
+        # Step 4: Apply additional predicate to vertices
+        if self._predicate is not None and vertex_ids is not None:
+            filtered_vertices = set()
+            for vid in vertex_ids:
                 try:
                     if self._predicate(vid):
-                        filtered_nodes.add(vid)
+                        filtered_vertices.add(vid)
                 except Exception:
                     pass
-            node_ids = filtered_nodes
+            vertex_ids = filtered_vertices
 
-        # Step 5: Filter edges by node connectivity (uses Graph.edge_definitions, hyperedge_definitions)
-        if node_ids is not None and edge_ids is not None:
+        # Step 5: Filter edges by vertex connectivity (uses Graph.edge_definitions, hyperedge_definitions)
+        if vertex_ids is not None and edge_ids is not None:
             filtered_edges = set()
             for eid in edge_ids:
                 # Binary/vertex-edge edges
                 if eid in self._graph.edge_definitions:
                     source, target, _ = self._graph.edge_definitions[eid]
-                    if source in node_ids and target in node_ids:
+                    if source in vertex_ids and target in vertex_ids:
                         filtered_edges.add(eid)
                 # Hyperedges
                 elif eid in self._graph.hyperedge_definitions:
@@ -995,16 +1043,16 @@ class GraphView:
                     if hdef.get("directed", False):
                         heads = set(hdef.get("head", []))
                         tails = set(hdef.get("tail", []))
-                        if heads.issubset(node_ids) and tails.issubset(node_ids):
+                        if heads.issubset(vertex_ids) and tails.issubset(vertex_ids):
                             filtered_edges.add(eid)
                     else:
                         members = set(hdef.get("members", []))
-                        if members.issubset(node_ids):
+                        if members.issubset(vertex_ids):
                             filtered_edges.add(eid)
             edge_ids = filtered_edges
 
         # Cache results
-        self._node_ids_cache = node_ids
+        self._vertex_ids_cache = vertex_ids
         self._edge_ids_cache = edge_ids
         self._computed = True
 
@@ -1034,11 +1082,11 @@ class GraphView:
         df = self._graph.vertices_view(**kwargs)
 
         # Filter by vertex IDs in this view
-        node_ids = self.node_ids
-        if node_ids is not None:
+        vertex_ids = self.vertex_ids
+        if vertex_ids is not None:
             
 
-            df = df.filter(pl.col("vertex_id").is_in(list(node_ids)))
+            df = df.filter(pl.col("vertex_id").is_in(list(vertex_ids)))
 
         return df
 
@@ -1051,19 +1099,19 @@ class GraphView:
         # Create new Graph instance
         subG = Graph(directed=self._graph.directed)
 
-        node_ids = self.node_ids
+        vertex_ids = self.vertex_ids
         edge_ids = self.edge_ids
 
-        # Determine which nodes to copy
-        if node_ids is not None:
-            nodes_to_copy = node_ids
+        # Determine which vertices to copy
+        if vertex_ids is not None:
+            vertices_to_copy = vertex_ids
         else:
-            nodes_to_copy = [
+            vertices_to_copy = [
                 vid for vid, vtype in self._graph.entity_types.items() if vtype == "vertex"
             ]
 
-        # Copy nodes (uses Graph.add_vertex, get_vertex_attrs)
-        for vid in nodes_to_copy:
+        # Copy vertices (uses Graph.add_vertex, get_vertex_attrs)
+        for vid in vertices_to_copy:
             if copy_attributes:
                 attrs = self._graph.get_vertex_attrs(vid)
                 # drop structural keys
@@ -1084,7 +1132,7 @@ class GraphView:
             if eid in self._graph.edge_definitions:
                 source, target, edge_type = self._graph.edge_definitions[eid]
 
-                if source not in nodes_to_copy or target not in nodes_to_copy:
+                if source not in vertices_to_copy or target not in vertices_to_copy:
                     continue
 
                 weight = self._graph.edge_weights.get(eid, 1.0)
@@ -1104,9 +1152,9 @@ class GraphView:
                     heads = list(hdef.get("head", []))
                     tails = list(hdef.get("tail", []))
 
-                    if not all(h in nodes_to_copy for h in heads):
+                    if not all(h in vertices_to_copy for h in heads):
                         continue
-                    if not all(t in nodes_to_copy for t in tails):
+                    if not all(t in vertices_to_copy for t in tails):
                         continue
 
                     weight = self._graph.edge_weights.get(eid, 1.0)
@@ -1118,7 +1166,7 @@ class GraphView:
                 else:
                     members = list(hdef.get("members", []))
 
-                    if not all(m in nodes_to_copy for m in members):
+                    if not all(m in vertices_to_copy for m in members):
                         continue
 
                     weight = self._graph.edge_weights.get(eid, 1.0)
@@ -1130,28 +1178,28 @@ class GraphView:
 
         return subG
 
-    def subview(self, nodes=None, edges=None, layers=None, predicate=None):
+    def subview(self, vertices=None, edges=None, layers=None, predicate=None):
         """Create a new GraphView by further restricting this view.
 
-        - nodes/edges: if a list/set is given, intersect with this view's node_ids/edge_ids.
+        - vertices/edges: if a list/set is given, intersect with this view's vertex_ids/edge_ids.
         - layers: defaults to this view's layers if None.
         - predicate: applied in addition to the current filtering (AND).
         """
         # Force compute current filters
-        base_nodes = self.node_ids
+        base_vertices = self.vertex_ids
         base_edges = self.edge_ids
 
-        # Nodes
-        if nodes is None:
-            new_nodes = base_nodes
-            node_pred = None
-        elif callable(nodes):
-            new_nodes = base_nodes  # keep current set; apply new predicate below
-            node_pred = nodes
+        # vertices
+        if vertices is None:
+            new_vertices = base_vertices
+            vertex_pred = None
+        elif callable(vertices):
+            new_vertices = base_vertices  # keep current set; apply new predicate below
+            vertex_pred = vertices
         else:
-            to_set = set(nodes)
-            new_nodes = (set(base_nodes) & to_set) if base_nodes is not None else to_set
-            node_pred = None
+            to_set = set(vertices)
+            new_vertices = (set(base_vertices) & to_set) if base_vertices is not None else to_set
+            vertex_pred = None
 
         # Edges
         if edges is None:
@@ -1181,18 +1229,18 @@ class GraphView:
                     ok = ok and bool(predicate(v))
                 except Exception:
                     ok = False
-            if node_pred:
+            if vertex_pred:
                 try:
-                    ok = ok and bool(node_pred(v))
+                    ok = ok and bool(vertex_pred(v))
                 except Exception:
                     ok = False
             return ok
 
-        final_pred = combined_pred if (self._predicate or predicate or node_pred) else None
+        final_pred = combined_pred if (self._predicate or predicate or vertex_pred) else None
 
         # Return a fresh GraphView
         return GraphView(
-            self._graph, nodes=new_nodes, edges=new_edges, layers=new_layers, predicate=final_pred
+            self._graph, vertices=new_vertices, edges=new_edges, layers=new_layers, predicate=final_pred
         )
 
     # ==================== Convenience ====================
@@ -1202,18 +1250,18 @@ class GraphView:
         lines = [
             "GraphView Summary",
             "─" * 30,
-            f"Nodes: {self.node_count}",
+            f"vertices: {self.vertex_count}",
             f"Edges: {self.edge_count}",
         ]
 
         filters = []
         if self._layers:
             filters.append(f"layers={self._layers}")
-        if self._nodes_filter:
-            if callable(self._nodes_filter):
-                filters.append("nodes=<predicate>")
+        if self._vertices_filter:
+            if callable(self._vertices_filter):
+                filters.append("vertices=<predicate>")
             else:
-                filters.append(f"nodes={len(list(self._nodes_filter))} specified")
+                filters.append(f"vertices={len(list(self._vertices_filter))} specified")
         if self._edges_filter:
             if callable(self._edges_filter):
                 filters.append("edges=<predicate>")
@@ -1230,10 +1278,10 @@ class GraphView:
         return "\n".join(lines)
 
     def __repr__(self):
-        return f"GraphView(nodes={self.node_count}, edges={self.edge_count})"
+        return f"GraphView(vertices={self.vertex_count}, edges={self.edge_count})"
 
     def __len__(self):
-        return self.node_count
+        return self.vertex_count
 
 
 class GraphDiff:
@@ -1418,6 +1466,7 @@ class Graph:
         self.edge_kind = {}
         self.hyperedge_definitions = {}
         self.graph_attributes = {}
+        self.layer_attributes = pl.DataFrame(schema={"layer_id": pl.Utf8})
 
         # Edge ID counter for parallel edges
         self._next_edge_id = 0
@@ -1472,10 +1521,10 @@ class Graph:
         self.elem_layers: dict[str, list[str]] = {}          # aspect -> elementary labels
         self._all_layers: tuple[tuple[str, ...], ...] = ()   # cartesian product cache
 
-        # Node and node–layer presence
-        self._V: set[str] = set()                             # node ids (entities of type 'vertex')
+        # vertex and vertex–layer presence
+        self._V: set[str] = set()                             # vertex ids (entities of type 'vertex')
         self._VM: set[tuple[str, tuple[str, ...]]] = set()    # {(u, aa_tuple)}
-        self.node_aligned: bool = False                      # if True, VM == V × all_layers
+        self.vertex_aligned: bool = False                      # if True, VM == V × all_layers
 
         # Stable indexing for supra rows
         self._nl_to_row: dict[tuple[str, tuple[str, ...]], int] = {}
@@ -1487,6 +1536,12 @@ class Graph:
         # Multilayer edge bookkeeping (used by supra_adjacency)
         self.edge_kind = {}     # eid -> {"intra","inter","coupling"}
         self.edge_layers = {}   # eid -> aa   or -> (aa,β) for inter/coupling
+
+        # Aspect / layer / vertex–layer attribute tables (Kivela metadata)
+        # All of this is annotation on top of the structural incidence.
+        self._aspect_attrs = {}        # aspect_name -> {attr_name: value}
+        self._layer_attrs = {}         # aa (tuple[str,...]) -> {attr_name: value}
+        self._vertex_layer_attrs = {}    # (u, aa) -> {attr_name: value}
 
 
     # slice basics
@@ -1525,7 +1580,6 @@ class Graph:
             if a in self.elem_layers:
                 if slice_id not in self.elem_layers[a]:
                     self.elem_layers[a].append(slice_id)
-                    self._rebuild_all_slices_cache()        
         return slice_id
 
     def set_active_slice(self, slice_id):
@@ -1668,7 +1722,7 @@ class Graph:
     ## Presence (V_M)
     
     def add_presence(self, u: str, layer_tuple: tuple[str, ...]):
-        """Declare that node u is present in the given multi-aspect layer."""
+        """Declare that vertex u is present in the given multi-aspect layer."""
         self._validate_layer_tuple(layer_tuple)
         if self.entity_types.get(u) != "vertex":
             raise KeyError(f"'{u}' is not a vertex")
@@ -1691,17 +1745,18 @@ class Graph:
         """Iterate over all aspect-tuples (Cartesian product)."""
         return iter(self._all_layers)
 
-    def iter_node_layers(self, u: str):
+    def iter_vertex_layers(self, u: str):
         """Iterate aa where (u, aa) ∈ V_M."""
         for (uu, aa) in self._VM:
             if uu == u:
                 yield aa
 
     ## Index for supra rows 
-    def ensure_node_layer_index(self, restrict_layers: list[tuple[str, ...]] | None = None):
+
+    def ensure_vertex_layer_index(self, restrict_layers: list[tuple[str, ...]] | None = None):
         """
-        Build stable mapping between node–layer tuples and row indices.
-        Sorting: by node_id (lexicographic), then by layer tuple.
+        Build stable mapping between vertex–layer tuples and row indices.
+        Sorting: by vertex_id (lexicographic), then by layer tuple.
         """
         if restrict_layers is not None:
             R = {tuple(x) for x in restrict_layers}
@@ -1714,10 +1769,10 @@ class Graph:
         return len(vm)
 
     def nl_to_row(self, u: str, layer_tuple: tuple[str, ...]) -> int:
-        """Map (u, aa) -> row index (after ensure_node_layer_index())."""
+        """Map (u, aa) -> row index (after ensure_vertex_layer_index())."""
         key = (u, tuple(layer_tuple))
         if key not in self._nl_to_row:
-            raise KeyError(f"node–layer {key!r} not indexed; call ensure_node_layer_index()")
+            raise KeyError(f"vertex–layer {key!r} not indexed; call ensure_vertex_layer_index()")
         return self._nl_to_row[key]
 
     def row_to_nl(self, row: int) -> tuple[str, tuple[str, ...]]:
@@ -1725,7 +1780,7 @@ class Graph:
         try:
             return self._row_to_nl[row]
         except Exception:
-            raise KeyError(f"row {row} not in node–layer index")
+            raise KeyError(f"row {row} not in vertex–layer index")
 
     ## Validation helpers 
     
@@ -1748,7 +1803,200 @@ class Graph:
             raise ValueError("layer_id_to_tuple is only valid when exactly 1 aspect is configured")
         return (layer_id,)
 
-    ## explicit node–layer edge APIs
+    def layer_tuple_to_id(self, aa: tuple[str, ...]) -> str:
+        """
+        Canonical string id for a layer tuple.
+        For single-aspect setups this is just the single element,
+        otherwise aspects are joined by '×' (matches LayerManager.tuple_id).
+        """
+        aa = tuple(aa)
+        if len(self.aspects) == 1:
+            return aa[0]
+        return "×".join(aa)
+
+    ## Aspect / layer / vertex–layer attributes
+
+    def _elem_layer_id(self, aspect: str, label: str) -> str:
+        """
+        Canonical id for an *elementary* Kivela layer (aspect, label).
+
+        This is the key used in `layer_attributes.layer_id`:
+            layer_id = "{aspect}_{label}"
+        """
+        if aspect not in self.aspects:
+            raise KeyError(f"unknown aspect {aspect!r}; known: {self.aspects!r}")
+        allowed = self.elem_layers.get(aspect, [])
+        if label not in allowed:
+            raise KeyError(
+                f"unknown elementary layer {label!r} for aspect {aspect!r}; "
+                f"known: {allowed!r}"
+            )
+        return f"{aspect}_{label}"
+
+    def _upsert_layer_attribute_row(self, layer_id: str, attrs: dict):
+        """
+        Upsert a row in `self.layer_attributes` for `layer_id`.
+
+        Strategy (simple & robust):
+          - convert current DF to list[dict]
+          - find existing row for this layer_id (if any)
+          - merge attrs into that row (override keys)
+          - rebuild DataFrame from the updated list of rows
+
+        This avoids all schema/dtype headaches (Polars infers them).
+        """
+        import polars as pl
+
+        df = self.layer_attributes
+
+        # Convert existing DF to list of dict rows
+        rows = df.to_dicts() if df.height > 0 else []
+
+        # Find if we already have a row for this layer_id
+        existing = None
+        new_rows = []
+        for r in rows:
+            if r.get("layer_id") == layer_id:
+                existing = r
+                # don't append the old version
+            else:
+                new_rows.append(r)
+
+        if existing is None:
+            base = {"layer_id": layer_id}
+        else:
+            base = dict(existing)  # copy
+
+        # Merge new attrs (override old keys)
+        base.update(attrs)
+
+        # Append updated row
+        new_rows.append(base)
+
+        # Rebuild DF; Polars will infer schema and fill missing values with nulls
+        self.layer_attributes = pl.DataFrame(new_rows)
+
+    def set_elementary_layer_attrs(self, aspect: str, label: str, **attrs):
+        """
+        Attach attributes to an *elementary* Kivela layer (aspect, label).
+
+        Stored in `self.layer_attributes` with:
+            layer_id = "{aspect}_{label}"
+        """
+        lid = self._elem_layer_id(aspect, label)
+        self._upsert_layer_attribute_row(lid, attrs)
+
+    def get_elementary_layer_attrs(self, aspect: str, label: str) -> dict:
+        """
+        Get attributes for an *elementary* Kivela layer (aspect, label) as a dict.
+
+        Returns {} if no row exists in `layer_attributes`.
+        """
+        lid = self._elem_layer_id(aspect, label)
+        df = self.layer_attributes
+        if df.height == 0 or "layer_id" not in df.columns:
+            return {}
+
+        rows = df.filter(pl.col("layer_id") == lid)
+        if rows.height == 0:
+            return {}
+
+        # single row: drop 'layer_id' and convert to dict
+        row = rows.drop("layer_id").to_dicts()[0]
+        return row
+
+    def set_aspect_attrs(self, aspect: str, **attrs):
+        """
+        Attach metadata to a Kivela aspect.
+        Example: set_aspect_attrs("time", order="temporal", unit="year")
+        """
+        if aspect not in self.aspects:
+            raise KeyError(f"unknown aspect {aspect!r}; known: {self.aspects!r}")
+        d = self._aspect_attrs.setdefault(aspect, {})
+        d.update(attrs)
+
+    def get_aspect_attrs(self, aspect: str) -> dict:
+        """Return a shallow copy of metadata for a Kivela aspect."""
+        if aspect not in self.aspects:
+            raise KeyError(f"unknown aspect {aspect!r}")
+        return dict(self._aspect_attrs.get(aspect, {}))
+
+    def set_layer_attrs(self, layer_tuple: tuple[str, ...], **attrs):
+        """
+        Attach metadata to a Kivela layer (aspect-tuple aa).
+        Example: set_layer_attrs(("t1", "F"), time=1, relation="friendship")
+        """
+        aa = tuple(layer_tuple)
+        self._validate_layer_tuple(aa)
+        d = self._layer_attrs.setdefault(aa, {})
+        d.update(attrs)
+
+    def get_layer_attrs(self, layer_tuple: tuple[str, ...]) -> dict:
+        """
+        Get metadata dict for a Kivela layer (aspect-tuple aa).
+        Returns a shallow copy; empty dict if not set.
+        """
+        aa = tuple(layer_tuple)
+        self._validate_layer_tuple(aa)
+        return dict(self._layer_attrs.get(aa, {}))
+
+    def set_vertex_layer_attrs(self, u: str, layer_tuple: tuple[str, ...], **attrs):
+        """
+        Attach metadata to a vertex–layer pair (u, aa).
+        Requires that (u, aa) ∈ V_M.
+        Example: set_vertex_layer_attrs("u1", ("t1",), activity=3.7)
+        """
+        aa = tuple(layer_tuple)
+        self._assert_presence(u, aa)  # enforce that (u,aa) exists in V_M
+        key = (u, aa)
+        d = self._vertex_layer_attrs.setdefault(key, {})
+        d.update(attrs)
+
+    def get_vertex_layer_attrs(self, u: str, layer_tuple: tuple[str, ...]) -> dict:
+        """
+        Get metadata dict for a vertex–layer pair (u, aa).
+        Returns a shallow copy; empty dict if not set.
+        """
+        aa = tuple(layer_tuple)
+        key = (u, aa)
+        return dict(self._vertex_layer_attrs.get(key, {}))
+
+    ## explicit vertex–layer edge APIs
+
+    def set_edge_kivela_role(self, eid: str, role: str, layers):
+        """
+        Annotate an existing structural edge with Kivela semantics.
+
+        role:
+          - "intra"    -> layers = aa tuple
+          - "inter"    -> layers = (aa, β)
+          - "coupling" -> layers = (aa, β)
+
+        This does *not* create edges or touch incidence; it only sets metadata.
+        """
+        # Sanity: edge must exist in the structural registry
+        if eid not in getattr(self, "edge_definitions", {}) and \
+           eid not in getattr(self, "hyperedge_definitions", {}):
+            raise KeyError(
+                f"Kivela annotation for unknown edge {eid!r}; "
+                "create the edge via add_edge/add_hyperedge first."
+            )
+
+        role = str(role)
+        if role == "intra":
+            aa = tuple(layers)
+            self._validate_layer_tuple(aa)
+            self.edge_kind[eid] = "intra"
+            self.edge_layers[eid] = aa
+        elif role in {"inter", "coupling"}:
+            La, Lb = layers
+            La = tuple(La); Lb = tuple(Lb)
+            self._validate_layer_tuple(La)
+            self._validate_layer_tuple(Lb)
+            self.edge_kind[eid] = role
+            self.edge_layers[eid] = (La, Lb)
+        else:
+            raise ValueError(f"unknown Kivela role {role!r}")
 
     def add_intra_edge(self, u: str, v: str, layer: str, *, weight: float = 1.0, eid: str | None = None):
         """
@@ -1761,8 +2009,13 @@ class Graph:
         # Fallback when multi-aspect is not configured: let add_edge handle bookkeeping.
         eid = eid or f"{u}--{v}@{layer}"
         self.add_edge(u, v, layer=layer, weight=weight, edge_id=eid)
-        self.edge_kind[eid] = "intra"
-        self.edge_layers[eid] = layer
+        # In legacy single-layer mode we don't have a full aspect tuple; store as ("layer",)
+        if self.aspects:
+            aa = self.layer_id_to_tuple(layer) if len(self.aspects) == 1 else (layer,)
+            self.set_edge_kivela_role(eid, "intra", aa)
+        else:
+            # no aspects configured -> treat as plain edge; leave edge_kind/edge_layers unset
+            pass
         return eid
 
     def add_intra_edge_nl(self, u: str, v: str, layer_tuple: tuple[str, ...], *,
@@ -1773,13 +2026,13 @@ class Graph:
         self._validate_layer_tuple(layer_tuple)
         aa = tuple(layer_tuple)
         self._assert_presence(u, aa)
-        self._assert_presence(v, aa)      
+        self._assert_presence(v, aa)
         eid = eid or f"{u}--{v}@{'.'.join(aa)}"
-        # Use a synthetic layer id for intra edges so existing layer bookkeeping runs.
+        # Use a synthetic layer id for intra edges so existing slice bookkeeping runs.
         Lid = aa[0] if len(self.aspects) == 1 else "×".join(aa)
-        self.add_edge(u, v, layer=Lid, weight=weight, edge_id=eid)        
-        self.edge_kind[eid] = "intra"
-        self.edge_layers[eid] = aa
+        self.add_edge(u, v, layer=Lid, weight=weight, edge_id=eid)
+        # Pure Kivela annotation:
+        self.set_edge_kivela_role(eid, "intra", aa)
         return eid
 
     def add_inter_edge_nl(self, u: str, layer_a: tuple[str, ...], v: str, layer_b: tuple[str, ...], *,
@@ -1792,10 +2045,9 @@ class Graph:
         self._assert_presence(u, aa)
         self._assert_presence(v, β)
         eid = eid or f"{u}--{v}=={'.'.join(aa)}~{'.'.join(β)}"
-        # No single layer applies; just register the edge normally (no 'layer' kw).
-        self.add_edge(u, v, weight=weight, edge_id=eid)        
-        self.edge_kind[eid] = "inter"
-        self.edge_layers[eid] = (aa, β)
+        # No single slice applies; just register the edge structurally.
+        self.add_edge(u, v, weight=weight, edge_id=eid)
+        self.set_edge_kivela_role(eid, "inter", (aa, β))
         return eid
 
     def add_coupling_edge_nl(self, u: str, layer_a: tuple[str, ...], layer_b: tuple[str, ...], *,
@@ -1805,7 +2057,8 @@ class Graph:
         """
         eid2 = self.add_inter_edge_nl(u, layer_a, u, layer_b, weight=weight, eid=eid)
         # Re-label as coupling so supra_adjacency treats it as off-diagonal coupling
-        self.edge_kind[eid2] = "coupling"
+        aa = tuple(layer_a); β = tuple(layer_b)
+        self.set_edge_kivela_role(eid2, "coupling", (aa, β))
         return eid2
     
     ### Legacy inter-layer convenience (string layers) delegates when 1 aspect:
@@ -1837,7 +2090,7 @@ class Graph:
             layers_t = [self.layer_id_to_tuple(L) for L in layers]
         else:
             layers_t = None if layers is None else [tuple(L) for L in layers]
-        self.ensure_node_layer_index(layers_t)
+        self.ensure_vertex_layer_index(layers_t)
  
         n = len(self._row_to_nl)
         A = sp.dok_matrix((n, n), dtype=float)
@@ -1920,7 +2173,7 @@ class Graph:
         """
         
         layers_t = self._normalize_layers_arg(layers)
-        self.ensure_node_layer_index(layers_t)
+        self.ensure_vertex_layer_index(layers_t)
         n = len(self._row_to_nl)
         A = sp.dok_matrix((n, n), dtype=float)
 
@@ -1988,7 +2241,7 @@ class Graph:
         return self._build_block({"inter"}, layers)
 
     def build_coupling_block(self, layers: list[str] | list[tuple] | None = None):
-        """Supra matrix containing only coupling (diagonal same-node cross-layer) edges."""
+        """Supra matrix containing only coupling (diagonal same-vertex cross-layer) edges."""
         return self._build_block({"coupling"}, layers)
 
     def supra_degree(self, layers: list[str] | list[tuple] | None = None):
@@ -2026,7 +2279,7 @@ class Graph:
         else:
             raise ValueError("kind must be 'comb' or 'norm'")
 
-    ## Coupling generators (node-independent)
+    ## Coupling generators (vertex-independent)
     
     def _aspect_index(self, aspect: str) -> int:
         if aspect not in self.aspects:
@@ -2059,12 +2312,12 @@ class Graph:
             self._validate_layer_tuple(La); self._validate_layer_tuple(Lb)
             norm_pairs.append((La, Lb))
         # Build per-layer presence index to avoid O(|V_M|^2)
-        layer_to_nodes = {}
+        layer_to_vertices = {}
         for (u, aa) in self._VM:
-            layer_to_nodes.setdefault(aa, set()).add(u)
+            layer_to_vertices.setdefault(aa, set()).add(u)
         for (La, Lb) in norm_pairs:
-            Ua = layer_to_nodes.get(La, set())
-            Ub = layer_to_nodes.get(Lb, set())
+            Ua = layer_to_vertices.get(La, set())
+            Ub = layer_to_vertices.get(Lb, set())
             for u in Ua & Ub:
                 self.add_coupling_edge_nl(u, La, Lb, weight=weight)
                 added += 1
@@ -2074,7 +2327,7 @@ class Graph:
                                  weight: float = 1.0) -> int:
         """
         Categorical couplings along one aspect:
-        For each node u and each fixed assignment of the other aspects, fully connect u across
+        For each vertex u and each fixed assignment of the other aspects, fully connect u across
         the elementary layers in each group on `aspect`.
         Example: aspect="time", groups=[["t1","t2","t3"]] connects (u,t1,⋅)-(u,t2,⋅)-(u,t3,⋅) per (other aspects).
         Returns number of edges added.
@@ -2102,12 +2355,12 @@ class Graph:
                                      weight: float = 1.0) -> int:
         """
         Diagonal couplings inside a filtered slice of the layer space:
-        For each node u, connect all (u,aa) pairs where aa matches `layer_filter`.
+        For each vertex u, connect all (u,aa) pairs where aa matches `layer_filter`.
         layer_filter example: {"time": {"t1","t2"}, "rel": {"F"}}.
         Returns number of edges added.
         """
         added = 0
-        # collect per node the matching layers actually present
+        # collect per vertex the matching layers actually present
         per_u = {}
         for (u, aa) in self._VM:
             if self._layer_matches_filter(aa, layer_filter):
@@ -2124,38 +2377,38 @@ class Graph:
     
     def tensor_index(self, layers: list[str] | list[tuple] | None = None):
         """
-        Build consistent indices for nodes and layers used in the tensor view.
-        Uses the current node–layer index ordering to ensure round-trip with supra.
+        Build consistent indices for vertices and layers used in the tensor view.
+        Uses the current vertex–layer index ordering to ensure round-trip with supra.
         Returns:
-          nodes: list[str]
+          vertices: list[str]
           layers_t: list[tuple[str,...]]
-          node_to_i: dict[node->int]
+          vertex_to_i: dict[vertex->int]
           layer_to_i: dict[layer_tuple->int]
         """
         layers_t = self._normalize_layers_arg(layers)
-        self.ensure_node_layer_index(layers_t)
-        # collect in the order they appear in the node–layer index: (node major, then layer)
-        nodes = []
+        self.ensure_vertex_layer_index(layers_t)
+        # collect in the order they appear in the vertex–layer index: (vertex major, then layer)
+        vertices = []
         layers_list = []
-        seen_nodes = set()
+        seen_vertices = set()
         seen_layers = set()
         for (u, aa) in self._row_to_nl:
-            if u not in seen_nodes:
-                nodes.append(u); seen_nodes.add(u)
+            if u not in seen_vertices:
+                vertices.append(u); seen_vertices.add(u)
             if aa not in seen_layers:
                 layers_list.append(aa); seen_layers.add(aa)
-        node_to_i = {u: i for i, u in enumerate(nodes)}
+        vertex_to_i = {u: i for i, u in enumerate(vertices)}
         layer_to_i = {aa: i for i, aa in enumerate(layers_list)}
-        return nodes, layers_list, node_to_i, layer_to_i
+        return vertices, layers_list, vertex_to_i, layer_to_i
 
     def adjacency_tensor_view(self, layers: list[str] | list[tuple] | None = None):
         """
        Sparse 4-index adjacency view: triplets (ui, ai, vi, bi, w).
         Returns a dict:
           {
-            "nodes": list[str],
+            "vertices": list[str],
             "layers": list[tuple[str,...]],
-            "node_to_i": {...},
+            "vertex_to_i": {...},
             "layer_to_i": {...},
             "ui": np.ndarray[int], "ai": np.ndarray[int],
             "vi": np.ndarray[int], "bi": np.ndarray[int],
@@ -2164,7 +2417,7 @@ class Graph:
         Symmetric entries are emitted once (ui,ai,vi,bi) and once swapped (vi,bi,ui,ai).
         """
         
-        nodes, layers_t, node_to_i, layer_to_i = self.tensor_index(layers)
+        vertices, layers_t, vertex_to_i, layer_to_i = self.tensor_index(layers)
         ui = []; ai = []; vi = []; bi = []; wv = []
 
         # Intra edges -> (u,aa)↔(v,aa)
@@ -2186,8 +2439,8 @@ class Graph:
             if (u, L) not in self._nl_to_row or (v, L) not in self._nl_to_row:
                 continue
             w = self.edge_weights.get(eid, 1.0)
-            ui.extend((node_to_i[u], node_to_i[v]))
-            vi.extend((node_to_i[v], node_to_i[u]))
+            ui.extend((vertex_to_i[u], vertex_to_i[v]))
+            vi.extend((vertex_to_i[v], vertex_to_i[u]))
             a = layer_to_i[L]
             ai.extend((a, a)); bi.extend((a, a))
             wv.extend((w, w))
@@ -2218,16 +2471,16 @@ class Graph:
             if (u, La) not in self._nl_to_row or (v, Lb) not in self._nl_to_row:
                 continue
             w = self.edge_weights.get(eid, 1.0)
-            ui.extend((node_to_i[u], node_to_i[v]))
-            vi.extend((node_to_i[v], node_to_i[u]))
+            ui.extend((vertex_to_i[u], vertex_to_i[v]))
+            vi.extend((vertex_to_i[v], vertex_to_i[u]))
             ai.extend((layer_to_i[La], layer_to_i[Lb]))
             bi.extend((layer_to_i[Lb], layer_to_i[La]))
             wv.extend((w, w))
 
         return {
-            "nodes": nodes,
+            "vertices": vertices,
             "layers": layers_t,
-           "node_to_i": node_to_i,
+           "vertex_to_i": vertex_to_i,
             "layer_to_i": layer_to_i,
             "ui": np.asarray(ui, dtype=int),
            "ai": np.asarray(ai, dtype=int),
@@ -2238,22 +2491,22 @@ class Graph:
 
     def flatten_to_supra(self, tensor_view: dict):
         """
-        f: 4-index -> supra (CSR). Uses current node–layer index mapping (_nl_to_row).
+        f: 4-index -> supra (CSR). Uses current vertex–layer index mapping (_nl_to_row).
         tensor_view: output of adjacency_tensor_view or unflatten_from_supra.
         """
         
         # Ensure index reflects current layers subset (tensor_view["layers"])
         layers_t = tensor_view["layers"] if tensor_view.get("layers", None) else None
-        self.ensure_node_layer_index(layers_t)
+        self.ensure_vertex_layer_index(layers_t)
         n = len(self._row_to_nl)
         A = sp.dok_matrix((n, n), dtype=float)
-        nodes = tensor_view["nodes"]; layers = tensor_view["layers"]
+        vertices = tensor_view["vertices"]; layers = tensor_view["layers"]
         ui, ai, vi, bi, w = (tensor_view["ui"], tensor_view["ai"],
                              tensor_view["vi"], tensor_view["bi"], tensor_view["w"])
         # Map back from indices to (u,aa) rows using current _nl_to_row
         for k in range(len(w)):
-            u = nodes[int(ui[k])]; aa = layers[int(ai[k])]
-            v = nodes[int(vi[k])]; β = layers[int(bi[k])]
+            u = vertices[int(ui[k])]; aa = layers[int(ai[k])]
+            v = vertices[int(vi[k])]; β = layers[int(bi[k])]
             ru = self._nl_to_row.get((u, aa)); rv = self._nl_to_row.get((v, β))
             if ru is None or rv is None:
                 continue
@@ -2266,7 +2519,7 @@ class Graph:
         """
         
         A = A.tocsr()
-        nodes, layers_t, node_to_i, layer_to_i = self.tensor_index(layers)
+        vertices, layers_t, vertex_to_i, layer_to_i = self.tensor_index(layers)
         rows, cols = A.nonzero()
         data = A.data
         ui = np.empty_like(rows); vi = np.empty_like(cols)
@@ -2274,11 +2527,11 @@ class Graph:
         for k in range(len(rows)):
             (u, aa) = self._row_to_nl[int(rows[k])]
             (v, β) = self._row_to_nl[int(cols[k])]
-            ui[k] = node_to_i[u]; vi[k] = node_to_i[v]
+            ui[k] = vertex_to_i[u]; vi[k] = vertex_to_i[v]
             ai[k] = layer_to_i[aa]; bi[k] = layer_to_i[β]
         return {
-            "nodes": nodes, "layers": layers_t,
-            "node_to_i": node_to_i, "layer_to_i": layer_to_i,
+            "vertices": vertices, "layers": layers_t,
+            "vertex_to_i": vertex_to_i, "layer_to_i": layer_to_i,
             "ui": ui, "ai": ai, "vi": vi, "bi": bi, "w": data.astype(float, copy=False),
         }
 
@@ -2470,28 +2723,28 @@ class Graph:
 
     def participation_coefficient(self, layers: list[str] | list[tuple] | None = None):
         """
-        Participation coefficient per node (Guimerà & Amaral style on multiplex):
+        Participation coefficient per vertex (Guimerà & Amaral style on multiplex):
           P_u = 1 - sum_L (k_u^L / k_u)^2, using intra-layer degrees only.
-        Returns dict[node -> float].
+        Returns dict[vertex -> float].
         """
         
-        # build per-layer deg vectors and aggregate per node
+        # build per-layer deg vectors and aggregate per vertex
         layer_deg = self.layer_degree_vectors(layers)
         # aggregate k_u over layers
-        per_node_total = {}
-        per_node_by_layer = {}
+        per_vertex_total = {}
+        per_vertex_by_layer = {}
         for L, (rows, deg) in layer_deg.items():
             for i, r in enumerate(rows):
                 u, _ = self._row_to_nl[r]
-                per_node_total[u] = per_node_total.get(u, 0.0) + float(deg[i])
-                per_node_by_layer.setdefault(u, {})[L] = float(deg[i])
+                per_vertex_total[u] = per_vertex_total.get(u, 0.0) + float(deg[i])
+                per_vertex_by_layer.setdefault(u, {})[L] = float(deg[i])
         P = {}
-        for u, k in per_node_total.items():
+        for u, k in per_vertex_total.items():
             if k <= 0:
                 P[u] = 0.0
                 continue
             s = 0.0
-            for L, kL in per_node_by_layer[u].items():
+            for L, kL in per_vertex_by_layer[u].items():
                 x = kL / k
                 s += x * x
             P[u] = 1.0 - s
@@ -2500,7 +2753,7 @@ class Graph:
     def versatility(self, layers: list[str] | list[tuple] | None = None):
         """
         Simple versatility proxy: dominant eigenvector of supra adjacency, summed over
-        node's layer-copies. Returns dict[node -> float] normalized to unit max.
+        vertex's layer-copies. Returns dict[vertex -> float] normalized to unit max.
         """
         
         from scipy.sparse.linalg import eigsh
@@ -2511,15 +2764,15 @@ class Graph:
         # largest eigenpair of symmetric A
         vals, vecs = eigsh(A, k=1, which="LA")
         v = vecs[:, 0]
-        per_node = {}
+        per_vertex = {}
         for i, (u, _) in enumerate(self._row_to_nl):
-            per_node[u] = per_node.get(u, 0.0) + float(abs(v[i]))
+            per_vertex[u] = per_vertex.get(u, 0.0) + float(abs(v[i]))
         # normalize
-        m = max(per_node.values()) if per_node else 1.0
+        m = max(per_vertex.values()) if per_vertex else 1.0
         if m > 0:
-            for u in per_node:
-                per_node[u] /= m
-        return per_node
+            for u in per_vertex:
+                per_vertex[u] /= m
+        return per_vertex
 
     ## Multislice modularity (scorer)
 
@@ -2543,7 +2796,7 @@ class Graph:
         
         # Ensure index over the right layers
         layers_t = self._normalize_layers_arg(layers)
-        self.ensure_node_layer_index(layers_t)
+        self.ensure_vertex_layer_index(layers_t)
         n = len(self._row_to_nl)
         part = np.asarray(partition)
         if part.shape[0] != n:
@@ -2803,11 +3056,11 @@ class Graph:
 
         # Multislice presence sync:
         # - Track V (true vertices only)
-        # - If node_aligned: ensure presence across all slices
+        # - If vertex_aligned: ensure presence across all slices
         # - Else, if we are in 1-aspect shim mode and a slice was given, add (u, (slice,))
         if self.entity_types.get(vertex_id) == "vertex":
             self._V.add(vertex_id)
-            if self.node_aligned and self._all_slices:
+            if self.vertex_aligned and self._all_slices:
                 for aa in self._all_slices:
                     self._VM.add((vertex_id, aa))
             elif slice is not None and len(self.aspects) == 1 and self._legacy_single_aspect_enabled:
@@ -7892,7 +8145,7 @@ class Graph:
         - Cache keyed by options until Graph._version changes.
         - Selective edge attr exposure (weight/capacity only when needed).
         - Clear warnings when conversion is lossy.
-        - Auto label→ID mapping for node arguments (kwargs + positionals).
+        - Auto label→ID mapping for vertex arguments (kwargs + positionals).
         - NEW: _nx_simple to collapse Multi* → simple Graph/DiGraph for algos that need it.
         - NEW: _nx_edge_aggs to control parallel-edge aggregation (e.g., {"capacity":"sum"}).
         """
@@ -7908,8 +8161,8 @@ class Graph:
             """Drop all cached NX graphs."""
             self._cache.clear()
 
-        def peek_nodes(self, k: int = 10):
-            """Debug helper: return up to k node IDs visible to NX."""
+        def peek_vertices(self, k: int = 10):
+            """Debug helper: return up to k vertex IDs visible to NX."""
             nxG = self._get_or_make_nx(
                 directed=True,
                 hyperedge_mode="expand",
@@ -7920,7 +8173,7 @@ class Graph:
                 edge_aggs=None,
             )
             out = []
-            it = iter(nxG.nodes())
+            it = iter(nxG.vertices())
             for _ in range(max(0, int(k))):
                 try:
                     out.append(next(it))
@@ -8024,7 +8277,7 @@ class Graph:
                         if v is self._G:
                             kwargs[k] = nxG
 
-                # Bind to NX signature so we can coerce node args (no defaults!)
+                # Bind to NX signature so we can coerce vertex args (no defaults!)
                 bound = None
                 try:
                     sig = inspect.signature(nx_callable)
@@ -8032,21 +8285,21 @@ class Graph:
                 except Exception:
                     pass
 
-                # Coerce node args (labels/indices -> vertex IDs)
+                # Coerce vertex args (labels/indices -> vertex IDs)
                 try:
                     # Determine default label field if not given
                     if label_field is None and guess_labels:
                         label_field = self._infer_label_field()
 
                     if bound is not None and nxG is not None:
-                        self._coerce_nodes_in_bound(bound, nxG, label_field)
+                        self._coerce_vertices_in_bound(bound, nxG, label_field)
                         # Reconstruct WITHOUT applying defaults (avoid flow_func=None, etc.)
                         pargs = bound.args
                         pkwargs = bound.kwargs
                     else:
                         # Fallback: best-effort coercion on kwargs only
                         if nxG is not None:
-                            self._coerce_nodes_in_kwargs(kwargs, nxG, label_field)
+                            self._coerce_vertices_in_kwargs(kwargs, nxG, label_field)
                         pargs, pkwargs = tuple(args), kwargs
                 except Exception:
                     pargs, pkwargs = tuple(args), kwargs  # best effort; let NX raise if needed
@@ -8058,17 +8311,17 @@ class Graph:
 
                 try:
                     return nx_callable(*pargs, **pkwargs)
-                except _nx.NodeNotFound as e:
+                except _nx.vertexNotFound as e:
                     # Add actionable tip that actually tells how to fix it now.
-                    sample = self.peek_nodes(5)
+                    sample = self.peek_vertices(5)
                     tip = (
-                        f"{e}. Nodes must be graph's vertex IDs.\n"
+                        f"{e}. vertices must be graph's vertex IDs.\n"
                         f"- If you passed labels, specify _nx_label_field=<vertex label column> "
                         f"or rely on auto-guess (columns like 'name'/'label'/'title').\n"
                         f"- Example: G.nx.shortest_path_length(G, source='a', target='z', weight='weight', _nx_label_field='name')\n"
-                        f"- A few node IDs NX sees: {sample}"
+                        f"- A few vertex IDs NX sees: {sample}"
                     )
-                    raise _nx.NodeNotFound(tip) from e
+                    raise _nx.vertexNotFound(tip) from e
 
             return wrapper
 
@@ -8299,8 +8552,8 @@ class Graph:
                 return None
             return None
 
-        def _coerce_node_id(self, x, nxG, label_field: str | None):
-            # If already a node ID present in the backend, keep it.
+        def _coerce_vertex_id(self, x, nxG, label_field: str | None):
+            # If already a vertex ID present in the backend, keep it.
             if x in nxG:
                 return x
             # Internal index → vertex_id
@@ -8316,26 +8569,26 @@ class Graph:
                 cand = self._lookup_vertex_id_by_label(label_field, x)
                 if cand is not None:
                     return cand
-            return x  # let NX decide (will raise NodeNotFound if still absent)
+            return x  # let NX decide (will raise vertexNotFound if still absent)
 
-        def _coerce_node_or_iter(self, obj, nxG, label_field: str | None):
+        def _coerce_vertex_or_iter(self, obj, nxG, label_field: str | None):
             if isinstance(obj, (list, tuple, set)):
-                coerced = [self._coerce_node_id(v, nxG, label_field) for v in obj]
+                coerced = [self._coerce_vertex_id(v, nxG, label_field) for v in obj]
                 return type(obj)(coerced) if not isinstance(obj, set) else set(coerced)
-            return self._coerce_node_id(obj, nxG, label_field)
+            return self._coerce_vertex_id(obj, nxG, label_field)
 
-        def _coerce_nodes_in_kwargs(self, kwargs: dict, nxG, label_field: str | None):
-            node_keys = {"source", "target", "u", "v", "node", "nodes", "nbunch", "center", "path"}
+        def _coerce_vertices_in_kwargs(self, kwargs: dict, nxG, label_field: str | None):
+            vertex_keys = {"source", "target", "u", "v", "vertex", "vertices", "nbunch", "center", "path"}
             for key in list(kwargs.keys()):
-                if key in node_keys:
-                    kwargs[key] = self._coerce_node_or_iter(kwargs[key], nxG, label_field)
+                if key in vertex_keys:
+                    kwargs[key] = self._coerce_vertex_or_iter(kwargs[key], nxG, label_field)
 
-        def _coerce_nodes_in_bound(self, bound, nxG, label_field: str | None):
-            """Coerce nodes in a BoundArguments object using common node parameter names."""
-            node_keys = {"source", "target", "u", "v", "node", "nodes", "nbunch", "center", "path"}
+        def _coerce_vertices_in_bound(self, bound, nxG, label_field: str | None):
+            """Coerce vertices in a BoundArguments object using common vertex parameter names."""
+            vertex_keys = {"source", "target", "u", "v", "vertex", "vertices", "nbunch", "center", "path"}
             for key in list(bound.arguments.keys()):
-                if key in node_keys:
-                    bound.arguments[key] = self._coerce_node_or_iter(
+                if key in vertex_keys:
+                    bound.arguments[key] = self._coerce_vertex_or_iter(
                         bound.arguments[key], nxG, label_field
                     )
 
@@ -8349,7 +8602,7 @@ class Graph:
             import networkx as _nx
 
             H = _nx.DiGraph() if directed else _nx.Graph()
-            H.add_nodes_from(nxG.nodes(data=True))
+            H.add_vertices_from(nxG.vertices(data=True))
 
             aggregations = aggregations or {}
 
@@ -8406,7 +8659,7 @@ class Graph:
         - Cache keyed by options until Graph._version changes.
         - Selective edge-attr exposure (keep only needed weights/capacity).
         - Clear warnings when conversion is lossy.
-        - Auto label→ID mapping for node args (kwargs + positionals).
+        - Auto label→ID mapping for vertex args (kwargs + positionals).
         - _ig_simple=True collapses parallel edges to simple (Di)Graph.
         - _ig_edge_aggs={"weight":"min","capacity":"sum"} for parallel-edge aggregation.
         """
@@ -8511,7 +8764,7 @@ class Graph:
                         f"Use native igraph names, e.g. community_multilevel, pagerank, shortest_paths_dijkstra, components, etc."
                     )
 
-                # bind to signature (best effort) so we can coerce node args
+                # bind to signature (best effort) so we can coerce vertex args
                 try:
                     sig = inspect.signature(target)
                     bound = sig.bind_partial(*args, **kwargs)
@@ -8523,11 +8776,11 @@ class Graph:
                         label_field = self._infer_label_field()
 
                     if bound is not None:
-                        self._coerce_nodes_in_bound(bound, igG, label_field)
+                        self._coerce_vertices_in_bound(bound, igG, label_field)
                         bound.apply_defaults()
                         pargs, pkwargs = list(bound.args), dict(bound.kwargs)
                     else:
-                        self._coerce_nodes_in_kwargs(kwargs, igG, label_field)
+                        self._coerce_vertices_in_kwargs(kwargs, igG, label_field)
                         pargs, pkwargs = list(args), dict(kwargs)
                 except Exception:
                     pargs, pkwargs = list(args), dict(kwargs)  # let igraph raise if invalid
@@ -8756,14 +9009,14 @@ class Graph:
                 return name_to_idx[x]
             return x  # let igraph validate/raise
 
-        def _coerce_node_or_iter(self, obj, igG, label_field: str | None):
+        def _coerce_vertex_or_iter(self, obj, igG, label_field: str | None):
             if isinstance(obj, (list, tuple, set)):
                 coerced = [self._coerce_vertex(v, igG, label_field) for v in obj]
                 return type(obj)(coerced) if not isinstance(obj, set) else set(coerced)
             return self._coerce_vertex(obj, igG, label_field)
 
-        def _coerce_nodes_in_kwargs(self, kwargs: dict, igG, label_field: str | None):
-            node_keys = {
+        def _coerce_vertices_in_kwargs(self, kwargs: dict, igG, label_field: str | None):
+            vertex_keys = {
                 "source",
                 "target",
                 "u",
@@ -8781,11 +9034,11 @@ class Graph:
                 "cut",
             }
             for key in list(kwargs.keys()):
-                if key in node_keys:
-                    kwargs[key] = self._coerce_node_or_iter(kwargs[key], igG, label_field)
+                if key in vertex_keys:
+                    kwargs[key] = self._coerce_vertex_or_iter(kwargs[key], igG, label_field)
 
-        def _coerce_nodes_in_bound(self, bound, igG, label_field: str | None):
-            node_keys = {
+        def _coerce_vertices_in_bound(self, bound, igG, label_field: str | None):
+            vertex_keys = {
                 "source",
                 "target",
                 "u",
@@ -8803,8 +9056,8 @@ class Graph:
                 "cut",
             }
             for key in list(bound.arguments.keys()):
-                if key in node_keys:
-                    bound.arguments[key] = self._coerce_node_or_iter(
+                if key in vertex_keys:
+                    bound.arguments[key] = self._coerce_vertex_or_iter(
                         bound.arguments[key], igG, label_field
                     )
 
@@ -8900,7 +9153,7 @@ class Graph:
 
     @property
     def obs(self):
-        """Node attribute table (observations)."""
+        """vertex attribute table (observations)."""
         return self.vertex_attributes
 
     @property
@@ -8919,6 +9172,13 @@ class Graph:
         if not hasattr(self, "_slice_manager"):
             self._slice_manager = SliceManager(self)
         return self._slice_manager
+
+    @property
+    def layers(self):
+        """Layer operations."""
+        if not hasattr(self, "_layer_manager"):
+            self._layer_manager = LayerManager(self)
+        return self._layer_manager
 
     @property
     def idx(self):
@@ -8949,9 +9209,9 @@ class Graph:
         return read(path, **kwargs)
 
     # View API
-    def view(self, nodes=None, edges=None, slices=None, predicate=None):
+    def view(self, vertices=None, edges=None, slices=None, predicate=None):
         """Create lazy view/subgraph."""
-        return GraphView(self, nodes, edges, slices, predicate)
+        return GraphView(self, vertices, edges, slices, predicate)
 
     # Audit
     def snapshot(self, label=None):
