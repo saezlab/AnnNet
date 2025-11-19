@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from functools import wraps
 import itertools
+from typing import Optional, List, Tuple, Union
 
 import numpy as np
 import polars as pl
@@ -5742,29 +5743,58 @@ class Graph:
         """
         return bool(self.edge_directed.get(edge_id, self.directed))
 
-    def has_edge(self, source, target, edge_id=None):
-        """Test for the existence of an edge.
-
-        Parameters
-        --
-        source : str
-        target : str
-        edge_id : str, optional
-            If provided, check for this specific ID.
-
-        Returns
-        ---
-        bool
-
+    def has_edge(
+        self,
+        source: Optional[str] = None,
+        target: Optional[str] = None,
+        edge_id: Optional[str] = None,
+    ) -> Union[bool, Tuple[bool, List[str]]]:
         """
-        if edge_id:
-            return edge_id in self.edge_to_idx
+        Edge existence check with three modes.
 
-        # Check any edge between source and target
-        for eid, (src, tgt, _) in self.edge_definitions.items():
-            if src == source and tgt == target:
-                return True
-        return False
+        Modes
+        -----
+        1) edge_id only:
+            has_edge(edge_id="e1")
+            -> bool    (True if e1 exists anywhere)
+
+        2) source + target only:
+            has_edge(source="u", target="v")
+            -> (bool, [edge_ids...])
+               bool = True if at least one edge u->v exists
+
+        3) source + target + edge_id:
+            has_edge(source="u", target="v", edge_id="e1")
+            -> bool    (True only if e1 exists AND is u->v)
+
+        Any other combination is invalid and raises ValueError.
+        """
+
+        # ---- Mode 1: edge_id only ----
+        if edge_id is not None and source is None and target is None:
+            return edge_id in self.edge_definitions
+
+        # ---- Mode 2: source + target only ----
+        if edge_id is None and source is not None and target is not None:
+            eids: List[str] = []
+            for eid, (src, tgt, _) in self.edge_definitions.items():
+                if src == source and tgt == target:
+                    eids.append(eid)
+            return (len(eids) > 0, eids)
+
+        # ---- Mode 3: edge_id + source + target ----
+        if edge_id is not None and source is not None and target is not None:
+            data = self.edge_definitions.get(edge_id)
+            if data is None:
+                return False
+            src, tgt, _ = data
+            return src == source and tgt == target
+
+        # ---- Anything else is ambiguous / invalid ----
+        raise ValueError(
+            "Invalid argument combination: use either "
+            "(edge_id), (source,target), or (source,target,edge_id)."
+        )
 
     def has_vertex(self, vertex_id: str) -> bool:
         """Test for the existence of a vertex.
@@ -7348,11 +7378,6 @@ class Graph:
         excluding the key column itself. If not found or df empty, return {}.
         Caches per (id(df), key_col) for speed; cache auto-refreshes when the df object changes.
         """
-        try:
-            
-        except Exception:
-            # If Polars isn't available for some reason, best-effort fallback
-            return {}
 
         # Basic guards
         if not isinstance(df, pl.DataFrame) or df.height == 0 or key_col not in df.columns:
@@ -8892,7 +8917,7 @@ class Graph:
     def slices(self):
         """slice operations (add, remove, union, intersect)."""
         if not hasattr(self, "_slice_manager"):
-            self._slice_manager = sliceManager(self)
+            self._slice_manager = SliceManager(self)
         return self._slice_manager
 
     @property
