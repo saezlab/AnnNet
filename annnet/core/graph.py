@@ -513,7 +513,7 @@ class LayerManager:
         """Get metadata dict for a vertex–layer pair (u, aa)."""
         return self._G.get_vertex_layer_attrs(u, tuple(aa))
 
-    ## Elementary layer attributes
+    # ==================== Elementary layer attributes ===========
 
     def elem_layer_id(self, aspect: str, label: str) -> str:
         """Canonical '{aspect}_{label}' id used in Graph.layer_attributes."""
@@ -534,6 +534,133 @@ class LayerManager:
         Reads from Graph.layer_attributes.
         """
         return self._G.get_elementary_layer_attrs(aspect, label)
+
+    # ==================== Algebra on Kivela layers =========================
+
+    def vertex_set(self, aa):
+        """Vertices present in Kivela layer aa (tuple)."""
+        return self._G.layer_vertex_set(tuple(aa))
+
+    def edge_set(self, aa, include_inter=False, include_coupling=False):
+        """Edges associated with Kivela layer aa."""
+        return self._G.layer_edge_set(
+            tuple(aa),
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+
+    def union(self, layer_tuples, include_inter=False, include_coupling=False):
+        """Set-union over Kivela layers; returns {'vertices', 'edges'}."""
+        return self._G.layer_union(
+            [tuple(a) for a in layer_tuples],
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+
+    def intersection(self, layer_tuples, include_inter=False, include_coupling=False):
+        """Set-intersection over Kivela layers; returns {'vertices', 'edges'}."""
+        return self._G.layer_intersection(
+            [tuple(a) for a in layer_tuples],
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+
+    def difference(self, layer_a, layer_b, include_inter=False, include_coupling=False):
+        """Set-difference layer_a layer_b; returns {'vertices', 'edges'}."""
+        return self._G.layer_difference(
+            tuple(layer_a),
+            tuple(layer_b),
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+
+    # ==================== Layer-slice bridge ===============================
+
+    def to_slice(self, aa, slice_id=None, include_inter=False, include_coupling=False, **attrs):
+        """
+        Create a slice from a single Kivela layer aa and return its slice_id.
+        """
+        aa = tuple(aa)
+        sid = slice_id or self.tuple_id(aa)
+        return self._G.create_slice_from_layer(
+            sid,
+            aa,
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+            **attrs,
+        )
+
+    def union_to_slice(self, layer_tuples, slice_id, include_inter=False, include_coupling=False, **attrs):
+        """
+        Create slice from union of several Kivela layers.
+        """
+        return self._G.create_slice_from_layer_union(
+            slice_id,
+            [tuple(a) for a in layer_tuples],
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+            **attrs,
+        )
+
+    def intersection_to_slice(self, layer_tuples, slice_id, include_inter=False, include_coupling=False, **attrs):
+        """
+        Create slice from intersection of several Kivela layers.
+        """
+        return self._G.create_slice_from_layer_intersection(
+            slice_id,
+            [tuple(a) for a in layer_tuples],
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+            **attrs,
+        )
+
+    def difference_to_slice(self, layer_a, layer_b, slice_id, include_inter=False, include_coupling=False, **attrs):
+        """
+        Create slice from set-difference layer_a layer_b.
+        """
+        return self._G.create_slice_from_layer_difference(
+            slice_id,
+            tuple(layer_a),
+            tuple(layer_b),
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+            **attrs,
+        )
+
+    # ==================== Subgraphs =======================================
+
+    def subgraph(self, aa, include_inter=False, include_coupling=False):
+        """Concrete subgraph induced by Kivela layer aa."""
+        return self._G.subgraph_from_layer_tuple(
+            tuple(aa),
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+
+    def subgraph_union(self, layer_tuples, include_inter=False, include_coupling=False):
+        """Subgraph induced by union of several Kivela layers."""
+        return self._G.subgraph_from_layer_union(
+            [tuple(a) for a in layer_tuples],
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+
+    def subgraph_intersection(self, layer_tuples, include_inter=False, include_coupling=False):
+        """Subgraph induced by intersection of several Kivela layers."""
+        return self._G.subgraph_from_layer_intersection(
+            [tuple(a) for a in layer_tuples],
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+
+    def subgraph_difference(self, layer_a, layer_b, include_inter=False, include_coupling=False):
+        """Subgraph induced by layer_a layer_b."""
+        return self._G.subgraph_from_layer_difference(
+            tuple(layer_a),
+            tuple(layer_b),
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
 
     # ==================== Intra/inter/coupling surfacing ====================
 
@@ -1319,7 +1446,7 @@ class GraphDiff:
     def summary(self):
         """Human-readable summary of differences."""
         lines = [
-            f"Diff: {self.snapshot_a['label']} → {self.snapshot_b['label']}",
+            f"Diff: {self.snapshot_a['label']} - {self.snapshot_b['label']}",
             "",
             f"Vertices: {len(self.vertices_added):+d} added, {len(self.vertices_removed)} removed",
             f"Edges: {len(self.edges_added):+d} added, {len(self.edges_removed)} removed",
@@ -1542,7 +1669,6 @@ class Graph:
         self._aspect_attrs = {}        # aspect_name -> {attr_name: value}
         self._layer_attrs = {}         # aa (tuple[str,...]) -> {attr_name: value}
         self._vertex_layer_attrs = {}    # (u, aa) -> {attr_name: value}
-
 
     # slice basics
 
@@ -2061,6 +2187,51 @@ class Graph:
         self.set_edge_kivela_role(eid2, "coupling", (aa, β))
         return eid2
     
+    def layer_vertex_set(self, layer_tuple):
+        """
+        Vertices present in Kivela layer aa (aspect tuple).
+
+        Uses V_M as SSoT for node-layer presence.
+        """
+        aa = tuple(layer_tuple)
+        return {u for (u, L) in self._VM if L == aa}
+
+    def layer_edge_set(
+        self,
+        layer_tuple,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+    ):
+        """
+        Edges associated with Kivela layer aa.
+
+        By default returns only intra-layer edges:
+          { eid | edge_kind[eid] == 'intra' and edge_layers[eid] == aa }
+
+        If include_inter=True / include_coupling=True, also includes inter/coupling
+        edges where aa participates in the layer pair (aa, β) or (β, aa).
+        """
+        aa = tuple(layer_tuple)
+        E = set()
+        for eid, kind in self.edge_kind.items():
+            layers = self.edge_layers.get(eid)
+
+            if kind == "intra":
+                if layers == aa:
+                    E.add(eid)
+
+            elif kind == "inter" and include_inter:
+                # layers expected to be (La, Lb)
+                if isinstance(layers, tuple) and len(layers) == 2 and aa in layers:
+                    E.add(eid)
+
+            elif kind == "coupling" and include_coupling:
+                if isinstance(layers, tuple) and len(layers) == 2 and aa in layers:
+                    E.add(eid)
+
+        return E
+
     ### Legacy inter-layer convenience (string layers) delegates when 1 aspect:
 
     def add_inter_edge(self, u: str, v: str, layer_a: str, layer_b: str, *,
@@ -2075,7 +2246,276 @@ class Graph:
         self.edge_layers[eid] = (layer_a, layer_b)
         return eid
 
-    ## tiny helper
+    ## Layer algebra
+
+    def layer_union(
+        self,
+        layer_tuples,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+    ):
+        """
+        Union of several Kivela layers.
+
+        Returns dict:
+          {
+            "vertices": set[str],
+            "edges": set[str],
+          }
+        """
+        Vs = []
+        Es = []
+        for aa in layer_tuples:
+            Vs.append(self.layer_vertex_set(aa))
+            Es.append(
+                self.layer_edge_set(
+                    aa,
+                    include_inter=include_inter,
+                    include_coupling=include_coupling,
+                )
+            )
+        if not Vs:
+            return {"vertices": set(), "edges": set()}
+        V = set().union(*Vs)
+        E = set().union(*Es)
+        return {"vertices": V, "edges": E}
+
+    def layer_intersection(
+        self,
+        layer_tuples,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+    ):
+        """
+        Intersection of several Kivela layers.
+
+        Empty input - empty sets.
+        """
+        layer_tuples = list(layer_tuples)
+        if not layer_tuples:
+            return {"vertices": set(), "edges": set()}
+
+        # start with first layer
+        V = self.layer_vertex_set(layer_tuples[0])
+        E = self.layer_edge_set(
+            layer_tuples[0],
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+
+        for aa in layer_tuples[1:]:
+            V &= self.layer_vertex_set(aa)
+            E &= self.layer_edge_set(
+                aa,
+                include_inter=include_inter,
+                include_coupling=include_coupling,
+            )
+
+        return {"vertices": V, "edges": E}
+
+    def layer_difference(
+        self,
+        layer_a,
+        layer_b,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+    ):
+        """
+        Set difference: elements in layer_a but not in layer_b.
+
+        Returns dict {"vertices": set[str], "edges": set[str]}.
+        """
+        Va = self.layer_vertex_set(layer_a)
+        Ea = self.layer_edge_set(
+            layer_a,
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+        Vb = self.layer_vertex_set(layer_b)
+        Eb = self.layer_edge_set(
+            layer_b,
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+        return {
+            "vertices": Va - Vb,
+            "edges": Ea - Eb,
+        }
+
+    ## Layer X Slice
+
+    def create_slice_from_layer(
+        self,
+        slice_id: str,
+        layer_tuple,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+        **attributes,
+    ):
+        """
+        Create a slice whose vertices/edges are induced by a single Kivela layer.
+
+        Attributes are attached to the slice; you can include the layer tuple for traceability.
+        """
+        result = self.layer_union(
+            [layer_tuple],
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+        attributes.setdefault("source", "kivela_layer")
+        attributes.setdefault("layer_tuple", tuple(layer_tuple))
+        return self.create_slice_from_operation(slice_id, result, **attributes)
+
+    def create_slice_from_layer_union(
+        self,
+        slice_id: str,
+        layer_tuples,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+        **attributes,
+    ):
+        """
+        Create a slice as union of several Kivela layers (using layer_union).
+        """
+        result = self.layer_union(
+            layer_tuples,
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+        attributes.setdefault("source", "kivela_layer_union")
+        attributes.setdefault("layers", [tuple(a) for a in layer_tuples])
+        return self.create_slice_from_operation(slice_id, result, **attributes)
+
+    def create_slice_from_layer_intersection(
+        self,
+        slice_id: str,
+        layer_tuples,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+        **attributes,
+    ):
+        """
+        Create a slice as intersection of several Kivela layers (using layer_intersection).
+        """
+        result = self.layer_intersection(
+            layer_tuples,
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+        attributes.setdefault("source", "kivela_layer_intersection")
+        attributes.setdefault("layers", [tuple(a) for a in layer_tuples])
+        return self.create_slice_from_operation(slice_id, result, **attributes)
+
+    def create_slice_from_layer_difference(
+        self,
+        slice_id: str,
+        layer_a,
+        layer_b,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+        **attributes,
+    ):
+        """
+        Create a slice as difference layer_a layer_b.
+        """
+        result = self.layer_difference(
+            layer_a,
+            layer_b,
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+        attributes.setdefault("source", "kivela_layer_difference")
+        attributes.setdefault("layer_a", tuple(layer_a))
+        attributes.setdefault("layer_b", tuple(layer_b))
+        return self.create_slice_from_operation(slice_id, result, **attributes)
+
+    ## Subgraph
+
+    def subgraph_from_layer_tuple(
+        self,
+        layer_tuple,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+    ) -> "Graph":
+        """
+        Concrete subgraph induced by a single Kivela layer.
+
+        - Vertices = layer_vertex_set(aa)
+        - Edges    = layer_edge_set(aa, ...)
+
+        Uses extract_subgraph(vertices, edges) to avoid duplicating logic.
+        """
+        aa = tuple(layer_tuple)
+        V = self.layer_vertex_set(aa)
+        E = self.layer_edge_set(
+            aa,
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+        return self.extract_subgraph(vertices=V, edges=E)
+
+    def subgraph_from_layer_union(
+        self,
+        layer_tuples,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+    ) -> "Graph":
+        """
+        Concrete subgraph induced by the union of several Kivela layers.
+        """
+        res = self.layer_union(
+            layer_tuples,
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+        return self.extract_subgraph(vertices=res["vertices"], edges=res["edges"])
+
+    def subgraph_from_layer_intersection(
+        self,
+        layer_tuples,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+    ) -> "Graph":
+        """
+        Concrete subgraph induced by intersection of several Kivela layers.
+        """
+        res = self.layer_intersection(
+            layer_tuples,
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+        return self.extract_subgraph(vertices=res["vertices"], edges=res["edges"])
+
+    def subgraph_from_layer_difference(
+        self,
+        layer_a,
+        layer_b,
+        *,
+        include_inter: bool = False,
+        include_coupling: bool = False,
+    ) -> "Graph":
+        """
+        Concrete subgraph induced by layer_a layer_b.
+        """
+        res = self.layer_difference(
+            layer_a,
+            layer_b,
+            include_inter=include_inter,
+            include_coupling=include_coupling,
+        )
+        return self.extract_subgraph(vertices=res["vertices"], edges=res["edges"])
+
+    ## helper
 
     def _assert_presence(self, u: str, aa: tuple[str, ...]):
         if (u, aa) not in self._VM:
@@ -2085,8 +2525,7 @@ class Graph:
 
     def supra_adjacency(self, layers: list[str] | None = None):
         # Map optional legacy 'layers' (strings) to aspect tuples if needed
-        if layers is not None and len(getattr(self, "aspects", [])) == 1 \
-           and getattr(self, "_legacy_single_aspect_enabled", True):
+        if layers is not None and len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
             layers_t = [self.layer_id_to_tuple(L) for L in layers]
         else:
             layers_t = None if layers is None else [tuple(L) for L in layers]
@@ -5363,10 +5802,10 @@ class Graph:
 
         Keys
         
-        - ``vertex_attributes``           → key: ``["vertex_id"]``
-        - ``edge_attributes``             → key: ``["edge_id"]``
-        - ``slice_attributes``            → key: ``["slice_id"]``
-        - ``edge_slice_attributes``       → key: ``["slice_id", "edge_id"]``
+        - ``vertex_attributes``           - key: ``["vertex_id"]``
+        - ``edge_attributes``             - key: ``["edge_id"]``
+        - ``slice_attributes``            - key: ``["slice_id"]``
+        - ``edge_slice_attributes``       - key: ``["slice_id", "edge_id"]``
         """
         if not isinstance(attrs, dict) or not attrs:
             return df
@@ -5572,7 +6011,7 @@ class Graph:
 
         if tie_case:
             if tie == "keep":
-                # do nothing → previous signs remain (default)
+                # do nothing - previous signs remain (default)
                 return
             if tie == "undirected":
                 # force (+w,+w) while equality holds
@@ -5673,7 +6112,7 @@ class Graph:
         Returns
         ---
         dict[str, dict]
-            A dictionary mapping `edge_id` → `attribute_dict`, where:
+            A dictionary mapping `edge_id` - `attribute_dict`, where:
             - `edge_id` is the unique string identifier of the edge.
             - `attribute_dict` is a dictionary of attribute names and values.
 
@@ -5702,7 +6141,7 @@ class Graph:
         Returns
         ---
         dict[str, dict]
-            A dictionary mapping `vertex_id` → `attribute_dict`, where:
+            A dictionary mapping `vertex_id` - `attribute_dict`, where:
             - `vertex_id` is the unique string identifier of the vertex.
             - `attribute_dict` is a dictionary of attribute names and values.
 
@@ -5731,7 +6170,7 @@ class Graph:
         Returns
         ---
         dict[str, Any]
-            A dictionary mapping `edge_id` → attribute value.
+            A dictionary mapping `edge_id` - attribute value.
 
         Notes
         -
@@ -7697,7 +8136,7 @@ class Graph:
             if etype == "vertex":
                 vertex_rows.append(row)
             else:
-                # entity_types[...] == "edge" → edge-entity
+                # entity_types[...] == "edge" - edge-entity
                 edge_entity_rows.append({"edge_entity_id": ent_id, **vmap.get(ent_id, {})})
 
         # Add entities with correct type APIs (bulk)
@@ -7804,7 +8243,7 @@ class Graph:
         Returns
         ---
         dict[str, list]
-            A mapping from `vertex_id` → list of incident edges (indices or values),
+            A mapping from `vertex_id` - list of incident edges (indices or values),
             where:
             - Keys are vertex IDs.
             - Values are lists of edge indices (if `values=False`) or numeric values
@@ -8145,8 +8584,8 @@ class Graph:
         - Cache keyed by options until Graph._version changes.
         - Selective edge attr exposure (weight/capacity only when needed).
         - Clear warnings when conversion is lossy.
-        - Auto label→ID mapping for vertex arguments (kwargs + positionals).
-        - NEW: _nx_simple to collapse Multi* → simple Graph/DiGraph for algos that need it.
+        - Auto label-ID mapping for vertex arguments (kwargs + positionals).
+        - NEW: _nx_simple to collapse Multi* - simple Graph/DiGraph for algos that need it.
         - NEW: _nx_edge_aggs to control parallel-edge aggregation (e.g., {"capacity":"sum"}).
         """
 
@@ -8411,7 +8850,7 @@ class Graph:
                 for _, _, _, d in nxG.edges(keys=True, data=True):
                     d.clear()
 
-            # Collapse Multi* → simple Graph/DiGraph if requested
+            # Collapse Multi* - simple Graph/DiGraph if requested
             if simple and nxG.is_multigraph():
                 nxG = self._collapse_multiedges(
                     nxG, directed=directed, aggregations=edge_aggs, needed_attrs=needed_attrs
@@ -8490,7 +8929,7 @@ class Graph:
                 msgs.append("no manifest provided; round-trip fidelity not guaranteed")
             if msgs:
                 warnings.warn(
-                    "Graph→NX conversion is lossy: " + "; ".join(msgs) + ".",
+                    "Graph-NX conversion is lossy: " + "; ".join(msgs) + ".",
                     category=RuntimeWarning,
                     stacklevel=3,
                 )
@@ -8556,7 +8995,7 @@ class Graph:
             # If already a vertex ID present in the backend, keep it.
             if x in nxG:
                 return x
-            # Internal index → vertex_id
+            # Internal index - vertex_id
             try:
                 if isinstance(x, int) and x in getattr(self._G, "idx_to_entity", {}):
                     cand = self._G.idx_to_entity[x]
@@ -8659,7 +9098,7 @@ class Graph:
         - Cache keyed by options until Graph._version changes.
         - Selective edge-attr exposure (keep only needed weights/capacity).
         - Clear warnings when conversion is lossy.
-        - Auto label→ID mapping for vertex args (kwargs + positionals).
+        - Auto label-ID mapping for vertex args (kwargs + positionals).
         - _ig_simple=True collapses parallel edges to simple (Di)Graph.
         - _ig_edge_aggs={"weight":"min","capacity":"sum"} for parallel-edge aggregation.
         """
@@ -8933,7 +9372,7 @@ class Graph:
                 msgs.append("no manifest provided; round-trip fidelity not guaranteed")
             if msgs:
                 warnings.warn(
-                    "Graph→igraph conversion is lossy: " + "; ".join(msgs) + ".",
+                    "Graph-igraph conversion is lossy: " + "; ".join(msgs) + ".",
                     category=RuntimeWarning,
                     stacklevel=3,
                 )
