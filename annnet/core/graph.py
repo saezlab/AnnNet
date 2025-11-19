@@ -670,15 +670,15 @@ class LayerManager:
         # intra appear in Graph.edge_kind with edge_layers[eid] == aa
         return {eid for eid, k in self._G.edge_kind.items() if k == "intra" and self._G.edge_layers[eid] == aa}
 
-    def inter_edges_between(self, aa, β):
-        """Edge IDs of inter edges between tuple-layers aa and β."""
-        aa = tuple(aa); β = tuple(β)
-        return {eid for eid, k in self._G.edge_kind.items() if k == "inter" and self._G.edge_layers[eid] == (aa, β)}
+    def inter_edges_between(self, aa, bb):
+        """Edge IDs of inter edges between tuple-layers aa and bb."""
+        aa = tuple(aa); bb = tuple(bb)
+        return {eid for eid, k in self._G.edge_kind.items() if k == "inter" and self._G.edge_layers[eid] == (aa, bb)}
 
-    def coupling_edges_between(self, aa, β):
-        """Edge IDs of coupling edges connecting same-vertex (aa)↔(β)."""
-        aa = tuple(aa); β = tuple(β)
-        return {eid for eid, k in self._G.edge_kind.items() if k == "coupling" and self._G.edge_layers[eid] == (aa, β)}
+    def coupling_edges_between(self, aa, bb):
+        """Edge IDs of coupling edges connecting same-vertex (aa)↔(bb)."""
+        aa = tuple(aa); bb = tuple(bb)
+        return {eid for eid, k in self._G.edge_kind.items() if k == "coupling" and self._G.edge_layers[eid] == (aa, bb)}
 
     # ==================== Supra / blocks ====================
 
@@ -1662,7 +1662,7 @@ class Graph:
         
         # Multilayer edge bookkeeping (used by supra_adjacency)
         self.edge_kind = {}     # eid -> {"intra","inter","coupling"}
-        self.edge_layers = {}   # eid -> aa   or -> (aa,β) for inter/coupling
+        self.edge_layers = {}   # eid -> aa   or -> (aa,bb) for inter/coupling
 
         # Aspect / layer / vertex–layer attribute tables (Kivela metadata)
         # All of this is annotation on top of the structural incidence.
@@ -2095,8 +2095,8 @@ class Graph:
 
         role:
           - "intra"    -> layers = aa tuple
-          - "inter"    -> layers = (aa, β)
-          - "coupling" -> layers = (aa, β)
+          - "inter"    -> layers = (aa, bb)
+          - "coupling" -> layers = (aa, bb)
 
         This does *not* create edges or touch incidence; it only sets metadata.
         """
@@ -2164,27 +2164,27 @@ class Graph:
     def add_inter_edge_nl(self, u: str, layer_a: tuple[str, ...], v: str, layer_b: tuple[str, ...], *,
                           weight: float = 1.0, eid: str | None = None):
         """
-        Add an inter-layer edge between (u, aa) and (v, β). Requires presence (u,aa),(v,β) in V_M.
+        Add an inter-layer edge between (u, aa) and (v, bb). Requires presence (u,aa),(v,bb) in V_M.
         """
         self._validate_layer_tuple(layer_a); self._validate_layer_tuple(layer_b)
-        aa, β = tuple(layer_a), tuple(layer_b)
+        aa, bb = tuple(layer_a), tuple(layer_b)
         self._assert_presence(u, aa)
-        self._assert_presence(v, β)
-        eid = eid or f"{u}--{v}=={'.'.join(aa)}~{'.'.join(β)}"
+        self._assert_presence(v, bb)
+        eid = eid or f"{u}--{v}=={'.'.join(aa)}~{'.'.join(bb)}"
         # No single slice applies; just register the edge structurally.
         self.add_edge(u, v, weight=weight, edge_id=eid)
-        self.set_edge_kivela_role(eid, "inter", (aa, β))
+        self.set_edge_kivela_role(eid, "inter", (aa, bb))
         return eid
 
     def add_coupling_edge_nl(self, u: str, layer_a: tuple[str, ...], layer_b: tuple[str, ...], *,
                              weight: float = 1.0, eid: str | None = None):
         """
-        Add a diagonal coupling (u, aa) <-> (u, β). Requires presence (u,aa),(u,β).
+        Add a diagonal coupling (u, aa) <-> (u, bb). Requires presence (u,aa),(u,bb).
         """
         eid2 = self.add_inter_edge_nl(u, layer_a, u, layer_b, weight=weight, eid=eid)
         # Re-label as coupling so supra_adjacency treats it as off-diagonal coupling
-        aa = tuple(layer_a); β = tuple(layer_b)
-        self.set_edge_kivela_role(eid2, "coupling", (aa, β))
+        aa = tuple(layer_a); bb = tuple(layer_b)
+        self.set_edge_kivela_role(eid2, "coupling", (aa, bb))
         return eid2
     
     def layer_vertex_set(self, layer_tuple):
@@ -2210,7 +2210,7 @@ class Graph:
           { eid | edge_kind[eid] == 'intra' and edge_layers[eid] == aa }
 
         If include_inter=True / include_coupling=True, also includes inter/coupling
-        edges where aa participates in the layer pair (aa, β) or (β, aa).
+        edges where aa participates in the layer pair (aa, bb) or (bb, aa).
         """
         aa = tuple(layer_tuple)
         E = set()
@@ -2237,8 +2237,8 @@ class Graph:
     def add_inter_edge(self, u: str, v: str, layer_a: str, layer_b: str, *,
                        weight: float = 1.0, eid: str | None = None):
         if len(getattr(self, "aspects", [])) == 1 and getattr(self, "_legacy_single_aspect_enabled", True):
-            aa, β = self.layer_id_to_tuple(layer_a), self.layer_id_to_tuple(layer_b)
-            return self.add_inter_edge_nl(u, aa, v, β, weight=weight, eid=eid)
+            aa, bb = self.layer_id_to_tuple(layer_a), self.layer_id_to_tuple(layer_b)
+            return self.add_inter_edge_nl(u, aa, v, bb, weight=weight, eid=eid)
         # Fallback in non-multi-aspect mode
         eid = eid or f"{u}--{v}=={layer_a}~{layer_b}"
         self.add_edge(u, v, weight=weight, edge_id=eid)
@@ -2740,7 +2740,7 @@ class Graph:
     def add_layer_coupling_pairs(self, layer_pairs: list[tuple[tuple[str, ...], tuple[str, ...]]],
                                  *, weight: float = 1.0) -> int:
         """
-        Generic: for each pair (aa, β) in layer_pairs, add diagonal couplings (u,aa)<->(u,β) for all u
+        Generic: for each pair (aa, bb) in layer_pairs, add diagonal couplings (u,aa)<->(u,bb) for all u
         that are present in both layers. Returns number of edges added.
         """
         added = 0
@@ -2884,7 +2884,7 @@ class Graph:
             ai.extend((a, a)); bi.extend((a, a))
             wv.extend((w, w))
 
-        # Inter / coupling -> (u,aa)↔(v,β)
+        # Inter / coupling -> (u,aa)↔(v,bb)
         for eid, kind in self.edge_kind.items():
             if kind not in {"inter", "coupling"}:
                 continue
@@ -2945,8 +2945,8 @@ class Graph:
         # Map back from indices to (u,aa) rows using current _nl_to_row
         for k in range(len(w)):
             u = vertices[int(ui[k])]; aa = layers[int(ai[k])]
-            v = vertices[int(vi[k])]; β = layers[int(bi[k])]
-            ru = self._nl_to_row.get((u, aa)); rv = self._nl_to_row.get((v, β))
+            v = vertices[int(vi[k])]; bb = layers[int(bi[k])]
+            ru = self._nl_to_row.get((u, aa)); rv = self._nl_to_row.get((v, bb))
             if ru is None or rv is None:
                 continue
             A[ru, rv] = A.get((ru, rv), 0.0) + float(w[k])
@@ -2965,9 +2965,9 @@ class Graph:
         ai = np.empty_like(rows); bi = np.empty_like(cols)
         for k in range(len(rows)):
             (u, aa) = self._row_to_nl[int(rows[k])]
-            (v, β) = self._row_to_nl[int(cols[k])]
+            (v, bb) = self._row_to_nl[int(cols[k])]
             ui[k] = vertex_to_i[u]; vi[k] = vertex_to_i[v]
-            ai[k] = layer_to_i[aa]; bi[k] = layer_to_i[β]
+            ai[k] = layer_to_i[aa]; bi[k] = layer_to_i[bb]
         return {
             "vertices": vertices, "layers": layers_t,
             "vertex_to_i": vertex_to_i, "layer_to_i": layer_to_i,
